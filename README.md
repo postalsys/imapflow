@@ -43,6 +43,12 @@ const main = async () => {
     let message = await client.fetchOne('*', { source: true });
     console.log(message.source.toString());
 
+    // list subjects for all messages
+    // uid value is always included in FETCH response, envelope strings are in unicode.
+    for await (let message of client.fetch('1:*', { envelope: true })) {
+        console.log(`${message.uid}: ${message.envelope.subject}`);
+    }
+
     // log out and close connection
     await client.logout();
 };
