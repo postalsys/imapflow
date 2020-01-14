@@ -1,0 +1,10 @@
+{
+    "templates": {
+        "cleverLinks": true,
+        "monospaceLinks": false,
+        "default": {
+            "outputSourceFiles": false
+        }
+    },
+    "plugins": ["plugins/markdown"]
+}
