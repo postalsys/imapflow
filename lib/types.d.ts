@@ -1,3 +1,6 @@
+/**
+ * @module imapflow
+ */
 declare module "imapflow" {
     /**
      * @typedef {Object} MailboxObject
@@ -14,7 +17,7 @@ declare module "imapflow" {
      * @property {number} uidNext - Next predicted UID
      * @property {number} exists - Messages in this folder
      */
-    declare type MailboxObject = {
+    type MailboxObject = {
         path: string;
         delimiter: string;
         flags: Set<string>;
@@ -28,7 +31,6 @@ declare module "imapflow" {
         uidNext: number;
         exists: number;
     };
-
     /**
      * @param {object} options - IMAP connection options
      * @param {string} options.host - Hostname of the IMAP server
@@ -46,7 +48,7 @@ declare module "imapflow" {
      * @param {string} [options.tls.minVersion=TLSv1.2] - latest Node.js defaults to *'TLSv1.2'*, for older mail servers you might need to use something else, eg *'TLSv1'*
      * @param {object} [options.logger] - Custom logger instance with `error(obj)` and `info(obj)` properties. If not provided then ImapFlow logs to console using pino format
      */
-    declare class ImapFlow {
+    class ImapFlow {
         constructor(options: {
             host: string;
             port: number;
@@ -459,7 +461,6 @@ declare module "imapflow" {
             uid?: boolean;
         }): DownloadObject;
     }
-
     /**
      * @typedef {Object} QuotaResponse
      * @property {string} path=INBOX - mailbox path this quota applies to
@@ -470,7 +471,7 @@ declare module "imapflow" {
      * @property {number} [messages.used] - stored messages
      * @property {number} [messages.limit] - maximum messages allowed
      */
-    declare type QuotaResponse = {
+    type QuotaResponse = {
         path: string;
         storage?: {
             used?: number;
@@ -481,7 +482,6 @@ declare module "imapflow" {
             limit?: number;
         };
     };
-
     /**
      * @typedef {Object} ListResponse
      * @property {string} path - mailbox path
@@ -492,7 +492,7 @@ declare module "imapflow" {
      * @property {boolean} listed - *true* if mailbox was found from the output of LIST command
      * @property {boolean} subscribed - *true* if mailbox was found from the output of LSUB command
      */
-    declare type ListResponse = {
+    type ListResponse = {
         path: string;
         name: string;
         delimiter: string;
@@ -501,7 +501,6 @@ declare module "imapflow" {
         listed: boolean;
         subscribed: boolean;
     };
-
     /**
      * @typedef {Object} ListTreeResponse
      * @property {boolean} root - If *true* then this is root node without any additional properties besides *folders*
@@ -515,7 +514,7 @@ declare module "imapflow" {
      * @property {boolean} disabled - If *true* then this mailbox can not be selected in the UI
      * @property {ListTreeResponse[]} folders - An array of subfolders
      */
-    declare type ListTreeResponse = {
+    type ListTreeResponse = {
         root: boolean;
         path: string;
         name: string;
@@ -527,35 +526,31 @@ declare module "imapflow" {
         disabled: boolean;
         folders: ListTreeResponse[];
     };
-
     /**
      * @typedef {Object} MailboxCreateResponse
      * @property {string} path - full mailbox path
      * @property {string} [mailboxId] - unique mailbox ID if server supports OBJECTID extension (currently Yahoo and some others)
      */
-    declare type MailboxCreateResponse = {
+    type MailboxCreateResponse = {
         path: string;
         mailboxId?: string;
     };
-
     /**
      * @typedef {Object} MailboxRenameResponse
      * @property {string} path - full mailbox path that was renamed
      * @property {string} newPath - new full mailbox path
      */
-    declare type MailboxRenameResponse = {
+    type MailboxRenameResponse = {
         path: string;
         newPath: string;
     };
-
     /**
      * @typedef {Object} MailboxDeleteResponse
      * @property {string} path - full mailbox path that was deleted
      */
-    declare type MailboxDeleteResponse = {
+    type MailboxDeleteResponse = {
         path: string;
     };
-
     /**
      * @typedef {Object} StatusObject
      * @property {string} path - full mailbox path that was checked
@@ -566,7 +561,7 @@ declare module "imapflow" {
      * @property {number} [unseen] - Count of unseen messages
      * @property {BigInt} [highestModseq] - Last known modseq value (if CONDSTORE extension is enabled)
      */
-    declare type StatusObject = {
+    type StatusObject = {
         path: string;
         messages?: number;
         recent?: number;
@@ -575,7 +570,6 @@ declare module "imapflow" {
         unseen?: number;
         highestModseq?: bigint;
     };
-
     /**
      * Sequence range string. Separate different values with commas, number ranges with colons and use \\* as the placeholder for the newest message in mailbox
      * @typedef {String} SequenceString
@@ -585,8 +579,7 @@ declare module "imapflow" {
      * "1,2,4:6" // for messages 1,2,4,5,6
      * "*" // for the newest message
      */
-    declare type SequenceString = string;
-
+    type SequenceString = string;
     /**
      * IMAP search query options. By default all conditions must match. In case of `or` query term at least one condition must match.
      * @typedef {Object} SearchObject
@@ -623,7 +616,7 @@ declare module "imapflow" {
      * @property {Object.<string, Boolean|String>} [header] - Mathces messages with header key set (if value is *true*) or messages where header partially matches (if value is a string)
      * @property {SearchObject[]} [or] - An array of 2 or more {@link SearchObject} objects. At least on of these must match
      */
-    declare type SearchObject = {
+    type SearchObject = {
         seq?: SequenceString;
         answered?: boolean;
         deleted?: boolean;
@@ -659,7 +652,6 @@ declare module "imapflow" {
         };
         or?: SearchObject[];
     };
-
     /**
      * @typedef {Object} AppendResponseObject
      * @property {string} path - full mailbox path where the message was uploaded to
@@ -667,13 +659,12 @@ declare module "imapflow" {
      * @property {number} [uid] - UID of the uploaded message if server has UIDPLUS extension enabled
      * @property {number} [seq] - sequence number of the uploaded message if path is currently selected mailbox
      */
-    declare type AppendResponseObject = {
+    type AppendResponseObject = {
         path: string;
         uidValidity?: bigint;
         uid?: number;
         seq?: number;
     };
-
     /**
      * @typedef {Object} CopyResponseObject
      * @property {string} path - path of source mailbox
@@ -681,13 +672,12 @@ declare module "imapflow" {
      * @property {BigInt} [uidValidity] - destination mailbox UIDVALIDITY if server has UIDPLUS extension enabled
      * @property {Map<number, number>} [uidMap] - Map of UID values (if server has UIDPLUS extension enabled) where key is UID in source mailbox and value is the UID for the same message in destination mailbox
      */
-    declare type CopyResponseObject = {
+    type CopyResponseObject = {
         path: string;
         destination: string;
         uidValidity?: bigint;
         uidMap?: Map<number, number>;
     };
-
     /**
      * @typedef {Object} FetchQueryObject
      * @property {boolean} [uid] - if *true* then include UID in the response
@@ -704,7 +694,7 @@ declare module "imapflow" {
      * @property {boolean | string[]} [headers] - if *true* then includes full headers of the message in the response. If the value is an array of header keys then includes only headers listed in the array
      * @property {string[]} [bodyParts] - An array of BODYPART identifiers to include in the response
      */
-    declare type FetchQueryObject = {
+    type FetchQueryObject = {
         uid?: boolean;
         flags?: boolean;
         bodyStructure?: boolean;
@@ -720,7 +710,6 @@ declare module "imapflow" {
         headers?: boolean | string[];
         bodyParts?: string[];
     };
-
     /**
      * Parsed email address entry
      *
@@ -728,11 +717,10 @@ declare module "imapflow" {
      * @property {string} [name] - name of the address object (unicode)
      * @property {string} [address] - email address
      */
-    declare type MessageAddressObject = {
+    type MessageAddressObject = {
         name?: string;
         address?: string;
     };
-
     /**
      * Parsed IMAP ENVELOPE object
      *
@@ -748,7 +736,7 @@ declare module "imapflow" {
      * @property {MessageAddressObject[]} [cc] - Array of addresses from the Cc: header
      * @property {MessageAddressObject[]} [bcc] - Array of addresses from the Bcc: header
      */
-    declare type MessageEnvelopeObject = {
+    type MessageEnvelopeObject = {
         date?: Date;
         subject?: string;
         messageId?: string;
@@ -760,7 +748,6 @@ declare module "imapflow" {
         cc?: MessageAddressObject[];
         bcc?: MessageAddressObject[];
     };
-
     /**
      * Parsed IMAP BODYSTRUCTURE object
      *
@@ -776,7 +763,7 @@ declare module "imapflow" {
      * @property {object} [dispositionParameters] - Additional parameters for Conent-Disposition
      * @property {MessageStructureObject[]} childNodes An array of child nodes if this is a multipart node. Not present for normal nodes
      */
-    declare type MessageStructureObject = {
+    type MessageStructureObject = {
         part: string;
         type: string;
         parameters?: any;
@@ -788,7 +775,6 @@ declare module "imapflow" {
         dispositionParameters?: any;
         childNodes: MessageStructureObject[];
     };
-
     /**
      * Fetched message data
      *
@@ -808,7 +794,7 @@ declare module "imapflow" {
      * @property {Map<string, Buffer>} [bodyParts] - a Map of message body parts where key is requested part identifier and value is a Buffer
      * @property {Buffer} [headers] - Requested header lines as Buffer
      */
-    declare type FetchMessageObject = {
+    type FetchMessageObject = {
         seq: number;
         uid: number;
         source?: Buffer;
@@ -824,7 +810,6 @@ declare module "imapflow" {
         bodyParts?: Map<string, Buffer>;
         headers?: Buffer;
     };
-
     /**
      * @typedef {Object} DownloadObject
      * @property {Object} meta - content metadata
@@ -834,7 +819,7 @@ declare module "imapflow" {
      * @property {string} [meta.filename] - Filename of the streamed body part
      * @property {ReadableStream} content - Streamed content
      */
-    declare type DownloadObject = {
+    type DownloadObject = {
         meta: {
             contentType: string;
             charset?: string;
@@ -843,5 +828,5 @@ declare module "imapflow" {
         };
         content: ReadableStream;
     };
-
 }
+
