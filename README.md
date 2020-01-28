@@ -4,6 +4,10 @@ IMAP Client for Node.js extracted from [NodemailerApp project](https://nodemaile
 
 The focus for ImapFlow is to provide easy to use API over IMAP.
 
+## Source
+
+Source code is available from [Github](https://github.com/nodemailer/imapflow).
+
 ## Usage
 
 First install the module from npm:
