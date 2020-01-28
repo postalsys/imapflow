@@ -1,4 +1,75 @@
 /**
+ * @class EventEmitter
+ */
+declare class EventEmitter {
+    /**
+     * Adds a listener to the end of the listeners array for the specified event.
+     * No checks are made to see if the listener has already been added. Multiple
+     * calls passing the same combination of event and listener will result in the
+     * listener being added multiple times.
+     * @function EventEmitter#on
+     * @param {string} event The event to listen for.
+     * @param {Function} listener The function to invoke.
+     * @return {EventEmitter} for call chaining.
+     */
+    on(event: string, listener: (...params: any[]) => any): EventEmitter;
+    /**
+     * Alias for {@link EventEmitter#on}.
+     * @function EventEmitter#addListener
+     * @param {string} event The event to listen for.
+     * @param {Function} listener The function to invoke.
+     * @return {EventEmitter} for call chaining.
+     */
+    addListener(event: string, listener: (...params: any[]) => any): EventEmitter;
+    /**
+     * Adds a <b>one time</b> listener for the event. This listener is invoked only
+     * the next time the event is fired, after which it is removed.
+     * @function EventEmitter#once
+     * @param {string} event The event to listen for.
+     * @param {Function} listener The function to invoke.
+     * @return {EventEmitter} for call chaining.
+     */
+    once(event: string, listener: (...params: any[]) => any): EventEmitter;
+    /**
+     * Remove a listener from the listener array for the specified event.
+     * <b>Caution:</b> changes array indices in the listener array behind the
+     * listener.
+     * @function EventEmitter#removeListener
+     * @param {string} event The event to listen for.
+     * @param {Function} listener The function to invoke.
+     * @return {EventEmitter} for call chaining.
+     */
+    removeListener(event: string, listener: (...params: any[]) => any): EventEmitter;
+    /**
+     * Removes all listeners, or those of the specified event. It's not a good idea
+     * to remove listeners that were added elsewhere in the code, especially when
+     * it's on an emitter that you didn't create (e.g. sockets or file streams).
+     * @function EventEmitter#removeAllListeners
+     * @param {string} event Optional. The event to remove listeners for.
+     * @return {EventEmitter} for call chaining.
+     */
+    removeAllListeners(event: string): EventEmitter;
+    /**
+     * Execute each of the listeners in order with the supplied arguments.
+     * @function EventEmitter#emit
+     * @param {string} event The event to emit.
+     * @param {Function} listener The function to invoke.
+     * @return {boolean} true if event had listeners, false otherwise.
+     */
+    emit(event: string, listener: (...params: any[]) => any): boolean;
+    /**
+     * By default EventEmitters will print a warning if more than 10 listeners are
+     * added for a particular event. This is a useful default which helps finding
+     * memory leaks. Obviously not all Emitters should be limited to 10. This
+     * function allows that to be increased. Set to zero for unlimited.
+     * @function EventEmitter#setMaxListeners
+     * @param {Number} n The max number of listeners.
+     * @return {EventEmitter} for call chaining.
+     */
+    setMaxListeners(n: number): EventEmitter;
+}
+
+/**
  * @module imapflow
  */
 declare module "imapflow" {
@@ -460,6 +531,71 @@ declare module "imapflow" {
         download(range: SequenceString, part?: string, options?: {
             uid?: boolean;
         }): DownloadObject;
+        /**
+         * Adds a listener to the end of the listeners array for the specified event.
+         * No checks are made to see if the listener has already been added. Multiple
+         * calls passing the same combination of event and listener will result in the
+         * listener being added multiple times.
+         * @function EventEmitter#on
+         * @param {string} event The event to listen for.
+         * @param {Function} listener The function to invoke.
+         * @return {EventEmitter} for call chaining.
+         */
+        on(event: string, listener: (...params: any[]) => any): EventEmitter;
+        /**
+         * Alias for {@link EventEmitter#on}.
+         * @function EventEmitter#addListener
+         * @param {string} event The event to listen for.
+         * @param {Function} listener The function to invoke.
+         * @return {EventEmitter} for call chaining.
+         */
+        addListener(event: string, listener: (...params: any[]) => any): EventEmitter;
+        /**
+         * Adds a <b>one time</b> listener for the event. This listener is invoked only
+         * the next time the event is fired, after which it is removed.
+         * @function EventEmitter#once
+         * @param {string} event The event to listen for.
+         * @param {Function} listener The function to invoke.
+         * @return {EventEmitter} for call chaining.
+         */
+        once(event: string, listener: (...params: any[]) => any): EventEmitter;
+        /**
+         * Remove a listener from the listener array for the specified event.
+         * <b>Caution:</b> changes array indices in the listener array behind the
+         * listener.
+         * @function EventEmitter#removeListener
+         * @param {string} event The event to listen for.
+         * @param {Function} listener The function to invoke.
+         * @return {EventEmitter} for call chaining.
+         */
+        removeListener(event: string, listener: (...params: any[]) => any): EventEmitter;
+        /**
+         * Removes all listeners, or those of the specified event. It's not a good idea
+         * to remove listeners that were added elsewhere in the code, especially when
+         * it's on an emitter that you didn't create (e.g. sockets or file streams).
+         * @function EventEmitter#removeAllListeners
+         * @param {string} event Optional. The event to remove listeners for.
+         * @return {EventEmitter} for call chaining.
+         */
+        removeAllListeners(event: string): EventEmitter;
+        /**
+         * Execute each of the listeners in order with the supplied arguments.
+         * @function EventEmitter#emit
+         * @param {string} event The event to emit.
+         * @param {Function} listener The function to invoke.
+         * @return {boolean} true if event had listeners, false otherwise.
+         */
+        emit(event: string, listener: (...params: any[]) => any): boolean;
+        /**
+         * By default EventEmitters will print a warning if more than 10 listeners are
+         * added for a particular event. This is a useful default which helps finding
+         * memory leaks. Obviously not all Emitters should be limited to 10. This
+         * function allows that to be increased. Set to zero for unlimited.
+         * @function EventEmitter#setMaxListeners
+         * @param {Number} n The max number of listeners.
+         * @return {EventEmitter} for call chaining.
+         */
+        setMaxListeners(n: number): EventEmitter;
     }
     /**
      * @typedef {Object} QuotaResponse
