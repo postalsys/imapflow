@@ -17,9 +17,27 @@ let config = {
     }
 };
 
+config = {
+    host: 'localhost',
+    port: 9993,
+    secure: true,
+    tls: {
+        rejectUnauthorized: true
+    },
+
+    auth: {
+        user: 'myuser',
+        pass: 'verysecret'
+    }
+};
+
 let c = new ImapFlow(config);
 c.on('error', err => {
     c.log.error(err);
+});
+c.on('close', (...args) => {
+    console.log('CLOSE');
+    console.log('args', ...args);
 });
 
 async function listAll(connection) {
@@ -247,19 +265,27 @@ c.connect()
             // ignore
         }
 
+        console.log('wait');
         // start IDLEind
         await new Promise(resolve => {
             setTimeout(() => {
                 console.log('LOGOUT');
                 resolve();
-            }, 2 * 60 * 1000);
+            }, 1 * 2 * 1000);
         });
+        console.log('next');
 
-        res = await c.getQuota();
-        console.log(res);
+        //res = await c.getQuota();
+        //console.log(res);
 
-        await c.logout();
-        //await c.idle();
+        //await c.logout();
+        /*        
+setTimeout(() => {
+            console.log('LOGOUT');
+            c.status('INBOX', { messages: true });
+        }, 1 * 60 * 1000);
+*/
+        await c.idle();
     })
     .catch(err => {
         console.error(err);
