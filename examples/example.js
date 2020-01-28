@@ -22,7 +22,7 @@ config = {
     port: 9993,
     secure: true,
     tls: {
-        rejectUnauthorized: true
+        rejectUnauthorized: false
     },
 
     auth: {
