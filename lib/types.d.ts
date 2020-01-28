@@ -48,7 +48,7 @@ declare module "imapflow" {
      * @param {string} [options.tls.minVersion=TLSv1.2] - latest Node.js defaults to *'TLSv1.2'*, for older mail servers you might need to use something else, eg *'TLSv1'*
      * @param {object} [options.logger] - Custom logger instance with `error(obj)` and `info(obj)` properties. If not provided then ImapFlow logs to console using pino format
      */
-    class ImapFlow {
+    class ImapFlow extends EventEmitter {
         constructor(options: {
             host: string;
             port: number;
