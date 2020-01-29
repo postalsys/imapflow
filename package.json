@@ -1,6 +1,6 @@
 {
     "name": "imapflow",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "IMAP Client for Node",
     "main": "./lib/imap-flow.js",
     "types": "./lib/types.d.ts",
@@ -8,7 +8,7 @@
         "test": "grunt",
         "prepare": "npm run build",
         "docs": "rm -rf docs && mkdir -p docs && jsdoc lib/imap-flow.js -c jsdoc.json -t ./node_modules/jsdoc-baseline -R README.md --destination docs/",
-        "dst": "jsdoc -t node_modules/tsd-jsdoc/dist -r lib/imap-flow.js --destination lib/",
+        "dst": "node types.js",
         "build": "npm run docs && npm run dst"
     },
     "repository": {
@@ -39,6 +39,7 @@
         "tsd-jsdoc": "2.4.0"
     },
     "dependencies": {
+        "@types/node": "13.5.1",
         "encoding-japanese": "1.0.30",
         "iconv-lite": "0.5.1",
         "libbase64": "1.2.1",
