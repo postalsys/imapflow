@@ -1,10 +1,20 @@
 {
     "templates": {
+        "referenceTitle": "ImapFlow",
+        "disableSort": false,
+        "collapse": true,
         "cleverLinks": true,
         "monospaceLinks": false,
         "default": {
             "outputSourceFiles": false
         }
     },
-    "plugins": ["plugins/markdown"]
+    "plugins": ["plugins/markdown"],
+    "opts": {
+        "destination": "./docs/",
+        "encoding": "utf8",
+        "private": true,
+        "recurse": true,
+        "template": "./node_modules/braintree-jsdoc-template"
+    }
 }

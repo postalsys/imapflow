@@ -7,7 +7,7 @@
     "scripts": {
         "test": "grunt",
         "prepare": "npm run build",
-        "docs": "rm -rf docs && mkdir -p docs && jsdoc lib/imap-flow.js -c jsdoc.json -t ./node_modules/jsdoc-baseline -R README.md --destination docs/",
+        "docs": "rm -rf docs && mkdir -p docs && jsdoc lib/imap-flow.js -c jsdoc.json -R README.md --destination docs/",
         "dst": "node types.js",
         "build": "npm run docs && npm run dst"
     },
@@ -27,6 +27,7 @@
     },
     "homepage": "https://imapflow.com/",
     "devDependencies": {
+        "braintree-jsdoc-template": "^3.3.0",
         "eslint": "6.8.0",
         "eslint-config-nodemailer": "1.2.0",
         "eslint-config-prettier": "6.10.0",
@@ -35,7 +36,6 @@
         "grunt-contrib-nodeunit": "2.0.0",
         "grunt-eslint": "22.0.0",
         "jsdoc": "3.6.3",
-        "jsdoc-baseline": "0.1.5",
         "tsd-jsdoc": "2.4.0"
     },
     "dependencies": {
