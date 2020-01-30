@@ -10,6 +10,11 @@
         "monospaceLinks": false,
         "default": {
             "outputSourceFiles": false
+        },
+        "search": {
+            "apiKey": "082c6635b32d44ed095369a5f1c790fd",
+            "indexName": "imapflow",
+            "hitsPerPage": 7
         }
     },
     "plugins": ["plugins/markdown"],
