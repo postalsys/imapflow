@@ -42,6 +42,9 @@ exec('jsdoc -t node_modules/tsd-jsdoc/dist -r lib/imap-flow.js --destination lib
             // inject EventEmitter definitions from node typings
             content = content.replace(/(declare module[^\n]+)/, '$1\n    import { EventEmitter } from "events";\n');
 
+            // path tls object to allow undocumented keys
+            content = content.replace(/(tls: \{[^\n]*)/, '$1\n                [prop: string]: any;\n            } & {');
+
             fs.writeFile(path, Buffer.from(content), err => {
                 if (err) {
                     console.error(err);

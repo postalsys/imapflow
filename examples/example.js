@@ -28,6 +28,13 @@ config = {
     auth: {
         user: 'myuser',
         pass: 'verysecret'
+    },
+
+    clientInfo: {
+        name: false,
+        'support-url': false,
+        vendor: false,
+        date: false
     }
 };
 

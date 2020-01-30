@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   v1.0.6 - 2020-01-30
+
+    -   Updated TypeScript typings
+    -   Updated ID request formatting
+
 -   v1.0.5 - 2020-01-29
 
     -   Updated TypeScript typings
