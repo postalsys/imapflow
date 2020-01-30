@@ -62,7 +62,7 @@ main().catch(err => console.error(err));
 
 ## Documentation
 
-[API reference](https://imapflow.com/ImapFlow.html).
+[API reference](https://imapflow.com/module-imapflow-ImapFlow.html).
 
 ImapFlow has TS typings set for compatible editors.
 
