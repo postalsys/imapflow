@@ -3,6 +3,9 @@
         "referenceTitle": "ImapFlow",
         "disableSort": false,
         "collapse": true,
+        "resources": {
+            "Source Code": "https://github.com/nodemailer/imapflow"
+        },
         "cleverLinks": true,
         "monospaceLinks": false,
         "default": {
