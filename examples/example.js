@@ -47,6 +47,16 @@ c.on('close', (...args) => {
     console.log('args', ...args);
 });
 
+c.on('mailboxOpen', (...args) => {
+    console.log('MAILBOX:OPEN');
+    console.log('args', ...args);
+});
+
+c.on('mailboxClose', (...args) => {
+    console.log('MAILBOX:CLOSE');
+    console.log('args', ...args);
+});
+
 async function listAll(connection) {
     let t = Date.now();
     let m = 0;
@@ -282,17 +292,52 @@ c.connect()
         });
         console.log('next');
 
-        //res = await c.getQuota();
-        //console.log(res);
+        console.log('QUOTA');
+        res = await c.getQuota('jupikas');
+        console.log(res);
 
-        //await c.logout();
+        // await c.logout();
         /*        
-setTimeout(() => {
-            console.log('LOGOUT');
-            c.status('INBOX', { messages: true });
-        }, 1 * 60 * 1000);
-*/
+            setTimeout(() => {
+                console.log('LOGOUT');
+                c.status('INBOX', { messages: true });
+            }, 1 * 60 * 1000);
+        */
+
+        await c.mailboxClose();
+
+        await c.mailboxOpen('INBOX', { readOnly: true });
+
+        let list = await c.list();
+        let processMailbox = async path => {
+            let lock = await c.getMailboxLock(path);
+            try {
+                console.log(`Processing ${path}`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                let msg = await c.fetchOne('*', { flags: true });
+                console.log(msg);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                let stor = await c.messageFlagsAdd('*', ['test']);
+                console.log(stor);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            } finally {
+                lock.release();
+            }
+        };
+
+        list.forEach(mailbox => {
+            processMailbox(mailbox.path).then(() => {
+                console.log(`Mailbox ${mailbox.path} processed`);
+            });
+        });
+
+        let lock;
+        lock = await c.getMailboxLock('supra?');
+        console.log('lock');
+
+        lock = await c.getMailboxLock('INBOX');
         await c.idle();
+        lock.release();
     })
     .catch(err => {
         console.error(err);

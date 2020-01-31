@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   v1.0.7 - 2020-01-31
+
+    -   Added new method `getMailboxLock()` to lock a mailbox for usage
+    -   Added new connection events "mailboxOpen" and "mailboxClose"
+
 -   v1.0.6 - 2020-01-30
 
     -   Updated TypeScript typings

@@ -1,6 +1,6 @@
 {
     "name": "imapflow",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "description": "IMAP Client for Node",
     "main": "./lib/imap-flow.js",
     "types": "./lib/types.d.ts",
@@ -39,7 +39,7 @@
         "tsd-jsdoc": "2.4.0"
     },
     "dependencies": {
-        "@types/node": "13.5.1",
+        "@types/node": "13.5.3",
         "encoding-japanese": "1.0.30",
         "iconv-lite": "0.5.1",
         "libbase64": "1.2.1",
