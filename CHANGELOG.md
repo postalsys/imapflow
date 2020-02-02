@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   v1.0.8 - 2020-02-02
+
+    -   Documented missing option changedSince for fetch
+    -   Emit changes also on STATUS
+
 -   v1.0.7 - 2020-01-31
 
     -   Added new method `getMailboxLock()` to lock a mailbox for usage
