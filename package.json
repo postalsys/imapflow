@@ -7,7 +7,7 @@
     "scripts": {
         "test": "grunt",
         "prepare": "npm run build",
-        "docs": "rm -rf docs && mkdir -p docs && jsdoc lib/imap-flow.js -c jsdoc.json -R README.md --destination docs/",
+        "docs": "rm -rf docs && mkdir -p docs && jsdoc lib/imap-flow.js -c jsdoc.json -R README.md --destination docs/ && cp assets/favicon.ico docs",
         "dst": "node types.js",
         "build": "npm run docs && npm run dst"
     },
