@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   v1.0.9 - 2020-02-02
+
+    -   Yet another documentation change to get TypeScript typings more correct
+
 -   v1.0.8 - 2020-02-02
 
     -   Documented missing option changedSince for fetch
