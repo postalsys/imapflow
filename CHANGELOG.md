@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   v1.0.10 - 2020-02-02
+
+    -   Use debug logging level for IMAP traffic
+
 -   v1.0.9 - 2020-02-02
 
     -   Yet another documentation change to get TypeScript typings more correct
