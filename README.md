@@ -1,8 +1,8 @@
 # ImapFlow
 
-IMAP Client for Node.js extracted from [NodemailerApp project](https://nodemailer.com/app/).
+> IMAP Client for Node.js extracted from the [NodemailerApp project](https://nodemailer.com/app/).
 
-The focus for ImapFlow is to provide easy to use API over IMAP.
+The focus for ImapFlow is to provide easy to use API over IMAP. Using ImapFlow does not require knowledge about specific IMAP details, general understanding is good enough. IMAP extensions are handled in the background, so for example you can always request `modseq` value from a `fetch()` call but if the IMAP server does not support `CONDSTORE` extension, then `modseq` value is not included in the response.
 
 ## Source
 
