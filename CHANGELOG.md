@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   v1.0.11 - 2020-02-06
+
+    -   Bump current uidNext if message UID seems to be higher
+
 -   v1.0.10 - 2020-02-02
 
     -   Use debug logging level for IMAP traffic
