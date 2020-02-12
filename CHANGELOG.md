@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   v1.0.13 - 2020-02-12
+
+    -   Do not filter out changes with same MODSEQ value
+
 -   v1.0.12 - 2020-02-12
 
     -   Logging level changes
