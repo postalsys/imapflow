@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   v1.0.12 - 2020-02-12
+
+    -   Logging level changes
+
 -   v1.0.11 - 2020-02-06
 
     -   Bump current uidNext if message UID seems to be higher
