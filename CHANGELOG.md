@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.14 - 2020-02-13
+
+    -   Added new property `idling`
+
 -   v1.0.13 - 2020-02-12
 
     -   Do not filter out changes with same MODSEQ value
