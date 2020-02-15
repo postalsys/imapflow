@@ -1,6 +1,6 @@
 # CHANGELOG
 
--   1.0.15 - 2020-02-15
+-   1.0.16 - 2020-02-15
 
     -   Logging level changes (FETCH responses downgraded from DEBUG to TRACE)
 
