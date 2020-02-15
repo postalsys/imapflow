@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.15 - 2020-02-15
+
+    -   Logging level changes (FETCH responses downgraded from DEBUG to TRACE)
+
 -   1.0.14 - 2020-02-13
 
     -   Added new property `idling`
