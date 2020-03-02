@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.27 - 2020-03-02
+
+    -   Added support for XOAUTH2 and OAUTHBEARERTOKEN authentication mechanisms
+
 -   1.0.16 - 2020-02-15
 
     -   Logging level changes (FETCH responses downgraded from DEBUG to TRACE)
