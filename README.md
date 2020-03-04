@@ -76,4 +76,4 @@ ImapFlow has TS typings set for compatible editors.
 
 &copy; 2020 Andris Reinman
 
-Licensed for evaluation use only
+Licensed under GNU Affero General Public License v3.0 or later

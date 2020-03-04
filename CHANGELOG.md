@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.28 - 2020-03-04
+
+    -   Changed license of the project from UNLICENSED to AGPL-3.0-or-later
+
 -   1.0.27 - 2020-03-02
 
     -   Added support for XOAUTH2 and OAUTHBEARERTOKEN authentication mechanisms
