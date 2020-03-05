@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.29 - 2020-03-05
+
+    -   Updated JSDoc for some optional params
+    -   Better PREAUTH support
+
 -   1.0.28 - 2020-03-04
 
     -   Changed license of the project from UNLICENSED to AGPL-3.0-or-later
