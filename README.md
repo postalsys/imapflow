@@ -1,6 +1,6 @@
 # ImapFlow
 
-_IMAP Client for Node.js extracted from the [NodemailerApp project](https://nodemailer.com/app/)._
+_IMAP Client library for [IMAP API](https://imapapi.com/)._
 
 The focus for ImapFlow is to provide easy to use API over IMAP. Using ImapFlow does not expect knowledge about specific IMAP details, general understanding is good enough.
 
