@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.30 - 2020-03-06
+
+    -   Added new option and property `emitLogs` and `'log'` event to fire on every log entry
+
 -   1.0.29 - 2020-03-05
 
     -   Updated JSDoc for some optional params
