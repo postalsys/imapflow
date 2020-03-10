@@ -39,7 +39,7 @@
         "tsd-jsdoc": "2.4.0"
     },
     "dependencies": {
-        "@types/node": "13.7.7",
+        "@types/node": "13.9.0",
         "encoding-japanese": "1.0.30",
         "iconv-lite": "0.5.1",
         "libbase64": "1.2.1",
