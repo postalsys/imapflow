@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.33 - 2020-03-20
+
+    -   Fixed issue with using date queries in search [a0000778](1e6ce952)
+
 -   1.0.30 - 2020-03-06
 
     -   Added new option and property `emitLogs` and `'log'` event to fire on every log entry
