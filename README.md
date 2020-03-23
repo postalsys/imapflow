@@ -70,8 +70,6 @@ main().catch(err => console.error(err));
 
 [API reference](https://imapflow.com/module-imapflow-ImapFlow.html).
 
-ImapFlow has TS typings set for compatible editors.
-
 ## License
 
 &copy; 2020 Andris Reinman
