@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.35 - 2020-03-25
+
+    -   Set time argument for setKeepAlive
+
 -   1.0.34 - 2020-03-25
 
     -   Replaced nodemailer/imapflow with andris9/imapflow

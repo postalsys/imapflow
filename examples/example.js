@@ -283,7 +283,7 @@ c.connect()
         }
 
         console.log('wait');
-        // start IDLEind
+        // start IDLEing
         await new Promise(resolve => {
             setTimeout(() => {
                 console.log('LOGOUT');
