@@ -8,7 +8,7 @@ IMAP extensions are handled in the background, so for example you can always req
 
 ## Source
 
-Source code is available from [Github](https://github.com/nodemailer/imapflow).
+Source code is available from [Github](https://github.com/andris9/imapflow).
 
 ## Usage
 

@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.34 - 2020-03-25
+
+    -   Replaced nodemailer/imapflow with andris9/imapflow
+    -   Removed TS typings
+
 -   1.0.33 - 2020-03-20
 
     -   Fixed issue with using date queries in search [a0000778](1e6ce952)

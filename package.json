@@ -1,6 +1,6 @@
 {
     "name": "imapflow",
-    "version": "1.0.33",
+    "version": "1.0.34",
     "description": "IMAP Client for Node",
     "main": "./lib/imap-flow.js",
     "scripts": {
@@ -12,7 +12,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/nodemailer/imapflow.git"
+        "url": "git+https://github.com/andris9/imapflow.git"
     },
     "keywords": [
         "imap",
@@ -22,7 +22,7 @@
     "author": "Andris Reinman",
     "license": "AGPL-3.0-or-later",
     "bugs": {
-        "url": "https://github.com/nodemailer/imapflow/issues"
+        "url": "https://github.com/andris9/imapflow/issues"
     },
     "homepage": "https://imapflow.com/",
     "devDependencies": {

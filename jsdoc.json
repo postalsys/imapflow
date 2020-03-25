@@ -4,7 +4,7 @@
         "disableSort": false,
         "collapse": true,
         "resources": {
-            "Source Code": "https://github.com/nodemailer/imapflow"
+            "Source Code": "https://github.com/andris9/imapflow"
         },
         "cleverLinks": true,
         "monospaceLinks": false,
