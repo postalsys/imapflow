@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.36 - 2020-03-26
+
+    -   Do not try to write to socket if connection already closed
+
 -   1.0.35 - 2020-03-25
 
     -   Set time argument for setKeepAlive
