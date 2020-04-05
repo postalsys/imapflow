@@ -195,6 +195,8 @@ c.connect()
         await listAll(c);
         await listLast(c);
 
+        c.messageFlagsAdd('1:3', ['foo'], { uid: true, useLabels: true });
+
         c.messageFlagsAdd('*', ['Zuulius', '\\FLAGGED'], { uid: true, silent: false });
         c.messageFlagsRemove('*', ['Zuulius', '\\FLAGGED'], { uid: true, silent: false });
 

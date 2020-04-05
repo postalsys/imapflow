@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.40 - 2020-04-06
+
+    -   Added option `useLabels` for message flag update methods to modify Gmail labels instead of message flags
+
 -   1.0.36 - 2020-03-26
 
     -   Do not try to write to socket if connection already closed
