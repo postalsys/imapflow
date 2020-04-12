@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.41 - 2020-04-12
+
+    -   Bumped deps
+    -   Log 'close' event
+
 -   1.0.40 - 2020-04-06
 
     -   Added option `useLabels` for message flag update methods to modify Gmail labels instead of message flags

@@ -6,18 +6,7 @@ const os = require('os');
 const pathlib = require('path');
 const { ImapFlow } = require('../lib/imap-flow');
 
-// random Ethereal account
 let config = {
-    host: 'ethereal.email',
-    port: 993,
-    secure: true,
-    auth: {
-        user: 'garland.mcclure71@ethereal.email',
-        pass: 'mW6e4wWWnEd3H4hT5B'
-    }
-};
-
-config = {
     host: 'localhost',
     port: 9993,
     secure: true,
