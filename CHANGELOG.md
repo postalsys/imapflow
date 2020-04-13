@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.42 - 2020-04-13
+
+    -   Try to hande edge case when authenticating against Exchange IMAP
+
 -   1.0.41 - 2020-04-12
 
     -   Bumped deps
