@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.43 - 2020-04-20
+
+    -   Better handling of NIL as delimiter
+
 -   1.0.42 - 2020-04-13
 
     -   Try to hande edge case when authenticating against Exchange IMAP
