@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.44 - 2020-04-20
+
+    -   Better detcting of special use mailboxes
+
 -   1.0.43 - 2020-04-20
 
     -   Better handling of NIL as delimiter
