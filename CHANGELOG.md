@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.45 - 2020-05-02
+
+    -   Better support for XOAUTH2
+
 -   1.0.44 - 2020-04-20
 
     -   Better detcting of special use mailboxes
