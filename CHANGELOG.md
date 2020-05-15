@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.46 - 2020-05-15
+
+    -   Do not use IP address as SNI servername
+
 -   1.0.45 - 2020-05-02
 
     -   Better support for XOAUTH2
