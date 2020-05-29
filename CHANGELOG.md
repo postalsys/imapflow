@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.47 - 2020-05-29
+
+    -   Fix search query with `{header:{key: true}}`
+
 -   1.0.46 - 2020-05-15
 
     -   Do not use IP address as SNI servername
