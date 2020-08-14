@@ -12,6 +12,8 @@ Source code is available from [Github](https://github.com/andris9/imapflow).
 
 ## Usage
 
+### Free, AGPL-licensed version
+
 First install the module from npm:
 
 ```
@@ -23,6 +25,24 @@ next import the ImapFlow class into your script:
 ```js
 const { ImapFlow } = require('imapflow');
 ```
+
+### MIT version
+
+MIT-licensed version is available for [Postal Systems subscribers](https://postalsys.com/).
+
+First install the module from npm:
+
+```
+$ npm install @postalsys/imapflow
+```
+
+next import the ImapFlow class into your script:
+
+```js
+const { ImapFlow } = require('@postalsys/imapflow');
+```
+
+### Promises
 
 All ImapFlow methods use Promises, so you need to wait using `await` or wait for the `then()` method to fire until you get the response.
 
