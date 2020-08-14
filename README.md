@@ -42,6 +42,18 @@ next import the ImapFlow class into your script:
 const { ImapFlow } = require('@postalsys/imapflow');
 ```
 
+If you have already built your application using the free version of ImapFlow and do not want to modify require statements in your code, you can install the MIT-licensed version as an alias for "imapflow".
+
+```
+$ npm install imapflow@npm:@postalsys/imapflow
+```
+
+This way you can keep using the old module name
+
+```js
+const { ImapFlow } = require('imapflow');
+```
+
 ### Promises
 
 All ImapFlow methods use Promises, so you need to wait using `await` or wait for the `then()` method to fire until you get the response.
