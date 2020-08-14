@@ -30,15 +30,15 @@ module.exports['Create imapflow instance with custom logger'] = async test => {
         }
     }
 
-    let imapFlow=new ImapFlow({
-        logger:new CustomLogger()
+    let imapFlow = new ImapFlow({
+        logger: new CustomLogger()
     });
     test.ok(imapFlow);
     try {
         await imapFlow.connect();
-    } catch(ex) {
+    } catch (ex) {
         // it is PERFECTLY okay to have an exception here. We expect an ECONNREFUSED if an exception occurs.
-        test.equal(ex.errno, "ECONNREFUSED");
+        test.equal(ex.code, 'ECONNREFUSED');
     }
     test.done();
 };

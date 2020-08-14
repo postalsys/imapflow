@@ -30,7 +30,7 @@ const { ImapFlow } = require('imapflow');
 
 MIT-licensed version is available for [Postal Systems subscribers](https://postalsys.com/).
 
-First install the module from npm:
+First install the module from Postal Systems private registry:
 
 ```
 $ npm install @postalsys/imapflow
