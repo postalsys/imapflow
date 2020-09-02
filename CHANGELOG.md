@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.49 - 2020-09-02
+
+    -   When connection is closed mid-command then reject the promise instead of going blank
+    -   Fix issue with search({uid:'1:\*'})
+
 -   1.0.47 - 2020-05-29
 
     -   Fix search query with `{header:{key: true}}`
