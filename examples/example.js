@@ -202,7 +202,7 @@ c.connect()
             });
         }
 
-        res = await c.search();
+        res = await c.search({ uid: '1:*' });
         console.log(res);
 
         res = await c.messageCopy('1:5', fname, {});
