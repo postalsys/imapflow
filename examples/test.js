@@ -65,8 +65,19 @@ c.connect()
         //console.log(c.folders);
         let path = 'INBOX';
         setTimeout(() => c.writeSocket.destroy(), 100);
-        await c.mailboxOpen(path);
-        console.log('success');
+        try {
+            await c.mailboxOpen(path);
+            console.log('success 1');
+        } catch (err) {
+            console.error(err);
+        }
+        try {
+            await c.logout();
+            console.log('success 2');
+        } catch (err) {
+            console.error(err);
+        }
+        console.log('done');
     })
     .then(() => console.log('ready'))
     .catch(err => {

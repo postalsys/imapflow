@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.51 - 2020-09-24
+
+    -   Close connection after LOGOUT even if command fails
+
 -   1.0.49 - 2020-09-02
 
     -   When connection is closed mid-command then reject the promise instead of going blank
