@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.52 - 2021-02-17
+
+    -   Fixed HTML content loading for some messages from Outlook/Hotmail
+
 -   1.0.51 - 2020-09-24
 
     -   Close connection after LOGOUT even if command fails
