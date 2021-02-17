@@ -1,5 +1,6 @@
 # CHANGELOG
 
+-   1.0.53 - 2021-02-17
 -   1.0.52 - 2021-02-17
 
     -   Fixed HTML content loading for some messages from Outlook/Hotmail
