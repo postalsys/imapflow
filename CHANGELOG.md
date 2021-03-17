@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.55 - 2021-03-17
+
+    -   Fixed raw source downloads
+
 -   1.0.53 - 2021-02-17
 -   1.0.52 - 2021-02-17
 
