@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.56 - 2021-03-18
+
+    -   Fixed issue with exploding LOGOUT
+
 -   1.0.55 - 2021-03-17
 
     -   Fixed raw source downloads

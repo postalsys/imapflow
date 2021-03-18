@@ -1,6 +1,6 @@
 {
     "name": "imapflow",
-    "version": "1.0.55",
+    "version": "1.0.56",
     "description": "IMAP Client for Node",
     "main": "./lib/imap-flow.js",
     "scripts": {
@@ -26,11 +26,11 @@
     },
     "homepage": "https://imapflow.com/",
     "devDependencies": {
-        "@types/node": "14.14.28",
+        "@types/node": "14.14.35",
         "braintree-jsdoc-template": "3.3.0",
-        "eslint": "7.20.0",
+        "eslint": "7.22.0",
         "eslint-config-nodemailer": "1.2.0",
-        "eslint-config-prettier": "7.2.0",
+        "eslint-config-prettier": "8.1.0",
         "grunt": "1.3.0",
         "grunt-cli": "1.3.2",
         "grunt-contrib-nodeunit": "2.1.0",
@@ -45,6 +45,6 @@
         "libmime": "5.0.0",
         "libqp": "1.1.0",
         "mailsplit": "5.0.1",
-        "pino": "6.11.1"
+        "pino": "6.11.2"
     }
 }
