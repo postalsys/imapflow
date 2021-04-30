@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.57 - 2021-04-30
+
+    -   Do not wait indefinitely after logout if connection was not established
+
 -   1.0.56 - 2021-03-18
 
     -   Fixed issue with exploding LOGOUT
