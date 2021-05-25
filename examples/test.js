@@ -69,19 +69,19 @@ c.connect()
             await c.mailboxOpen(path);
             console.log('success 1');
         } catch (err) {
-            console.error(err);
+            console.error(3, err);
         }
         try {
             await c.logout();
             console.log('success 2');
         } catch (err) {
-            console.error(err);
+            console.error(1, err);
         }
         console.log('done');
     })
     .then(() => console.log('ready'))
     .catch(err => {
         console.log('failed');
-        console.error(err);
+        console.error(2, err);
         c.close();
     });
