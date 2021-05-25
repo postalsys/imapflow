@@ -26,7 +26,7 @@
     },
     "homepage": "https://imapflow.com/",
     "devDependencies": {
-        "@types/node": "15.0.1",
+        "@types/node": "15.0.2",
         "braintree-jsdoc-template": "3.3.0",
         "eslint": "7.25.0",
         "eslint-config-nodemailer": "1.2.0",
