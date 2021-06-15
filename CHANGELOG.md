@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.59 - 2021-06-16
+
+    -   Fixed issue with complex OR search
+
 -   1.0.57 - 2021-04-30
 
     -   Do not wait indefinitely after logout if connection was not established
