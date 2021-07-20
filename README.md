@@ -12,8 +12,6 @@ Source code is available from [Github](https://github.com/andris9/imapflow).
 
 ## Usage
 
-### Free, AGPL-licensed version
-
 First install the module from npm:
 
 ```
@@ -21,34 +19,6 @@ $ npm install imapflow
 ```
 
 next import the ImapFlow class into your script:
-
-```js
-const { ImapFlow } = require('imapflow');
-```
-
-### MIT version
-
-MIT-licensed version is available for [Postal Systems subscribers](https://postalsys.com/).
-
-First install the module from Postal Systems private registry:
-
-```
-$ npm install @postalsys/imapflow
-```
-
-next import the ImapFlow class into your script:
-
-```js
-const { ImapFlow } = require('@postalsys/imapflow');
-```
-
-If you have already built your application using the free version of ImapFlow and do not want to modify require statements in your code, you can install the MIT-licensed version as an alias for "imapflow".
-
-```
-$ npm install imapflow@npm:@postalsys/imapflow
-```
-
-This way you can keep using the old module name
 
 ```js
 const { ImapFlow } = require('imapflow');
@@ -78,7 +48,9 @@ const main = async () => {
     let lock = await client.getMailboxLock('INBOX');
     try {
         // fetch latest message source
-        let message = await client.fetchOne('*', { source: true });
+        // client.mailbox includes information about currently selected mailbox
+        // "exists" value is also the largest sequence number available in the mailbox
+        let message = await client.fetchOne(client.mailbox.exists, { source: true });
         console.log(message.source.toString());
 
         // list subjects for all messages
@@ -101,6 +73,34 @@ main().catch(err => console.error(err));
 ## Documentation
 
 [API reference](https://imapflow.com/module-imapflow-ImapFlow.html).
+
+### Using the MIT-licensed version
+
+MIT-licensed version is available for [Postal Systems subscribers](https://postalsys.com/).
+
+First install the module from Postal Systems private registry:
+
+```
+$ npm install @postalsys/imapflow
+```
+
+next import the ImapFlow class into your script:
+
+```js
+const { ImapFlow } = require('@postalsys/imapflow');
+```
+
+If you have already built your application using the free version of ImapFlow and do not want to modify require statements in your code, you can install the MIT-licensed version as an alias for "imapflow".
+
+```
+$ npm install imapflow@npm:@postalsys/imapflow
+```
+
+This way you can keep using the old module name
+
+```js
+const { ImapFlow } = require('imapflow');
+```
 
 ## License
 
