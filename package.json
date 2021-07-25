@@ -1,6 +1,6 @@
 {
     "name": "imapflow",
-    "version": "1.0.64",
+    "version": "1.0.65",
     "description": "IMAP Client for Node",
     "main": "./lib/imap-flow.js",
     "scripts": {
@@ -20,7 +20,7 @@
         "mail"
     ],
     "author": "Andris Reinman",
-    "license": "AGPL-3.0-or-later",
+    "license": "MIT",
     "bugs": {
         "url": "https://github.com/andris9/imapflow/issues"
     },

@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.65 - 2021-07-25
+
+    -   Changed project license from AGPL to MIT
+
 -   1.0.59 - 2021-06-16
 
     -   Fixed issue with complex OR search
