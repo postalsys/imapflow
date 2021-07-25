@@ -106,6 +106,4 @@ const { ImapFlow } = require('imapflow');
 
 &copy; 2020 Andris Reinman
 
-Licensed under GNU Affero General Public License v3.0 or later.
-
-MIT-licensed version of ImapFlow is available for [Postal Systems subscribers](https://postalsys.com/).
+Licensed under MIT-license
