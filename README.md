@@ -74,34 +74,6 @@ main().catch(err => console.error(err));
 
 [API reference](https://imapflow.com/module-imapflow-ImapFlow.html).
 
-### Using the MIT-licensed version
-
-MIT-licensed version is available for [Postal Systems subscribers](https://postalsys.com/).
-
-First install the module from Postal Systems private registry:
-
-```
-$ npm install @postalsys/imapflow
-```
-
-next import the ImapFlow class into your script:
-
-```js
-const { ImapFlow } = require('@postalsys/imapflow');
-```
-
-If you have already built your application using the free version of ImapFlow and do not want to modify require statements in your code, you can install the MIT-licensed version as an alias for "imapflow".
-
-```
-$ npm install imapflow@npm:@postalsys/imapflow
-```
-
-This way you can keep using the old module name
-
-```js
-const { ImapFlow } = require('imapflow');
-```
-
 ## License
 
 &copy; 2020 Andris Reinman
