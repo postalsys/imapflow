@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.66 - 2021-07-30
+
+    -   Meta update to change README
+    -   Replaced andris9/imapflow with postalsys/imapflow
+
 -   1.0.65 - 2021-07-25
 
     -   Changed project license from AGPL to MIT

@@ -1,6 +1,6 @@
 {
     "name": "imapflow",
-    "version": "1.0.65",
+    "version": "1.0.66",
     "description": "IMAP Client for Node",
     "main": "./lib/imap-flow.js",
     "scripts": {
@@ -12,21 +12,21 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/andris9/imapflow.git"
+        "url": "git+https://github.com/postalsys/imapflow.git"
     },
     "keywords": [
         "imap",
         "email",
         "mail"
     ],
-    "author": "Andris Reinman",
+    "author": "Postal Systems OÜ",
     "license": "MIT",
     "bugs": {
-        "url": "https://github.com/andris9/imapflow/issues"
+        "url": "https://github.com/postalsys/imapflow/issues"
     },
     "homepage": "https://imapflow.com/",
     "devDependencies": {
-        "@types/node": "16.3.3",
+        "@types/node": "16.4.7",
         "braintree-jsdoc-template": "3.3.0",
         "eslint": "7.31.0",
         "eslint-config-nodemailer": "1.2.0",
@@ -45,6 +45,6 @@
         "libmime": "5.0.0",
         "libqp": "1.1.0",
         "mailsplit": "5.0.1",
-        "pino": "6.12.0"
+        "pino": "6.13.0"
     }
 }

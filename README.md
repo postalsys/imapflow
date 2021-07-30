@@ -1,6 +1,6 @@
 # ImapFlow
 
-_IMAP Client library for [IMAP API](https://imapapi.com/)._
+_Node.js IMAP Client library built for for [EmailEngine Email API](https://emailengine.app/)._
 
 The focus for ImapFlow is to provide easy to use API over IMAP. Using ImapFlow does not expect knowledge about specific IMAP details, general understanding is good enough.
 
@@ -8,7 +8,7 @@ IMAP extensions are handled in the background, so for example you can always req
 
 ## Source
 
-Source code is available from [Github](https://github.com/andris9/imapflow).
+Source code is available from [Github](https://github.com/postalsys/imapflow).
 
 ## Usage
 
@@ -76,6 +76,6 @@ main().catch(err => console.error(err));
 
 ## License
 
-&copy; 2020 Andris Reinman
+&copy; 2020-2021 Postal Systems OÜ
 
-Licensed under MIT-license
+Licensed under **MIT-license**
