@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.67 - 2021-08-02
+
+    -   Added new option `chunkSize` for `download()` options
+
 -   1.0.66 - 2021-07-30
 
     -   Meta update to change README
