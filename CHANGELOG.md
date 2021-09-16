@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.68 - 2021-09-16
+
+    -   Decrease message count on untagged EXPUNGE even if EXISTS does not follow
+
 -   1.0.67 - 2021-08-02
 
     -   Added new option `chunkSize` for `download()` options
