@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.69 - 2021-09-27
+
+    -   Added option `logRaw` to log data read from and written to the socket
+
 -   1.0.68 - 2021-09-16
 
     -   Decrease message count on untagged EXPUNGE even if EXISTS does not follow
