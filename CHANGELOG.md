@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.70 - 2021-09-27
+
+    -   IDLE logging changes
+
 -   1.0.69 - 2021-09-27
 
     -   Added option `logRaw` to log data read from and written to the socket
