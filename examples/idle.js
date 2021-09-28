@@ -21,7 +21,9 @@ let config = {
         'support-url': false,
         vendor: false,
         date: false
-    }
+    },
+
+    logRaw: true
 };
 
 let c = new ImapFlow(config);
@@ -82,7 +84,14 @@ c.connect()
                     console.error(err);
                 });
         }, 10 * 1000);
-        await c.idle();
+
+        for (let i = 0; i < 10; i++) {
+            c.idle().catch(err => {
+                console.error(err);
+            });
+        }
+
+        //await c.idle();
     })
     .catch(err => {
         console.error(err);

@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.71 - 2021-09-28
+
+    -   IDLE precheck changes
+
 -   1.0.70 - 2021-09-27
 
     -   IDLE logging changes
