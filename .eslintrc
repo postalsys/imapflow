@@ -8,7 +8,9 @@
         "BigInt": true
     },
     "extends": ["nodemailer", "prettier"],
+    "parser": "@babel/eslint-parser",
     "parserOptions": {
         "ecmaVersion": 2018
-    }
+    },
+    "plugins": ["@babel"]
 }

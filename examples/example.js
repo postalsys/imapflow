@@ -6,6 +6,9 @@ const os = require('os');
 const pathlib = require('path');
 const { ImapFlow } = require('../lib/imap-flow');
 
+console.log('VERSION');
+console.log(ImapFlow.version);
+
 let config = {
     host: 'localhost',
     port: 9993,
