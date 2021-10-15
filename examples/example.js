@@ -18,7 +18,7 @@ let config = {
     },
 
     auth: {
-        user: 'myuser',
+        user: 'myuser2',
         pass: 'verysecret'
     },
 
@@ -58,9 +58,10 @@ async function listAll(connection) {
         uid: true,
         changedSince: connection.mailbox && connection.mailbox.highestModseq ? connection.mailbox.highestModseq - BigInt(10) : false
     });
+    console.log('LISTALL');
     for await (let message of connection.fetch(
-        //'1:*',
-        { unseen: false },
+        '1:*',
+        //{ unseen: false },
         {
             uid: true,
             flags: true,
@@ -77,6 +78,7 @@ async function listAll(connection) {
             changedSince: connection.mailbox && connection.mailbox.highestModseq ? connection.mailbox.highestModseq - BigInt(10) : false
         }
     )) {
+        console.log(`requestTagMap size: ${connection.requestTagMap.size}`, connection.requestTagMap);
         m++;
         console.log(message.headers);
         console.log(message.envelope.subject);
@@ -85,6 +87,7 @@ async function listAll(connection) {
 
         // await new Promise(resolve => setTimeout(resolve, 100));
     }
+    console.log('ALL LISTED');
     console.log(m, Date.now() - t);
 }
 
@@ -184,6 +187,7 @@ c.connect()
 
         await c.mailboxOpen('INBOX');
 
+        console.log('LIST ALL NEXT');
         await listAll(c);
         await listLast(c);
 

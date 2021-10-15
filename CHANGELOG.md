@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.75 - 2021-10-15
+
+    -   Fixed an exception with failing IDLE (ramiroaisen #60)
+    -   Do not use 1 and 1.MIME for single node messages, fallback to TEXT and HEADERS
+
 -   1.0.71 - 2021-09-28
 
     -   IDLE precheck changes
