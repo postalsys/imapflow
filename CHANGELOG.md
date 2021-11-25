@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.77 - 2021-11-25
+
+    -   Testing out proxy connections
+    -   Add X-GM-RAW support for search (jhi721 #68)
+
 -   1.0.75 - 2021-10-15
 
     -   Fixed an exception with failing IDLE (ramiroaisen #60)

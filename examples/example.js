@@ -10,17 +10,20 @@ console.log('VERSION');
 console.log(ImapFlow.version);
 
 let config = {
-    host: 'localhost',
-    port: 9993,
+    host: 'ethereal.email',
+    port: 993,
     secure: true,
     tls: {
         rejectUnauthorized: false
     },
 
     auth: {
-        user: 'myuser2',
-        pass: 'verysecret'
+        user: 'agustin.huel47@ethereal.email',
+        pass: 'uyD6qzpstccxXNtTTa'
     },
+
+    //proxy: 'socks://localhost:1080',
+    proxy: 'http://localhost:3128',
 
     clientInfo: {
         name: false,
@@ -29,7 +32,27 @@ let config = {
         date: false
     }
 };
+/*
+config = {
+    host: 'outlook.office365.com',
+    port: 993,
+    secure: true,
+    auth: {
+        user: 'andris.reinman@hotmail.com',
+        accessToken:
+            'EwBIA+l3BAAU0+FyEzrGK6gRIXxWPxCw8ZPo0GUAAfJnd8ckJ9zN/tPTeapMcKON0IGTjeCI5J+L/yB2gaKly2hqn1yPmWBUW+Por/GV90Obgz1GELy3QvuJXDGO1knu+RW44947rLhS/i/Tt4b3qu1fN4tbh4DwgWTbstNHNjL9qe6P8ZV2shV7Rr5dg0I1kXq4r4JVXVxL6+kYHmgP1ngS4N0HDC5ESuJe6/0HgmWlBGpY119c82g6k9gqi3IaNDoI3waZhOBYKPF9w1tNY0hkUHId1GxxdjQSu0jMSAl4DXawfpzA/oTpEyqmV3Bwl+G+ECv6P5EnHLkNDiw3zMW9+3tOBsapejgJ9f2rQ6T9KNBBmcseEMAeMf9Lj5wDZgAACOPxpQQ3BGYIGAJ+E5GyeCfzyHOCXsHFjL4qnKy16OdAwyUyPjW63Xmaqp0SWPRqA8jGF5OXGO9TfAP4oHFRcZMM6ERaH13BraCZ9uPxboApbhXWuo3Os6vyW6jtvZV8dSS+oMcvzAfgGQgk7MlAweNSyxXs1cEx7exANSVWsYFMaZGiNPVxnJ0EHcY31upAvRyqAbZPU2mP1/O3GLBp7QIc0CdpOMtcuSGqYJd4+jrfvAMpZvl0veLnSMCjlPwlWTwUUqut6IdG9LiaTTNQ4973b6SCZ2eYZAuPuqHAoA8C3XUwQhX34yizI4haQZkeOb2z0ntQHdjagV6mnbh8hy8cHG7yb4N5lcC5FlzARfmE6RSHvk6HvJOrXxVKMacmOEwq7GuJBtUl4vBwA4Xe98uSFo1Lak62obMuZgJuaYw4R4gDoKdz49xTfx7gtQy3HVCtvLRQvNYEd+RaMvuST2d8WwhnaMe/1GeBmQ1EV1z2bkXABw8lAEWkSR7a4fvI8lu0niC4iThQWe2Ci/fVMn0vSbNi9h1DhAIVRZ9eeHBe695cePMM5SnurbezaU1+EeTtRrWyU1BC9c1YTznYoY4U2MRvjX7hRmExR+FGajKWxCpm1rsabmC90uBJ5sdryqDcMxqK7wE8bTn1+WAh/03OJ/qPIA4O+6AcnRB8SbWxB/8Sb6ncEj7Ns12M5izsmKcsO0QrFMWHlcYJmUlk8VMHH0UC'
+    },
 
+    clientInfo: {
+        name: 'Oauth-Test',
+        'support-url': false,
+        vendor: false,
+        date: false
+    },
+
+    logRaw: true
+};
+*/
 let c = new ImapFlow(config);
 c.on('error', err => {
     c.log.error(err);
@@ -153,7 +176,7 @@ c.connect()
     .then(async () => {
         console.log('CONENCTION established');
         //console.log(c.folders);
-
+        /*
         let fname = 'test-' + Date.now();
 
         let res = await c.mailboxCreate(fname);
@@ -184,13 +207,13 @@ c.connect()
         console.log(c.namespace);
         console.log(c.enabled);
         console.log(c.tls);
-
+*/
         await c.mailboxOpen('INBOX');
 
         console.log('LIST ALL NEXT');
         await listAll(c);
         await listLast(c);
-
+        /*
         c.messageFlagsAdd('1:3', ['foo'], { uid: true, useLabels: true });
 
         c.messageFlagsAdd('*', ['Zuulius', '\\FLAGGED'], { uid: true, silent: false });
@@ -294,13 +317,6 @@ c.connect()
         res = await c.getQuota('jupikas');
         console.log(res);
 
-        // await c.logout();
-        /*        
-            setTimeout(() => {
-                console.log('LOGOUT');
-                c.status('INBOX', { messages: true });
-            }, 1 * 60 * 1000);
-        */
 
         await c.mailboxClose();
 
@@ -336,6 +352,7 @@ c.connect()
         lock = await c.getMailboxLock('INBOX');
         await c.idle();
         lock.release();
+*/
     })
     .catch(err => {
         console.error(err);
