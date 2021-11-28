@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.78 - 2021-11-28
+
+    -   Proxy support. Use configuration options `proxy: "url"` to use proxies
+
 -   1.0.77 - 2021-11-25
 
     -   Testing out proxy connections
