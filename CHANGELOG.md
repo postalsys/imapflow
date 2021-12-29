@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.79 - 2021-12-29
+
+    -   Added property `greeting` that contains that first response from the server
+
 -   1.0.78 - 2021-11-28
 
     -   Proxy support. Use configuration options `proxy: "url"` to use proxies
