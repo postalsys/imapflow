@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.80 - 2022-02-07
+
+    -   Added support for the missing NOMODSEQ mailbox modifier
+
 -   1.0.79 - 2021-12-29
 
     -   Added property `greeting` that contains that first response from the server
