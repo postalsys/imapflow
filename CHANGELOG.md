@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.81 - 2022-02-15
+
+    -   Added support for the QRESYNC extension and untagged VANISHED responses
+
 -   1.0.80 - 2022-02-07
 
     -   Added support for the missing NOMODSEQ mailbox modifier
