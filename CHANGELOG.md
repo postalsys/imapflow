@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.82 - 2022-02-15
+
+    -   Added extra option `expungeHandler`
+
 -   1.0.81 - 2022-02-15
 
     -   Added support for the QRESYNC extension and untagged VANISHED responses
