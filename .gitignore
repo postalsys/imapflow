@@ -115,3 +115,5 @@ lib/types.d.ts
 
 # Stock editor trash files
 *~
+
+examples/qresync.js

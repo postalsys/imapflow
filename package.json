@@ -30,9 +30,9 @@
         "@babel/eslint-plugin": "7.16.5",
         "@babel/plugin-syntax-class-properties": "7.12.13",
         "@babel/preset-env": "7.16.11",
-        "@types/node": "17.0.15",
+        "@types/node": "17.0.18",
         "braintree-jsdoc-template": "3.3.0",
-        "eslint": "8.8.0",
+        "eslint": "8.9.0",
         "eslint-config-nodemailer": "1.2.0",
         "eslint-config-prettier": "8.3.0",
         "grunt": "1.4.1",
@@ -50,7 +50,7 @@
         "libqp": "1.1.0",
         "mailsplit": "5.3.1",
         "nodemailer": "6.7.2",
-        "pino": "7.6.5",
+        "pino": "7.8.0",
         "socks": "2.6.2"
     }
 }
