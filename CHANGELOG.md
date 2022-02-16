@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.83 - 2022-02-16
+
+    -   QRESYNC tweaks
+
 -   1.0.82 - 2022-02-15
 
     -   Added extra option `expungeHandler`
