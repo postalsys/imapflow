@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.84 - 2022-02-17
+
+    -   QRESYNC tweaks
+
 -   1.0.83 - 2022-02-16
 
     -   QRESYNC tweaks
