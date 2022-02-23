@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.85 - 2022-02-23
+
+    -   Trim null bytes in the beginning of IMAP responses to deal with a buggy server that pads responses with null bytes
+
 -   1.0.84 - 2022-02-17
 
     -   QRESYNC tweaks
