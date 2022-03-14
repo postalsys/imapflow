@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.86 - 2022-03-14
+
+    -   Do not try to decode mailbox path from utf7 as methods expect utf-8 not utf-7
+
 -   1.0.85 - 2022-02-23
 
     -   Trim null bytes in the beginning of IMAP responses to deal with a buggy server that pads responses with null bytes

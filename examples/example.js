@@ -23,7 +23,7 @@ let config = {
     },
 
     //proxy: 'socks://localhost:1080',
-    proxy: 'http://localhost:3128',
+    //proxy: 'http://localhost:3128',
 
     clientInfo: {
         name: false,
@@ -208,6 +208,15 @@ c.connect()
         console.log(c.enabled);
         console.log(c.tls);
 */
+
+        let mboxName = 'AT&T';
+        let created = await c.mailboxCreate(mboxName);
+        console.log(created);
+        let mbox = await c.mailboxOpen(mboxName);
+        console.log(mbox);
+        let deleted = await c.mailboxDelete(mboxName);
+        console.log(deleted);
+
         await c.mailboxOpen('INBOX');
 
         console.log('LIST ALL NEXT');
