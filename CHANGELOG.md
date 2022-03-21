@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.87 - 2022-03-21
+
+    -   If LIST failed then do not suppress exception
+
 -   1.0.86 - 2022-03-14
 
     -   Do not try to decode mailbox path from utf7 as methods expect utf-8 not utf-7
