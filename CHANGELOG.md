@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.88 - 2022-03-24
+
+    -   Fixed folder name match where not all non-ascii characters triggered UTF encoding
+
 -   1.0.87 - 2022-03-21
 
     -   If LIST failed then do not suppress exception
