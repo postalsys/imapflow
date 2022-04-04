@@ -32,7 +32,7 @@
         "@babel/preset-env": "7.16.11",
         "@types/node": "17.0.23",
         "braintree-jsdoc-template": "3.3.0",
-        "eslint": "8.11.0",
+        "eslint": "8.12.0",
         "eslint-config-nodemailer": "1.2.0",
         "eslint-config-prettier": "8.5.0",
         "grunt": "1.4.1",
@@ -43,7 +43,7 @@
         "tsd-jsdoc": "2.5.0"
     },
     "dependencies": {
-        "encoding-japanese": "1.0.30",
+        "encoding-japanese": "2.0.0",
         "iconv-lite": "0.6.3",
         "libbase64": "1.2.1",
         "libmime": "5.0.0",
