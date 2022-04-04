@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.89 - 2022-04-04
+
+    -   Added new event type `response` that emits all command responses
+
 -   1.0.88 - 2022-03-24
 
     -   Fixed folder name match where not all non-ascii characters triggered UTF encoding
