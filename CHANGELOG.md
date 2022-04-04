@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.90 - 2022-04-04
+
+    -   Added new configuration option `maxIdleTime`
+
 -   1.0.89 - 2022-04-04
 
     -   Added new event type `response` that emits all command responses
