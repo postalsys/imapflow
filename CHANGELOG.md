@@ -4,7 +4,7 @@
 
     -   Do not throw if literal includes a null byte
     -   Use UTF8 path names by default
-    -   Overrides '\*' range query with then EXISTIS value
+    -   Overrides '\*' range query with the EXISTS value
 
 -   1.0.90 - 2022-04-04
 
