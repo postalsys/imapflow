@@ -1,6 +1,6 @@
 {
     "name": "imapflow",
-    "version": "1.0.90",
+    "version": "1.0.91",
     "description": "IMAP Client for Node",
     "main": "./lib/imap-flow.js",
     "scripts": {
@@ -8,7 +8,8 @@
         "prepare": "npm run build",
         "docs": "rm -rf docs && mkdir -p docs && jsdoc lib/imap-flow.js -c jsdoc.json -R README.md --destination docs/ && cp assets/favicon.ico docs",
         "dst": "node types.js",
-        "build": "npm run docs && npm run dst"
+        "build": "npm run docs && npm run dst",
+        "st": "npm run docs && st -d docs -i index.html"
     },
     "repository": {
         "type": "git",
@@ -40,6 +41,7 @@
         "grunt-contrib-nodeunit": "4.0.0",
         "grunt-eslint": "24.0.0",
         "jsdoc": "3.6.10",
+        "st": "3.0.0",
         "tsd-jsdoc": "2.5.0"
     },
     "dependencies": {

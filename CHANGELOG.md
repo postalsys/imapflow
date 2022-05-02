@@ -1,5 +1,11 @@
 # CHANGELOG
 
+-   1.0.91 - 2022-05-02
+
+    -   Do not throw if literal includes a null byte
+    -   Use UTF8 path names by default
+    -   Overrides '\*' range query with then EXISTIS value
+
 -   1.0.90 - 2022-04-04
 
     -   Added new configuration option `maxIdleTime`
