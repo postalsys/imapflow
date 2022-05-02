@@ -117,3 +117,4 @@ lib/types.d.ts
 *~
 
 examples/qresync.js
+examples/binary.js
