@@ -200,8 +200,7 @@ module.exports['IMAP Compiler: hide long strings'] = test =>
                     attributes: [
                         {
                             type: 'String',
-                            value:
-                                'Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere!'
+                            value: 'Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere! Tere tere!'
                         },
                         'Vana kere'
                     ]
@@ -245,6 +244,46 @@ module.exports['IMAP Compiler: LITERAL text'] = test =>
                 ]
             }),
             '* CMD {10}\r\nTere tere! "Vana kere"'
+        )
+    );
+
+module.exports['IMAP Compiler: LITERAL literal'] = test =>
+    asyncWrapper(test, async test =>
+        test.equal(
+            await compiler({
+                tag: '*',
+                command: 'CMD',
+                attributes: [
+                    // keep indentation
+                    {
+                        type: 'LITERAL',
+                        value: 'Tere\x00 tere!',
+                        isLiteral8: false
+                    },
+                    'Vana kere'
+                ]
+            }),
+            '* CMD {11}\r\nTere\x00 tere! "Vana kere"'
+        )
+    );
+
+module.exports['IMAP Compiler: LITERAL literal8'] = test =>
+    asyncWrapper(test, async test =>
+        test.equal(
+            await compiler({
+                tag: '*',
+                command: 'CMD',
+                attributes: [
+                    // keep indentation
+                    {
+                        type: 'LITERAL',
+                        value: 'Tere\x00 tere!',
+                        isLiteral8: true
+                    },
+                    'Vana kere'
+                ]
+            }),
+            '* CMD ~{11}\r\nTere\x00 tere! "Vana kere"'
         )
     );
 

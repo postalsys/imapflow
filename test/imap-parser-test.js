@@ -309,6 +309,36 @@ module.exports['IMAP Parser: Literals: single literal'] = test =>
         ])
     );
 
+module.exports['IMAP Parser: Literals: literal with NULL'] = test =>
+    asyncWrapper(test, async test =>
+        test.deepEqual((await parser('TAG1 CMD {4}\r\n', { literals: [Buffer.from('ab\x00d')] })).attributes, [
+            {
+                type: 'LITERAL',
+                value: Buffer.from('ab\x00d')
+            }
+        ])
+    );
+
+module.exports['IMAP Parser: Literals: literal8'] = test =>
+    asyncWrapper(test, async test =>
+        test.deepEqual((await parser('TAG1 CMD ~{4}\r\n', { literals: [Buffer.from('ab\x00d')] })).attributes, [
+            {
+                type: 'LITERAL',
+                value: Buffer.from('ab\x00d')
+            }
+        ])
+    );
+
+module.exports['IMAP Parser: Literals: unexpected literal8 prefix'] = test =>
+    asyncWrapper(test, async test => {
+        try {
+            await parser('TAG1 CMD ~\r\n');
+            test.ok(false, 'Must throw');
+        } catch (err) {
+            test.ok(err, 'Error must exist');
+        }
+    });
+
 module.exports['IMAP Parser: Literals: multiple literals'] = test =>
     asyncWrapper(test, async test =>
         test.deepEqual((await parser('TAG1 CMD {4}\r\n {4}\r\n', { literals: [Buffer.from('abcd'), Buffer.from('kere')] })).attributes, [
