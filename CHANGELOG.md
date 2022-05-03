@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.93 - 2022-05-03
+
+    -   Fixed missing unicode encoding for APPEND, COPY, MOVE
+
 -   1.0.92 - 2022-05-03
 
     -   Added support for IMAP BINARY extension (rfc3516)
