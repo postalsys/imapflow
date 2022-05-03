@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.95 - 2022-05-03
+
+    -   Do not use FETCH BINARY, unless `binary` option is `true`
+
 -   1.0.94 - 2022-05-03
 
     -   Fixed source download
