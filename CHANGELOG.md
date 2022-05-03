@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.92 - 2022-05-03
+
+    -   Added support for IMAP BINARY extension (rfc3516)
+    -   Logging improvements
+
 -   1.0.91 - 2022-05-02
 
     -   Do not throw if literal includes a null byte
