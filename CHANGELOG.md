@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.94 - 2022-05-03
+
+    -   Fixed source download
+
 -   1.0.93 - 2022-05-03
 
     -   Fixed missing unicode encoding for APPEND, COPY, MOVE
