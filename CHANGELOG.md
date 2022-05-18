@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.96 - 2022-05-18
+
+    -   Allow non-standard characters in ATOM if it's the string after NO/OK/BAD response
+
 -   1.0.95 - 2022-05-03
 
     -   Do not use FETCH BINARY, unless `binary` option is `true`
