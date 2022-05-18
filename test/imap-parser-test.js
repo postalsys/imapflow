@@ -905,3 +905,19 @@ module.exports['IMAP Parser: escaped quotes'] = test =>
     );
 
 module.exports['IMAP Parser: mimetorture'] = test => asyncWrapper(test, async test => test.deepEqual(await parser(mimetorture.input), mimetorture.output));
+
+module.exports['IMAP Parser, unicode select'] = test =>
+    asyncWrapper(test, async test =>
+        test.deepEqual((await parser('F OK [READ-WRITE] [Gmail]/Visi laiškai selected. (Success) [THROTTLED]')).attributes, [
+            {
+                type: 'ATOM',
+                value: '',
+                section: [{ type: 'ATOM', value: 'READ-WRITE' }]
+            },
+            { type: 'ATOM', value: '[Gmail]/Visi' },
+            { type: 'ATOM', value: 'laiškai' },
+            { type: 'ATOM', value: 'selected.' },
+            [{ type: 'ATOM', value: 'Success' }],
+            { type: 'ATOM', value: '[THROTTLED]' }
+        ])
+    );
