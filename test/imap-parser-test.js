@@ -921,3 +921,15 @@ module.exports['IMAP Parser, unicode select'] = test =>
             { type: 'ATOM', value: '[THROTTLED]' }
         ])
     );
+
+module.exports['IMAP Parser, single quote in atom'] = test =>
+    asyncWrapper(test, async test =>
+        test.deepEqual((await parser('* LIST (HasNoChildren UnMarked) "/" \'a')).attributes, [
+            [
+                { type: 'ATOM', value: 'HasNoChildren' },
+                { type: 'ATOM', value: 'UnMarked' }
+            ],
+            { type: 'STRING', value: '/' },
+            { type: 'ATOM', value: "'a" }
+        ])
+    );
