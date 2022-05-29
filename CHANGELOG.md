@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.97 - 2022-05-29
+
+    -   Allow single quotes in atoms
+
 -   1.0.96 - 2022-05-18
 
     -   Allow non-standard characters in ATOM if it's the string after NO/OK/BAD response
