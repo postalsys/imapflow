@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.98 - 2022-05-30
+
+    -   Fixed an issue with envelope parsing where literal values were returned as Buffers
+
 -   1.0.97 - 2022-05-29
 
     -   Allow single quotes in atoms
