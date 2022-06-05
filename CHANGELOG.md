@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.99 - 2022-06-05
+
+    -   Check if folder exists on failed status command
+
 -   1.0.98 - 2022-05-30
 
     -   Fixed an issue with envelope parsing where literal values were returned as Buffers
