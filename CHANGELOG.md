@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.100 - 2022-06-17
+
+    -   Emit new message notification if appending to currently opened folder
+
 -   1.0.99 - 2022-06-05
 
     -   Check if folder exists on failed status command
