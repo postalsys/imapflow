@@ -1,14 +1,16 @@
 # ImapFlow
 
+ImapFlow is a modern and easy-to-use IMAP client library for Node.js.
+
 ---
 
-> Managing IMAP connections is cool, but if you are only looking for an easy way to integrate email accounts, then ImapFlow was built for [EmailEngine Email API](https://emailengine.app/). It's a self-hosted software that converts all IMAP accounts to easy-to-use REST interfaces.
+> Managing an IMAP connection is cool, but if you are only looking for an easy way to integrate email accounts, then ImapFlow was built for [EmailEngine Email API](https://emailengine.app/). It's a self-hosted software that converts all IMAP accounts to easy-to-use REST interfaces.
 
 ---
 
 The focus for ImapFlow is to provide easy to use API over IMAP. Using ImapFlow does not expect knowledge about specific IMAP details. A general understanding is good enough.
 
-IMAP extensions are handled in the background, so for example, you can always request `labels` value from a {@link FetchQueryObject|fetch()} call, but if the IMAP server does not support `X-GM-EXT1` extension, then `labels` value is not included in the response.
+IMAP extensions are handled in the background, so, for example, you can always request `labels` value from a {@link FetchQueryObject|fetch()} call, but if the IMAP server does not support `X-GM-EXT1` extension, then `labels` value is not included in the response.
 
 ## Source
 
