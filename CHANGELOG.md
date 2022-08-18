@@ -1,5 +1,10 @@
 # CHANGELOG
 
+-   1.0.102 - 2022-08-18
+
+    -   Added new option `{statusQuery: {<statusOptions>}` for `list()` method
+    -   Added support for LIST-STATUS extension https://datatracker.ietf.org/doc/html/rfc5819
+
 -   1.0.100 - 2022-06-17
 
     -   Emit new message notification if appending to currently opened folder
