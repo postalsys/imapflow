@@ -914,11 +914,19 @@ module.exports['IMAP Parser, unicode select'] = test =>
                 value: '',
                 section: [{ type: 'ATOM', value: 'READ-WRITE' }]
             },
-            { type: 'ATOM', value: '[Gmail]/Visi' },
-            { type: 'ATOM', value: 'laiškai' },
-            { type: 'ATOM', value: 'selected.' },
-            [{ type: 'ATOM', value: 'Success' }],
-            { type: 'ATOM', value: '[THROTTLED]' }
+            { type: 'TEXT', value: '[Gmail]/Visi laiškai selected. (Success) [THROTTLED]' }
+        ])
+    );
+
+module.exports['IMAP Parser, unicode select 2'] = test =>
+    asyncWrapper(test, async test =>
+        test.deepEqual((await parser('E OK [READ-WRITE] [Gmail]/Вся почта selected. (Success) [THROTTLED]')).attributes, [
+            {
+                type: 'ATOM',
+                value: '',
+                section: [{ type: 'ATOM', value: 'READ-WRITE' }]
+            },
+            { type: 'TEXT', value: '[Gmail]/Вся почта selected. (Success) [THROTTLED]' }
         ])
     );
 
