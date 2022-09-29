@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.109 - 2022-09-29
+
+    -   New method `downloadMany`
+
 -   1.0.102 - 2022-08-18
 
     -   Added new option `{statusQuery: {<statusOptions>}` for `list()` method
