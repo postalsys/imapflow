@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.110 - 2022-10-10
+
+    -   Allow unicode atoms by default
+
 -   1.0.109 - 2022-09-29
 
     -   New method `downloadMany`

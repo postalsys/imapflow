@@ -941,3 +941,32 @@ module.exports['IMAP Parser, single quote in atom'] = test =>
             { type: 'ATOM', value: "'a" }
         ])
     );
+
+module.exports['IMAP Parser, unicode status 1'] = test =>
+    asyncWrapper(test, async test =>
+        test.deepEqual((await parser('* STATUS Segregator/Społeczności (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 1)')).attributes, [
+            { type: 'ATOM', value: 'Segregator/Społeczności' },
+            [
+                { type: 'ATOM', value: 'MESSAGES' },
+                { type: 'ATOM', value: '0' },
+                { type: 'ATOM', value: 'UIDNEXT' },
+                { type: 'ATOM', value: '1' },
+                { type: 'ATOM', value: 'UIDVALIDITY' },
+                { type: 'ATOM', value: '1' }
+            ]
+        ])
+    );
+module.exports['IMAP Parser, unicode status 12'] = test =>
+    asyncWrapper(test, async test =>
+        test.deepEqual((await parser('* STATUS Šegregator/Społeczności (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 1)')).attributes, [
+            { type: 'ATOM', value: 'Šegregator/Społeczności' },
+            [
+                { type: 'ATOM', value: 'MESSAGES' },
+                { type: 'ATOM', value: '0' },
+                { type: 'ATOM', value: 'UIDNEXT' },
+                { type: 'ATOM', value: '1' },
+                { type: 'ATOM', value: 'UIDVALIDITY' },
+                { type: 'ATOM', value: '1' }
+            ]
+        ])
+    );
