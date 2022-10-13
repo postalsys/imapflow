@@ -1,5 +1,12 @@
 # CHANGELOG
 
+-   1.0.111 - 2022-10-13
+
+    -   Added new connection options
+        -   connectionTimeout=90000: how many milliseconds to wait for the connection to establish (default is 90 seconds)
+        -   greetingTimeout=16000: how many milliseconds to wait for the greeting after connection is established (default is 16 seconds)
+        -   socketTimeout=300000: how many milliseconds of inactivity to allow (default is 5 minutes)
+
 -   1.0.110 - 2022-10-10
 
     -   Allow unicode atoms by default
