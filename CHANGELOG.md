@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.112 - 2022-10-16
+
+    -   Improved ID compatiblity with servers that allow ID only after login
+
 -   1.0.111 - 2022-10-13
 
     -   Added new connection options
