@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.113 - 2022-10-21
+
+    -   Added `stats()` method to get the count of bytes sent and received
+
 -   1.0.112 - 2022-10-16
 
     -   Improved ID compatiblity with servers that allow ID only after login

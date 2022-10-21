@@ -60,6 +60,10 @@ c.on('expunge', updateEvent => {
     console.log(util.inspect(updateEvent, false, 22));
 });
 
+setTimeout(() => {
+    console.log(c.stats());
+}, 1000);
+
 c.connect()
     //.then(() => c.list())
     .then(async () => {
