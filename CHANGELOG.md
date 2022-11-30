@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.116 - 2022-11-30
+
+    -   Added `SPECIAL-USE` flag by default when given parameters to `Imap#list`
+
 -   1.0.113 - 2022-10-21
 
     -   Added `stats()` method to get the count of bytes sent and received
