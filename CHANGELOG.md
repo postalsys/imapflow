@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.117 - 2022-12-05
+
+    -   Updated command compiling. The command compiler returns a Buffer, not a "binary" string.
+
 -   1.0.116 - 2022-11-30
 
     -   Added `SPECIAL-USE` flag by default when given parameters to `Imap#list`
