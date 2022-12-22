@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.118 - 2022-12-22
+
+    -   Refactored detecting special use folders
+
 -   1.0.117 - 2022-12-05
 
     -   Updated command compiling. The command compiler returns a Buffer, not a "binary" string.
