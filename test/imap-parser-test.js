@@ -970,3 +970,10 @@ module.exports['IMAP Parser, unicode status 12'] = test =>
             ]
         ])
     );
+
+module.exports['IMAP Parser, NO with a dot'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('X NO Server Unavailable. 15');
+        test.equal(parsed.command, 'NO');
+        test.deepEqual(parsed.attributes, [{ type: 'TEXT', value: 'Server Unavailable. 15' }]);
+    });
