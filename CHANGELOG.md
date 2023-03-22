@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.123 - 2023-03-22
+
+    -   Do not throw if server responds with `tag BYE`
+
 -   1.0.118 - 2022-12-22
 
     -   Refactored detecting special use folders
