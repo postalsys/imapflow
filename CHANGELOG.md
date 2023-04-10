@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.127 - 2023-04-10
+
+    -   Use default Node.js TLS settings
+
 -   1.0.123 - 2023-03-22
 
     -   Do not throw if server responds with `tag BYE`
