@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.129 - 2023-06-12
+
+    -   Bumped deps for maintenance
+
 -   1.0.127 - 2023-04-10
 
     -   Use default Node.js TLS settings
