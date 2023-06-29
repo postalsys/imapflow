@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.131 - 2023-06-29
+
+    -   Fixed issue with labels that start with tilde
+
 -   1.0.129 - 2023-06-12
 
     -   Bumped deps for maintenance
