@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.134 - 2023-07-20
+
+    -   Fixed unicode search if UTF8=ACCEPT extension was enabled
+
 -   1.0.131 - 2023-06-29
 
     -   Fixed issue with labels that start with tilde
