@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.135 - 2023-07-29
+
+    -   Improved handling of unexpected close
+
 -   1.0.134 - 2023-07-20
 
     -   Fixed unicode search if UTF8=ACCEPT extension was enabled
