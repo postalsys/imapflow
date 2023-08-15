@@ -1,5 +1,9 @@
 # CHANGELOG
 
+-   1.0.136 - 2023-08-15
+
+    -   Added missing destroySoon method for the PassThrough writable socket
+
 -   1.0.135 - 2023-07-29
 
     -   Improved handling of unexpected close
