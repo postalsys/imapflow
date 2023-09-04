@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.138](https://github.com/postalsys/imapflow/compare/v1.0.137...v1.0.138) (2023-09-04)
+
+
+### Bug Fixes
+
+* **release:** Added package-lock ([e35bda8](https://github.com/postalsys/imapflow/commit/e35bda8a2b14503ba30a46b555df82ab1084cf5a))
+* **release:** updated package-lock ([b59220f](https://github.com/postalsys/imapflow/commit/b59220f54a58111e0b3259c502ff51b2a624f397))
+
 ## [1.0.137](https://github.com/postalsys/imapflow/compare/v1.0.136...v1.0.137) (2023-09-04)
 
 
