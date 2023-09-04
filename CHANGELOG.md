@@ -1,4 +1,13 @@
-# CHANGELOG
+# Changelog
+
+## [1.0.137](https://github.com/postalsys/imapflow/compare/v1.0.136...v1.0.137) (2023-09-04)
+
+
+### Bug Fixes
+
+* **deps:** Bumped dependencies ([e8f5e8c](https://github.com/postalsys/imapflow/commit/e8f5e8ce431debddeecf523fa8739ae5ad23c659))
+
+## CHANGELOG
 
 -   1.0.136 - 2023-08-15
 
