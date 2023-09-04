@@ -82,6 +82,6 @@ main().catch(err => console.error(err));
 
 ## License
 
-&copy; 2020-2022 Postal Systems OÜ
+&copy; 2020-2023 Postal Systems OÜ
 
 Licensed under **MIT-license**
