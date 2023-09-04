@@ -2,11 +2,8 @@
 
 ImapFlow is a modern and easy-to-use IMAP client library for Node.js.
 
----
-
+> [!NOTE]
 > Managing an IMAP connection is cool, but if you are only looking for an easy way to integrate email accounts, then ImapFlow was built for [EmailEngine Email API](https://emailengine.app/). It's a self-hosted software that converts all IMAP accounts to easy-to-use REST interfaces.
-
----
 
 The focus for ImapFlow is to provide easy to use API over IMAP. Using ImapFlow does not expect knowledge about specific IMAP details. A general understanding is good enough.
 
