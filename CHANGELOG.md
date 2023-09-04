@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.143](https://github.com/postalsys/imapflow/compare/v1.0.142...v1.0.143) (2023-09-04)
+
+
+### Bug Fixes
+
+* **release:** updated provenance setting ([e178629](https://github.com/postalsys/imapflow/commit/e1786296569e5a0acfb997b007091925519c7d79))
+
 ## [1.0.142](https://github.com/postalsys/imapflow/compare/v1.0.141...v1.0.142) (2023-09-04)
 
 
