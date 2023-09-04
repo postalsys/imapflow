@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.139](https://github.com/postalsys/imapflow/compare/v1.0.138...v1.0.139) (2023-09-04)
+
+
+### Bug Fixes
+
+* **license:** Bumped license timeframe ([ce308b6](https://github.com/postalsys/imapflow/commit/ce308b66e5d30819c6bab7d75752528abc4b8436))
+
 ## [1.0.138](https://github.com/postalsys/imapflow/compare/v1.0.137...v1.0.138) (2023-09-04)
 
 
