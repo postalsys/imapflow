@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.141](https://github.com/postalsys/imapflow/compare/v1.0.140...v1.0.141) (2023-09-04)
+
+
+### Bug Fixes
+
+* **readme:** testing note format ([3038c4d](https://github.com/postalsys/imapflow/commit/3038c4d9740af0a5161bbc45dd13b86d4febc0ac))
+
 ## [1.0.140](https://github.com/postalsys/imapflow/compare/v1.0.139...v1.0.140) (2023-09-04)
 
 
