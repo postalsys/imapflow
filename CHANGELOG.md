@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.144](https://github.com/postalsys/imapflow/compare/v1.0.143...v1.0.144) (2023-09-13)
+
+
+### Bug Fixes
+
+* **MS365:** Wait until responding with a throttling response ([#142](https://github.com/postalsys/imapflow/issues/142)) ([09bfb3e](https://github.com/postalsys/imapflow/commit/09bfb3e1b90bdd37bc1c9b40e9284ad4afbd5c72))
+
 ## [1.0.143](https://github.com/postalsys/imapflow/compare/v1.0.142...v1.0.143) (2023-09-04)
 
 
