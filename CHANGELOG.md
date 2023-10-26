@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.146](https://github.com/postalsys/imapflow/compare/v1.0.145...v1.0.146) (2023-10-26)
+
+
+### Bug Fixes
+
+* **throttling:** automatically retry throttled FETCH commands a few times ([07a9aea](https://github.com/postalsys/imapflow/commit/07a9aea37ae55ed885ccc4c0e3732b367ad82cd3))
+
 ## [1.0.145](https://github.com/postalsys/imapflow/compare/v1.0.144...v1.0.145) (2023-10-26)
 
 
