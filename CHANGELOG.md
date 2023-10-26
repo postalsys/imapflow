@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.147](https://github.com/postalsys/imapflow/compare/v1.0.146...v1.0.147) (2023-10-26)
+
+
+### Bug Fixes
+
+* **idle:** removed unneeded variable ([da59d9a](https://github.com/postalsys/imapflow/commit/da59d9a960dd0992b22335902808a315b1cb6ded))
+
 ## [1.0.146](https://github.com/postalsys/imapflow/compare/v1.0.145...v1.0.146) (2023-10-26)
 
 
