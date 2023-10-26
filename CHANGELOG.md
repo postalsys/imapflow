@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.145](https://github.com/postalsys/imapflow/compare/v1.0.144...v1.0.145) (2023-10-26)
+
+
+### Bug Fixes
+
+* **docs:** Fixed mailbox property name in AppendResponseObject ([ca6d789](https://github.com/postalsys/imapflow/commit/ca6d789b761d3117f733ed7b026122098f4d9142))
+* **special-use:** support custom special use flags for the Archive folder ([17aa6a8](https://github.com/postalsys/imapflow/commit/17aa6a8baf180a7349fe30f897184eb8e359a498))
+
 ## [1.0.144](https://github.com/postalsys/imapflow/compare/v1.0.143...v1.0.144) (2023-09-13)
 
 
