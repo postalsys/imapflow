@@ -23,6 +23,6 @@
         "encoding": "utf8",
         "private": true,
         "recurse": true,
-        "template": "./node_modules/braintree-jsdoc-template"
+        "template": "./node_modules/imapflow-jsdoc-template"
     }
 }
