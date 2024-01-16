@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.148](https://github.com/postalsys/imapflow/compare/v1.0.147...v1.0.148) (2024-01-16)
+
+
+### Bug Fixes
+
+* **logout:** Fixed race condition for logout and TCP close. Fixes [#161](https://github.com/postalsys/imapflow/issues/161) ([39a7333](https://github.com/postalsys/imapflow/commit/39a7333a39499e4876abb29149f7c72f2f99a63d))
+
 ## [1.0.147](https://github.com/postalsys/imapflow/compare/v1.0.146...v1.0.147) (2023-10-26)
 
 
