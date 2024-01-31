@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.149](https://github.com/postalsys/imapflow/compare/v1.0.148...v1.0.149) (2024-01-31)
+
+
+### Bug Fixes
+
+* **flag-colors:** added a method to set Flag Color. The color is also included in the Fetch response structure ([d840951](https://github.com/postalsys/imapflow/commit/d8409513075b864e9131665af3f1670a0714d05c))
+
 ## [1.0.148](https://github.com/postalsys/imapflow/compare/v1.0.147...v1.0.148) (2024-01-16)
 
 
