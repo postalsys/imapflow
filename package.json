@@ -28,14 +28,14 @@
     },
     "homepage": "https://imapflow.com/",
     "devDependencies": {
-        "@babel/eslint-parser": "7.22.15",
-        "@babel/eslint-plugin": "7.22.10",
+        "@babel/eslint-parser": "7.23.9",
+        "@babel/eslint-plugin": "7.23.5",
         "@babel/plugin-syntax-class-properties": "7.12.13",
-        "@babel/preset-env": "7.23.2",
-        "@types/node": "20.8.10",
-        "eslint": "8.52.0",
+        "@babel/preset-env": "7.23.9",
+        "@types/node": "20.11.13",
+        "eslint": "8.56.0",
         "eslint-config-nodemailer": "1.2.0",
-        "eslint-config-prettier": "9.0.0",
+        "eslint-config-prettier": "9.1.0",
         "grunt": "1.6.1",
         "grunt-cli": "1.4.3",
         "grunt-contrib-nodeunit": "5.0.0",
@@ -52,8 +52,8 @@
         "libmime": "5.2.1",
         "libqp": "2.0.1",
         "mailsplit": "5.4.0",
-        "nodemailer": "6.9.7",
-        "pino": "8.16.1",
+        "nodemailer": "6.9.8",
+        "pino": "8.17.2",
         "socks": "2.7.1"
     }
 }
