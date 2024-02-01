@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.150](https://github.com/postalsys/imapflow/compare/v1.0.149...v1.0.150) (2024-02-01)
+
+
+### Bug Fixes
+
+* **deps:** Bumped Nodemailer version ([ee02764](https://github.com/postalsys/imapflow/commit/ee0276493494ecf08be557cc0c486fe309d359bf))
+
 ## [1.0.149](https://github.com/postalsys/imapflow/compare/v1.0.148...v1.0.149) (2024-01-31)
 
 
