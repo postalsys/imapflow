@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.151](https://github.com/postalsys/imapflow/compare/v1.0.150...v1.0.151) (2024-02-12)
+
+
+### Bug Fixes
+
+* **filename:** Fixed filename decoding for the download method ([68a8159](https://github.com/postalsys/imapflow/commit/68a8159a0988245bf3f7c9b002823b01d9d24876))
+
 ## [1.0.150](https://github.com/postalsys/imapflow/compare/v1.0.149...v1.0.150) (2024-02-01)
 
 
