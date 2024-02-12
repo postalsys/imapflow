@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.152](https://github.com/postalsys/imapflow/compare/v1.0.151...v1.0.152) (2024-02-12)
+
+
+### Bug Fixes
+
+* **address:** do not use '@' instead of empyt address if a field does not contain a value ([aeabbde](https://github.com/postalsys/imapflow/commit/aeabbded3bf3c6ba7266f79d4bc001980644da0d))
+
 ## [1.0.151](https://github.com/postalsys/imapflow/compare/v1.0.150...v1.0.151) (2024-02-12)
 
 
