@@ -32,7 +32,7 @@
         "@babel/eslint-plugin": "7.23.5",
         "@babel/plugin-syntax-class-properties": "7.12.13",
         "@babel/preset-env": "7.23.9",
-        "@types/node": "20.11.15",
+        "@types/node": "20.11.17",
         "eslint": "8.56.0",
         "eslint-config-nodemailer": "1.2.0",
         "eslint-config-prettier": "9.1.0",
@@ -53,7 +53,7 @@
         "libqp": "2.0.1",
         "mailsplit": "5.4.0",
         "nodemailer": "6.9.9",
-        "pino": "8.17.2",
-        "socks": "2.7.1"
+        "pino": "8.18.0",
+        "socks": "2.7.3"
     }
 }
