@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.154](https://github.com/postalsys/imapflow/compare/v1.0.153...v1.0.154) (2024-03-05)
+
+
+### Bug Fixes
+
+* **FETCH:** throw on failing FETCH ([12f9a45](https://github.com/postalsys/imapflow/commit/12f9a45530c6f3a2f35ba2968819011eea9c32b2))
+
 ## [1.0.153](https://github.com/postalsys/imapflow/compare/v1.0.152...v1.0.153) (2024-02-29)
 
 
