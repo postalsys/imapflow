@@ -978,6 +978,14 @@ module.exports['IMAP Parser, NO with a dot'] = test =>
         test.deepEqual(parsed.attributes, [{ type: 'TEXT', value: 'Server Unavailable. 15' }]);
     });
 
+module.exports['IMAP Parser, no tag or response (Exchange)'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('Server Unavailable. 15');
+        console.log(parsed);
+        test.equal(parsed.command, 'BAD');
+        test.deepEqual(parsed.attributes, [{ type: 'TEXT', value: 'Server Unavailable. 15' }]);
+    });
+
 module.exports['IMAP Parser, BAD with throttling'] = test =>
     asyncWrapper(test, async test => {
         let parsed = await parser('X BAD Request is throttled. Suggested Backoff Time: 92415 milliseconds');
