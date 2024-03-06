@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.155](https://github.com/postalsys/imapflow/compare/v1.0.154...v1.0.155) (2024-03-06)
+
+
+### Bug Fixes
+
+* **exchange:** handle special error response from exchange ([3ed4198](https://github.com/postalsys/imapflow/commit/3ed4198c1b5504ab0b46926fec179c682988b2e3))
+
 ## [1.0.154](https://github.com/postalsys/imapflow/compare/v1.0.153...v1.0.154) (2024-03-05)
 
 
