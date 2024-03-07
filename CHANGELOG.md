@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.156](https://github.com/postalsys/imapflow/compare/v1.0.155...v1.0.156) (2024-03-07)
+
+
+### Bug Fixes
+
+* micro-optimizations for parser ([3451ad2](https://github.com/postalsys/imapflow/commit/3451ad235532ca1a64a829f9f2f8e77bcef3a17d))
+
 ## [1.0.155](https://github.com/postalsys/imapflow/compare/v1.0.154...v1.0.155) (2024-03-06)
 
 
