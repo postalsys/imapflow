@@ -18,8 +18,8 @@ let config = {
     },
 
     auth: {
-        user: 'agustin.huel47@ethereal.email',
-        pass: 'uyD6qzpstccxXNtTTa'
+        user: 'jamel8@ethereal.email',
+        pass: 'SXkR8knUzn6mw1adNd'
     },
 
     //proxy: 'socks://localhost:1080',
@@ -217,11 +217,13 @@ c.connect()
         let deleted = await c.mailboxDelete(mboxName);
         console.log(deleted);
 
-        await c.mailboxOpen('INBOX');
+        let lock = await c.getMailboxLock('INBOX', { description: 'SELECT' });
 
         console.log('LIST ALL NEXT');
         await listAll(c);
         await listLast(c);
+
+        lock.release();
         /*
         c.messageFlagsAdd('1:3', ['foo'], { uid: true, useLabels: true });
 
