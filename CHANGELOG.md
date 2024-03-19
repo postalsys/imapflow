@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.158](https://github.com/postalsys/imapflow/compare/v1.0.157...v1.0.158) (2024-03-19)
+
+
+### Bug Fixes
+
+* **locking:** log extra information about locks ([9790ec5](https://github.com/postalsys/imapflow/commit/9790ec575f405820d05dd4777987a88e0a4e819d))
+
 ## [1.0.157](https://github.com/postalsys/imapflow/compare/v1.0.156...v1.0.157) (2024-03-19)
 
 
