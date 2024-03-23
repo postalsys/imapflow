@@ -45,6 +45,9 @@ exec('jsdoc -t node_modules/tsd-jsdoc/dist -r lib/imap-flow.js --destination lib
             // path tls object to allow undocumented keys
             content = content.replace(/(tls: \{[^\n]*)/, '$1\n                [prop: string]: any;\n            } & {');
 
+            // fix the ReadableStream type
+            content = content.replace(/ReadableStream/g, 'NodeJS.ReadableStream');
+
             fs.writeFile(path, Buffer.from(content), err => {
                 if (err) {
                     console.error(err);
