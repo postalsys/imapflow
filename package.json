@@ -2,20 +2,21 @@
     "name": "imapflow",
     "version": "1.0.158",
     "description": "IMAP Client for Node",
-    "main": "./lib/imap-flow.js",
+    "main": "./build/index.js",
+    "types": "./build/index.d.ts",
     "scripts": {
         "test": "grunt",
-        "prepare": "npm run build",
-        "docs": "rm -rf docs && mkdir -p docs && jsdoc lib/imap-flow.js -c jsdoc.json -R README.md --destination docs/ && cp assets/favicon.ico docs",
-        "dst": "node types.js",
-        "build": "npm run docs && npm run dst",
-        "st": "npm run docs && st -d docs -i index.html",
-        "update": "rm -rf node_modules package-lock.json && ncu -u && npm install"
+        "prepublishOnly": "npm run build",
+        "build": "rimraf build && concurrently -n tsup,tsc 'tsup-node' 'tsc -p lib --emitDeclarationOnly --declaration'",
+        "dev": "rimraf build && concurrently -n tsup,tsc 'tsup-node --watch --sourcemap' 'tsc -p lib --emitDeclarationOnly --declaration --declarationMap --watch --preserveWatchOutput'"
     },
     "repository": {
         "type": "git",
         "url": "git+https://github.com/postalsys/imapflow.git"
     },
+    "files": [
+        "build"
+    ],
     "keywords": [
         "imap",
         "email",
@@ -28,22 +29,18 @@
     },
     "homepage": "https://imapflow.com/",
     "devDependencies": {
+        "@alloc/fast-rimraf": "^1.0.8",
         "@babel/eslint-parser": "7.23.10",
         "@babel/eslint-plugin": "7.23.5",
-        "@babel/plugin-syntax-class-properties": "7.12.13",
-        "@babel/preset-env": "7.24.0",
+        "@types/libmime": "^5.0.3",
+        "@types/libqp": "^1.1.3",
         "@types/node": "20.11.29",
+        "concurrently": "^8.2.2",
         "eslint": "8.57.0",
         "eslint-config-nodemailer": "1.2.0",
         "eslint-config-prettier": "9.1.0",
-        "grunt": "1.6.1",
-        "grunt-cli": "1.4.3",
-        "grunt-contrib-nodeunit": "5.0.0",
-        "grunt-eslint": "24.3.0",
         "imapflow-jsdoc-template": "3.4.0-imapflow.1",
-        "jsdoc": "3.6.11",
-        "st": "3.0.0",
-        "tsd-jsdoc": "2.5.0"
+        "tsup": "^8.0.2"
     },
     "dependencies": {
         "encoding-japanese": "2.0.0",
@@ -54,6 +51,7 @@
         "mailsplit": "5.4.0",
         "nodemailer": "6.9.12",
         "pino": "8.19.0",
-        "socks": "2.8.1"
+        "socks": "2.8.1",
+        "strict-event-emitter-types": "^2.0.0"
     }
 }

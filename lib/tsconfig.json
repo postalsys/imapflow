@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "esModuleInterop": true,
+        "noImplicitAny": false,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "resolveJsonModule": true,
+        "moduleResolution": "Node",
+        "module": "CommonJS",
+        "noEmit": false,
+        "target": "ESNext",
+        "outDir": "../build",
+        "rootDir": "."
+    }
+}
