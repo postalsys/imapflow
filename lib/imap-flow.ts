@@ -98,7 +98,7 @@ export class ImapFlow {
      * Active IMAP capabilities. Value is either `true` for togglabe capabilities (eg. `UIDPLUS`)
      * or a number for capabilities with a value (eg. `APPENDLIMIT`)
      */
-    capabilities: Map<string, boolean | number>;
+    capabilities = new Map<string, boolean | number>();
     /**
      * If `true` then in addition of sending data to logger, ImapFlow emits 'log' events with the same data.
      */
@@ -107,19 +107,19 @@ export class ImapFlow {
      * Enabled capabilities. Usually `CONDSTORE` and `UTF8=ACCEPT` if server supports these.
      *
      */
-    enabled: Set<string>;
+    enabled = new Set<string>();
     /**
      * Instance ID for logs
      */
     id: string;
     /**
-     * Is the connection currently idling or not
+     * Is the current mailbox idling or not
      */
-    idling: boolean;
+    idling: boolean = false;
     /**
      * Currently selected mailbox or `false` if mailbox is not open
      */
-    mailbox: MailboxObject | false;
+    mailbox: MailboxObject | false = false;
     /**
      * Is the connection currently encrypted or not
      */
@@ -135,30 +135,32 @@ export class ImapFlow {
     /**
      * Is the connection currently usable or not
      */
-    usable: boolean;
+    usable: boolean = false;
 
-    protected authCapabilities: Map<string, boolean | number>;
+    protected authCapabilities = new Map<string, boolean | number>();
     protected clientInfo: IdInfoObject;
-    protected commandParts: any[];
-    protected commands: Map<string, any>;
+    protected commandParts: any[] = [];
+    protected commands: Map<string, any> = new Map(Object.entries(imapCommands));
     protected connectTimeout: NodeJS.Timeout;
-    protected currentLock: any;
-    protected currentRequest: any;
-    protected currentSelectCommand: any;
+    protected currentLock: any = false;
+    protected currentRequest: any = false;
+    protected currentSelectCommand: any = false;
     protected disableBinary: boolean;
-    protected expectCapabilityUpdate: boolean;
-    protected folders: Map<any, any>;
+    /** Force CAPABILITY after LOGIN */
+    protected expectCapabilityUpdate: boolean = false;
+    protected folders = new Map<any, any>();
     protected greeting: string;
     protected greetingTimeout: NodeJS.Timeout;
     protected host: string;
-    protected idRequested: boolean;
+    protected idRequested: boolean = false;
     protected idleStartTimer: NodeJS.Timeout;
     protected initialResolve: any;
     protected initialReject: any;
     protected isClosed: boolean;
-    protected lo: number;
-    protected lockCounter: number;
-    protected locks: any[];
+    /** Ordering number for emitted logs */
+    protected lo: number = 0;
+    protected lockCounter: number = 0;
+    protected locks: any[] = [];
     protected log: any;
     protected logRaw: boolean;
     protected maxIdleTime: number | false;
@@ -166,23 +168,23 @@ export class ImapFlow {
     protected port: number;
     protected preCheck: () => Promise<void>;
     protected processingLock: boolean;
-    protected rawCapabilities: any;
-    protected reading: boolean;
-    protected requestQueue: any[];
-    protected requestTagMap: Map<any, any>;
-    protected sectionHandlers: any;
+    protected rawCapabilities: any = null;
+    protected reading: boolean = false;
+    protected requestQueue: any[] = [];
+    protected requestTagMap = new Map<any, any>();
+    protected sectionHandlers: any = {};
     protected servername: string | false;
-    protected socket: net.Socket | tls.TLSSocket;
-    protected state: number;
-    protected states: { NOT_AUTHENTICATED: number; AUTHENTICATED: number; SELECTED: number; LOGOUT: number };
+    protected socket: net.Socket | tls.TLSSocket = null!;
+    protected state: number = states.NOT_AUTHENTICATED;
+    protected states = states;
     protected streamer: ImapStream;
-    protected tagCounter: number;
+    protected tagCounter: number = 0;
     protected tls: (tls.CipherNameAndProtocol & { authorized?: boolean }) | false;
-    protected untaggedHandlers: any;
+    protected untaggedHandlers: any = {};
     protected upgradeTimeout: NodeJS.Timeout;
     protected upgrading: boolean;
-    protected writeBytesCounter: number;
-    protected writeSocket: net.Socket | tls.TLSSocket;
+    protected writeBytesCounter: number = 0;
+    protected writeSocket: net.Socket | tls.TLSSocket = null!;
 
     /** Underscore variables in alphabetical order. */
     private _deflate: zlib.DeflateRaw | null;
@@ -195,6 +197,8 @@ export class ImapFlow {
     private _socketTimeout: () => void;
 
     constructor(public options: Options = {}) {
+        // Initialize the EventEmitter internals the old-fashioned way, since we
+        // are using StrictEventEmitter for public-facing types.
         EventEmitter.call(this, { captureRejections: true });
 
         this.id = options.id || this.getRandomId();
@@ -220,7 +224,7 @@ export class ImapFlow {
         this.servername = options.servername ? options.servername : !net.isIP(this.host) ? this.host : false;
 
         if (typeof options.secure === 'undefined' && this.port === 993) {
-            // if secure option is not set but port is 465, then default to secure
+            // if secure option is not set but port is 993, then default to secure
             this.secureConnection = true;
         }
 
@@ -232,64 +236,7 @@ export class ImapFlow {
             secureConnection: this.secureConnection
         });
 
-        this.reading = false;
-        this.socket = null!; // will be set in connect()
-        this.writeSocket = null!;
-
-        this.states = states;
-        this.state = this.states.NOT_AUTHENTICATED;
-
-        this.lockCounter = 0;
-        this.currentLock = false;
-
-        this.tagCounter = 0;
-        this.requestTagMap = new Map();
-        this.requestQueue = [];
-        this.currentRequest = false;
-
-        this.writeBytesCounter = 0;
-
-        this.commandParts = [];
-
-        this.capabilities = new Map();
-        this.authCapabilities = new Map();
-
-        this.rawCapabilities = null;
-
-        this.expectCapabilityUpdate = false; // force CAPABILITY after LOGIN
-
-        this.enabled = new Set();
-        this.usable = false;
-        this.authenticated = false;
-
-        this.mailbox = false;
-        this.currentSelectCommand = false;
-
-        /**
-         * Is current mailbox idling (`true`) or not (`false`)
-         * @type {Boolean}
-         */
-        this.idling = false;
-
-        /**
-         * If `true` then in addition of sending data to logger, ImapFlow emits 'log' events with the same data
-         * @type {Boolean}
-         */
         this.emitLogs = !!options.emitLogs;
-        // ordering number for emitted logs
-        this.lo = 0;
-
-        this.untaggedHandlers = {};
-        this.sectionHandlers = {};
-
-        this.commands = new Map(Object.entries(imapCommands));
-
-        this.folders = new Map();
-
-        this.currentLock = false;
-        this.locks = [];
-
-        this.idRequested = false;
 
         this.maxIdleTime = options.maxIdleTime || false;
         this.missingIdleCommand = (options.missingIdleCommand || '').toString().toUpperCase().trim() || 'NOOP';
@@ -2710,7 +2657,7 @@ export class ImapFlow {
 
     /**
      * Opens a mailbox if not already open and returns a lock. Next call to `getMailboxLock()` is queued
-     * until previous lock is released. This is suggested over {@link module:imapflow~ImapFlow#mailboxOpen|mailboxOpen()} as
+     * until previous lock is released. This is suggested over {@link ImapFlow.mailboxOpen()} as
      * `getMailboxLock()` gives you a weak transaction while `mailboxOpen()` has no guarantees whatsoever that another
      * mailbox is opened while you try to call multiple fetch or store commands.
      *

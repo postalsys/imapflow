@@ -4,10 +4,12 @@
 export interface Options {
     /**
      * Hostname of the IMAP server.
+     * @default "localhost"
      */
     host?: string;
     /**
-     * Port number for the IMAP server.
+     * Port number for the IMAP server. Defaults to either 993 (secure) or 110
+     * (insecure).
      */
     port?: number;
     /**
