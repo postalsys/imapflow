@@ -18,7 +18,7 @@ Source code is available from [Github](https://github.com/postalsys/imapflow).
 First install the module from npm:
 
 ```
-$ npm install imapflow
+npm install imapflow
 ```
 
 next import the ImapFlow class into your script:
