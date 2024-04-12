@@ -1,4 +1,4 @@
 module.exports = {
     upgrade: true,
-    reject: ['jsdoc']
+    reject: ['jsdoc', 'eslint', 'grunt-eslint']
 };

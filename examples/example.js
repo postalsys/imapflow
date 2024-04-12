@@ -224,6 +224,15 @@ c.connect()
         await listLast(c);
 
         lock.release();
+
+        console.log('PRE_IDLE', Date.now());
+        setTimeout(() => {
+            c.noop();
+        }, 10 * 1000);
+        await c.idle();
+        console.log('AFTER_IDLE', Date.now());
+        await c.noop();
+
         /*
         c.messageFlagsAdd('1:3', ['foo'], { uid: true, useLabels: true });
 
