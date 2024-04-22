@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.160](https://github.com/postalsys/imapflow/compare/v1.0.159...v1.0.160) (2024-04-22)
+
+
+### Bug Fixes
+
+* **copy:** Updated cipyright year to 2024 ([e3f5040](https://github.com/postalsys/imapflow/commit/e3f5040e8f90523e12108e978ac5002f8caa9e1e))
+
 ## [1.0.159](https://github.com/postalsys/imapflow/compare/v1.0.158...v1.0.159) (2024-04-12)
 
 
