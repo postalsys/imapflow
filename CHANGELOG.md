@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.161](https://github.com/postalsys/imapflow/compare/v1.0.160...v1.0.161) (2024-05-06)
+
+
+### Bug Fixes
+
+* **listTree:** pass listing options as an optional argument ([917ba80](https://github.com/postalsys/imapflow/commit/917ba80f21b2fe485154acd252d6565b838e73e6))
+
 ## [1.0.160](https://github.com/postalsys/imapflow/compare/v1.0.159...v1.0.160) (2024-04-22)
 
 
