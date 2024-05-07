@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.162](https://github.com/postalsys/imapflow/compare/v1.0.161...v1.0.162) (2024-05-07)
+
+
+### Bug Fixes
+
+* **idle:** Do not clear preCheck from other command ([cdf7643](https://github.com/postalsys/imapflow/commit/cdf7643952c975556e11a03ceca85f8a57fe1420))
+
 ## [1.0.161](https://github.com/postalsys/imapflow/compare/v1.0.160...v1.0.161) (2024-05-06)
 
 
