@@ -992,3 +992,13 @@ module.exports['IMAP Parser, BAD with throttling'] = test =>
         test.equal(parsed.command, 'BAD');
         test.deepEqual(parsed.attributes, [{ type: 'TEXT', value: 'Request is throttled. Suggested Backoff Time: 92415 milliseconds' }]);
     });
+
+module.exports['IMAP Parser, subfolder square bracket'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('* LIST (\\UnMarked) "." INBOX.[Airmail].Snooze');
+        test.deepEqual(parsed.attributes, [
+            [{ type: 'ATOM', value: '\\UnMarked' }],
+            { type: 'STRING', value: '.' },
+            { type: 'ATOM', value: 'INBOX.[Airmail].Snooze' }
+        ]);
+    });
