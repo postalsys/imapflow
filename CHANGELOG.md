@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.163](https://github.com/postalsys/imapflow/compare/v1.0.162...v1.0.163) (2024-07-06)
+
+
+### Bug Fixes
+
+* **parser:** parse subfolders with square brackets ([0d0e8a6](https://github.com/postalsys/imapflow/commit/0d0e8a6ea379adf11594684d49a1ce5031339939))
+* **socket:** Use destroy() instead of destroySoon() ([830c2d1](https://github.com/postalsys/imapflow/commit/830c2d18f3d27eb12dc6babe4edd37fed5f65490))
+
 ## [1.0.162](https://github.com/postalsys/imapflow/compare/v1.0.161...v1.0.162) (2024-05-07)
 
 
