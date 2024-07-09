@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.164](https://github.com/postalsys/imapflow/compare/v1.0.163...v1.0.164) (2024-07-09)
+
+
+### Bug Fixes
+
+* **api:** Add fetchAll method ([#207](https://github.com/postalsys/imapflow/issues/207)) ([bc09998](https://github.com/postalsys/imapflow/commit/bc09998270006ea6ff8430b3461619dd9b3e91c8))
+
 ## [1.0.163](https://github.com/postalsys/imapflow/compare/v1.0.162...v1.0.163) (2024-07-06)
 
 
