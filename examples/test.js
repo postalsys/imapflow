@@ -61,7 +61,7 @@ c.on('expunge', updateEvent => {
 c.connect()
     //.then(() => c.list())
     .then(async () => {
-        console.log('CONENCTION established');
+        console.log('CONNECTION established');
         //console.log(c.folders);
         let path = 'INBOX';
         setTimeout(() => c.writeSocket.destroy(), 100);

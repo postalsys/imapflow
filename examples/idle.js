@@ -67,7 +67,7 @@ setTimeout(() => {
 c.connect()
     //.then(() => c.list())
     .then(async () => {
-        console.log('CONENCTION established');
+        console.log('CONNECTION established');
 
         console.log(c.serverInfo);
         console.log(c.namespace);

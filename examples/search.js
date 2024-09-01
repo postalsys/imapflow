@@ -25,7 +25,7 @@ let config = {
 
 let client = new ImapFlow(config);
 
-const SERACH_OBJS = [
+const SEARCH_OBJS = [
     { to: 'mail1@domain.com' },
     { to: 'mail2@domain.com' },
     { to: 'mail3@domain.com' },
@@ -38,7 +38,7 @@ async function fetchMails() {
     let lock = await client.getMailboxLock('INBOX');
     try {
         for await (let message of client.fetch(
-            { or: SERACH_OBJS } /* pass SEARCH_OBS here */,
+            { or: SEARCH_OBJS } /* pass SEARCH_OBS here */,
             { envelope: true, uid: true, emailId: true } /* Another bug: emailID is not fetched! */,
             { uid: true }
         )) {
