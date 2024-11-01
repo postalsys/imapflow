@@ -1002,3 +1002,62 @@ module.exports['IMAP Parser, subfolder square bracket'] = test =>
             { type: 'ATOM', value: 'INBOX.[Airmail].Snooze' }
         ]);
     });
+
+module.exports['IMAP Parser, FETCH with full range'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('* 32 FETCH (UID 32 RFC822.SIZE 3991 BODY[2.MIME] "(* 61B literal *)" BODY[2]<0.65536> "(* 6B literal *)")');
+        console.log(JSON.stringify(parsed.attributes));
+        test.deepEqual(parsed.attributes, [
+            {
+                type: 'ATOM',
+                value: 'FETCH'
+            },
+            [
+                {
+                    type: 'ATOM',
+                    value: 'UID'
+                },
+                {
+                    type: 'ATOM',
+                    value: '32'
+                },
+                {
+                    type: 'ATOM',
+                    value: 'RFC822.SIZE'
+                },
+                {
+                    type: 'ATOM',
+                    value: '3991'
+                },
+                {
+                    type: 'ATOM',
+                    value: 'BODY',
+                    section: [
+                        {
+                            type: 'ATOM',
+                            value: '2.MIME'
+                        }
+                    ]
+                },
+                {
+                    type: 'STRING',
+                    value: '(* 61B literal *)'
+                },
+                {
+                    type: 'ATOM',
+                    value: 'BODY',
+                    section: [
+                        {
+                            type: 'ATOM',
+                            value: '2'
+                        }
+                    ],
+                    partial: [0, 65536]
+                },
+                {
+                    type: 'STRING',
+                    value: '(* 6B literal *)'
+                }
+            ]
+        ]);
+    });
