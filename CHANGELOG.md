@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.165](https://github.com/postalsys/imapflow/compare/v1.0.164...v1.0.165) (2024-11-01)
+
+
+### Bug Fixes
+
+* **imap:** Support invalid servers that return a full partial instead of starting byte for a FETCH property ([7281ce9](https://github.com/postalsys/imapflow/commit/7281ce98683946f825b5bfec197beecad7867a70))
+
 ## [1.0.164](https://github.com/postalsys/imapflow/compare/v1.0.163...v1.0.164) (2024-07-09)
 
 ### Bug Fixes
