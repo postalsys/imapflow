@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.168](https://github.com/postalsys/imapflow/compare/v1.0.167...v1.0.168) (2024-11-07)
+
+
+### Bug Fixes
+
+* **imap:** Fixed issue with a single + response ([51be3a9](https://github.com/postalsys/imapflow/commit/51be3a98205cc900eba6d3cf1962bc42a8de942d))
+
 ## [1.0.167](https://github.com/postalsys/imapflow/compare/v1.0.166...v1.0.167) (2024-11-07)
 
 
