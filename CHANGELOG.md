@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.166](https://github.com/postalsys/imapflow/compare/v1.0.165...v1.0.166) (2024-11-05)
+
+
+### Bug Fixes
+
+* **login:** Always treat username and password as strings, not atom ([01b3471](https://github.com/postalsys/imapflow/commit/01b347145551c046e4400b8824be9be3c69d353b))
+
 ## [1.0.165](https://github.com/postalsys/imapflow/compare/v1.0.164...v1.0.165) (2024-11-01)
 
 
