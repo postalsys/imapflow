@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.167](https://github.com/postalsys/imapflow/compare/v1.0.166...v1.0.167) (2024-11-07)
+
+
+### Bug Fixes
+
+* **auth:** Prefer AUTH=LOGIN and AUTH=PLAIN to LOGIN ([3efd98a](https://github.com/postalsys/imapflow/commit/3efd98a5033db29228023302fc4663316b2b28fb))
+
 ## [1.0.166](https://github.com/postalsys/imapflow/compare/v1.0.165...v1.0.166) (2024-11-05)
 
 
