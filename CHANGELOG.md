@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.169](https://github.com/postalsys/imapflow/compare/v1.0.168...v1.0.169) (2024-11-08)
+
+
+### Bug Fixes
+
+* **fetc:** Treat 'Some of the requested messages no longer exist' as a success, not a failure ([565f988](https://github.com/postalsys/imapflow/commit/565f988178fc4a4d3989fe027451980f3ee0d412))
+
 ## [1.0.168](https://github.com/postalsys/imapflow/compare/v1.0.167...v1.0.168) (2024-11-07)
 
 
