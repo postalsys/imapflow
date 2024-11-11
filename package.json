@@ -40,7 +40,7 @@
         "grunt-cli": "1.5.0",
         "grunt-contrib-nodeunit": "5.0.0",
         "grunt-eslint": "24.3.0",
-        "imapflow-jsdoc-template": "3.4.0-imapflow.1",
+        "imapflow-jsdoc-template": "3.4.0-imapflow.2",
         "jsdoc": "3.6.11",
         "st": "3.0.1",
         "tsd-jsdoc": "2.5.0"
