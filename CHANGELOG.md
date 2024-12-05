@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.171](https://github.com/postalsys/imapflow/compare/v1.0.170...v1.0.171) (2024-12-05)
+
+
+### Bug Fixes
+
+* Trying to re-publish as previous release attempt failed, no actual changes ([d882816](https://github.com/postalsys/imapflow/commit/d8828163e87067182c6011abda109a17baabac35))
+
 ## [1.0.170](https://github.com/postalsys/imapflow/compare/v1.0.169...v1.0.170) (2024-12-05)
 
 
