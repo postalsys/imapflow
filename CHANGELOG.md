@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.170](https://github.com/postalsys/imapflow/compare/v1.0.169...v1.0.170) (2024-12-05)
+
+
+### Bug Fixes
+
+* **uidvalidity:** Do not expect UIDVALIDITY to always exist ([7761653](https://github.com/postalsys/imapflow/commit/7761653e92965a09be8a872813363eb81f7f3d9a))
+
 ## [1.0.169](https://github.com/postalsys/imapflow/compare/v1.0.168...v1.0.169) (2024-11-08)
 
 
