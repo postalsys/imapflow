@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.172](https://github.com/postalsys/imapflow/compare/v1.0.171...v1.0.172) (2025-01-03)
+
+
+### Bug Fixes
+
+* **password-auth:** Added option auth.loginMethod to set specific authentication method ('LOGIN', 'AUTH=PLAIN', 'AUTH=LOGIN') ([ce3c339](https://github.com/postalsys/imapflow/commit/ce3c33908f5ad445b1a2fdcf2dfcbd4859413cf7))
+
 ## [1.0.171](https://github.com/postalsys/imapflow/compare/v1.0.170...v1.0.171) (2024-12-05)
 
 
