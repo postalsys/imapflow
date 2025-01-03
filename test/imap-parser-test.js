@@ -1006,7 +1006,6 @@ module.exports['IMAP Parser, subfolder square bracket'] = test =>
 module.exports['IMAP Parser, FETCH with full range'] = test =>
     asyncWrapper(test, async test => {
         let parsed = await parser('* 32 FETCH (UID 32 RFC822.SIZE 3991 BODY[2.MIME] "(* 61B literal *)" BODY[2]<0.65536> "(* 6B literal *)")');
-        console.log(JSON.stringify(parsed.attributes));
         test.deepEqual(parsed.attributes, [
             {
                 type: 'ATOM',
@@ -1058,6 +1057,183 @@ module.exports['IMAP Parser, FETCH with full range'] = test =>
                     type: 'STRING',
                     value: '(* 6B literal *)'
                 }
+            ]
+        ]);
+    });
+
+module.exports['IMAP Parser, FETCH with BODYSTRUCTURE'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser(
+            '* 1013 FETCH (UID 2986 MODSEQ (4960) BODYSTRUCTURE (("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 16 1 NIL NIL NIL NIL)("message" "rfc822" ("name" "Tellimuse Microsoft 365 Business Standard arve vaatamine.eml") NIL NIL "7bit" 370684 ("Mon, 16 Dec 2024 03:28:28 +0000" "Tellimuse Microsoft 365 Business Standard arve vaatamine" (("Microsoft" NIL "microsoft-noreply" "microsoft.com")) (("Microsoft" NIL "microsoft-noreply" "microsoft.com")) (("Microsoft" NIL "microsoft-noreply" "microsoft.com")) ((NIL NIL "andris.reinman" "gmail.com")) NIL NIL NIL "<58710631-775f-4c07-96ff-28a776f44d90@az.eastus2.microsoft.com>") ((("text" "plain" ("charset" "utf-8") NIL NIL "quoted-printable" 2866 80 NIL NIL NIL NIL)("text" "html" ("charset" "utf-8") NIL NIL "quoted-printable" 78392 1770 NIL NIL NIL NIL) "alternative" ("boundary" "=-EcWGOW6mwE+0T4lm385OWw==") NIL NIL NIL)("application" "octet-stream" ("name" "52482541500.pdf") NIL NIL "base64" 279430 NIL ("attachment" ("filename" "52482541500.pdf")) NIL NIL) "mixed" ("boundary" "=-1wJq2CLBJ6H+Zk2GPX9FKw==") NIL NIL NIL) 5580 NIL ("attachment" ("filename" "Tellimuse Microsoft 365 Business Standard arve vaatamine.eml")) NIL NIL) "mixed" ("boundary" "Apple-Mail=_F700EE9B-43B1-4EF1-95EE-CAA13391B333") NIL NIL NIL))'
+        );
+
+        test.deepEqual(parsed.attributes, [
+            { type: 'ATOM', value: 'FETCH' },
+            [
+                { type: 'ATOM', value: 'UID' },
+                { type: 'ATOM', value: '2986' },
+                { type: 'ATOM', value: 'MODSEQ' },
+                [{ type: 'ATOM', value: '4960' }],
+                { type: 'ATOM', value: 'BODYSTRUCTURE' },
+                [
+                    [
+                        { type: 'STRING', value: 'text' },
+                        { type: 'STRING', value: 'plain' },
+                        [
+                            { type: 'STRING', value: 'charset' },
+                            { type: 'STRING', value: 'us-ascii' }
+                        ],
+                        null,
+                        null,
+                        { type: 'STRING', value: '7bit' },
+                        { type: 'ATOM', value: '16' },
+                        { type: 'ATOM', value: '1' },
+                        null,
+                        null,
+                        null,
+                        null
+                    ],
+                    [
+                        { type: 'STRING', value: 'message' },
+                        { type: 'STRING', value: 'rfc822' },
+                        [
+                            { type: 'STRING', value: 'name' },
+                            { type: 'STRING', value: 'Tellimuse Microsoft 365 Business Standard arve vaatamine.eml' }
+                        ],
+                        null,
+                        null,
+                        { type: 'STRING', value: '7bit' },
+                        { type: 'ATOM', value: '370684' },
+                        [
+                            { type: 'STRING', value: 'Mon, 16 Dec 2024 03:28:28 +0000' },
+                            { type: 'STRING', value: 'Tellimuse Microsoft 365 Business Standard arve vaatamine' },
+                            [
+                                [
+                                    { type: 'STRING', value: 'Microsoft' },
+                                    null,
+                                    { type: 'STRING', value: 'microsoft-noreply' },
+                                    { type: 'STRING', value: 'microsoft.com' }
+                                ]
+                            ],
+                            [
+                                [
+                                    { type: 'STRING', value: 'Microsoft' },
+                                    null,
+                                    { type: 'STRING', value: 'microsoft-noreply' },
+                                    { type: 'STRING', value: 'microsoft.com' }
+                                ]
+                            ],
+                            [
+                                [
+                                    { type: 'STRING', value: 'Microsoft' },
+                                    null,
+                                    { type: 'STRING', value: 'microsoft-noreply' },
+                                    { type: 'STRING', value: 'microsoft.com' }
+                                ]
+                            ],
+                            [[null, null, { type: 'STRING', value: 'andris.reinman' }, { type: 'STRING', value: 'gmail.com' }]],
+                            null,
+                            null,
+                            null,
+                            { type: 'STRING', value: '<58710631-775f-4c07-96ff-28a776f44d90@az.eastus2.microsoft.com>' }
+                        ],
+                        [
+                            [
+                                [
+                                    { type: 'STRING', value: 'text' },
+                                    { type: 'STRING', value: 'plain' },
+                                    [
+                                        { type: 'STRING', value: 'charset' },
+                                        { type: 'STRING', value: 'utf-8' }
+                                    ],
+                                    null,
+                                    null,
+                                    { type: 'STRING', value: 'quoted-printable' },
+                                    { type: 'ATOM', value: '2866' },
+                                    { type: 'ATOM', value: '80' },
+                                    null,
+                                    null,
+                                    null,
+                                    null
+                                ],
+                                [
+                                    { type: 'STRING', value: 'text' },
+                                    { type: 'STRING', value: 'html' },
+                                    [
+                                        { type: 'STRING', value: 'charset' },
+                                        { type: 'STRING', value: 'utf-8' }
+                                    ],
+                                    null,
+                                    null,
+                                    { type: 'STRING', value: 'quoted-printable' },
+                                    { type: 'ATOM', value: '78392' },
+                                    { type: 'ATOM', value: '1770' },
+                                    null,
+                                    null,
+                                    null,
+                                    null
+                                ],
+                                { type: 'STRING', value: 'alternative' },
+                                [
+                                    { type: 'STRING', value: 'boundary' },
+                                    { type: 'STRING', value: '=-EcWGOW6mwE+0T4lm385OWw==' }
+                                ],
+                                null,
+                                null,
+                                null
+                            ],
+                            [
+                                { type: 'STRING', value: 'application' },
+                                { type: 'STRING', value: 'octet-stream' },
+                                [
+                                    { type: 'STRING', value: 'name' },
+                                    { type: 'STRING', value: '52482541500.pdf' }
+                                ],
+                                null,
+                                null,
+                                { type: 'STRING', value: 'base64' },
+                                { type: 'ATOM', value: '279430' },
+                                null,
+                                [
+                                    { type: 'STRING', value: 'attachment' },
+                                    [
+                                        { type: 'STRING', value: 'filename' },
+                                        { type: 'STRING', value: '52482541500.pdf' }
+                                    ]
+                                ],
+                                null,
+                                null
+                            ],
+                            { type: 'STRING', value: 'mixed' },
+                            [
+                                { type: 'STRING', value: 'boundary' },
+                                { type: 'STRING', value: '=-1wJq2CLBJ6H+Zk2GPX9FKw==' }
+                            ],
+                            null,
+                            null,
+                            null
+                        ],
+                        { type: 'ATOM', value: '5580' },
+                        null,
+                        [
+                            { type: 'STRING', value: 'attachment' },
+                            [
+                                { type: 'STRING', value: 'filename' },
+                                { type: 'STRING', value: 'Tellimuse Microsoft 365 Business Standard arve vaatamine.eml' }
+                            ]
+                        ],
+                        null,
+                        null
+                    ],
+                    { type: 'STRING', value: 'mixed' },
+                    [
+                        { type: 'STRING', value: 'boundary' },
+                        { type: 'STRING', value: 'Apple-Mail=_F700EE9B-43B1-4EF1-95EE-CAA13391B333' }
+                    ],
+                    null,
+                    null,
+                    null
+                ]
             ]
         ]);
     });
