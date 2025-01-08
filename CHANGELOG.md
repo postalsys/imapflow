@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.173](https://github.com/postalsys/imapflow/compare/v1.0.172...v1.0.173) (2025-01-08)
+
+
+### Bug Fixes
+
+* **bodystructure:** Handle invalid BODYSTRUCTURE from Bluemind mail server ([b63f861](https://github.com/postalsys/imapflow/commit/b63f861f2894d0a34583ad9ff512ef5071f63228))
+
 ## [1.0.172](https://github.com/postalsys/imapflow/compare/v1.0.171...v1.0.172) (2025-01-03)
 
 
