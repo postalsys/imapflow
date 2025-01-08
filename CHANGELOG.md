@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.174](https://github.com/postalsys/imapflow/compare/v1.0.173...v1.0.174) (2025-01-08)
+
+
+### Bug Fixes
+
+* **auth:** Fixed AUTHENTICATE LOGIN if server uses 'VXNlciBOYW1lAA==' for username ([86c08a7](https://github.com/postalsys/imapflow/commit/86c08a769e2a98fe59375857cd16661e804f79a7))
+
 ## [1.0.173](https://github.com/postalsys/imapflow/compare/v1.0.172...v1.0.173) (2025-01-08)
 
 
