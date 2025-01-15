@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.175](https://github.com/postalsys/imapflow/compare/v1.0.174...v1.0.175) (2025-01-15)
+
+
+### Bug Fixes
+
+* **socket:** Throw an error if trying to write to a closed socket ([1d8e941](https://github.com/postalsys/imapflow/commit/1d8e941485223c76c4f22080e985587349c0e458))
+
 ## [1.0.174](https://github.com/postalsys/imapflow/compare/v1.0.173...v1.0.174) (2025-01-08)
 
 
