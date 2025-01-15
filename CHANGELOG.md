@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.176](https://github.com/postalsys/imapflow/compare/v1.0.175...v1.0.176) (2025-01-15)
+
+
+### Bug Fixes
+
+* **idle:** Treat preCheck as async function ([346bb43](https://github.com/postalsys/imapflow/commit/346bb430e2ddeeb877b5778f9f1bdfd97a83ee4c))
+
 ## [1.0.175](https://github.com/postalsys/imapflow/compare/v1.0.174...v1.0.175) (2025-01-15)
 
 
