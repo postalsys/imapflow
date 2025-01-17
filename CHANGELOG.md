@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.177](https://github.com/postalsys/imapflow/compare/v1.0.176...v1.0.177) (2025-01-17)
+
+
+### Bug Fixes
+
+* **login:** When using slashes in username (indicates an Exchange account or drive account), use LOGIN as the authentication mechanism ([7ac0036](https://github.com/postalsys/imapflow/commit/7ac00369a13ff35ed0b923b44e97ba933eee397c))
+
 ## [1.0.176](https://github.com/postalsys/imapflow/compare/v1.0.175...v1.0.176) (2025-01-15)
 
 
