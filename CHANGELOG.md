@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.178](https://github.com/postalsys/imapflow/compare/v1.0.177...v1.0.178) (2025-01-23)
+
+
+### Bug Fixes
+
+* **bodystructure:** Handle unicode filenames for servers that do not know how to use parameter continuations ([2b4b240](https://github.com/postalsys/imapflow/commit/2b4b2408bf19a337958888f5f2bcdd9af86424c1))
+
 ## [1.0.177](https://github.com/postalsys/imapflow/compare/v1.0.176...v1.0.177) (2025-01-17)
 
 
