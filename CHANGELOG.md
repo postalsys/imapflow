@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.180](https://github.com/postalsys/imapflow/compare/v1.0.179...v1.0.180) (2025-02-06)
+
+
+### Bug Fixes
+
+* **tls:** If socket fails then clear upgrade timeout as well ([12c60d2](https://github.com/postalsys/imapflow/commit/12c60d23d46d3bb315ecb184fbd1eea709f93269))
+
 ## [1.0.179](https://github.com/postalsys/imapflow/compare/v1.0.178...v1.0.179) (2025-01-28)
 
 
