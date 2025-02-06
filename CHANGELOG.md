@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.181](https://github.com/postalsys/imapflow/compare/v1.0.180...v1.0.181) (2025-02-06)
+
+
+### Bug Fixes
+
+* **parser:** Fixed DIGIT handling' ([75389f1](https://github.com/postalsys/imapflow/commit/75389f12036cf746e7fa490843d27ade26fe1e78))
+
 ## [1.0.180](https://github.com/postalsys/imapflow/compare/v1.0.179...v1.0.180) (2025-02-06)
 
 
