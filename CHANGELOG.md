@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.179](https://github.com/postalsys/imapflow/compare/v1.0.178...v1.0.179) (2025-01-28)
+
+
+### Bug Fixes
+
+* **connection-failure:** Reject all pending commands, not just LOGOUT ([1b42a61](https://github.com/postalsys/imapflow/commit/1b42a6116a76bf8fc8a9cf9a0421b53c659a5e98))
+
 ## [1.0.178](https://github.com/postalsys/imapflow/compare/v1.0.177...v1.0.178) (2025-01-23)
 
 
