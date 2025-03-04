@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.182](https://github.com/postalsys/imapflow/compare/v1.0.181...v1.0.182) (2025-03-04)
+
+
+### Bug Fixes
+
+* messageFlagsSet with empty flag array ([#268](https://github.com/postalsys/imapflow/issues/268)) ([7de471c](https://github.com/postalsys/imapflow/commit/7de471c80590284fab6747221d9bcc1491d2a505))
+
 ## [1.0.181](https://github.com/postalsys/imapflow/compare/v1.0.180...v1.0.181) (2025-02-06)
 
 
