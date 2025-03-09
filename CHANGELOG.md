@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.183](https://github.com/postalsys/imapflow/compare/v1.0.182...v1.0.183) (2025-03-09)
+
+
+### Bug Fixes
+
+* Date time format in IMAP requires space before a single digit ([#272](https://github.com/postalsys/imapflow/issues/272)) ([bdb6b09](https://github.com/postalsys/imapflow/commit/bdb6b09a9939e65e0342219539e13045ce3f6995))
+
 ## [1.0.182](https://github.com/postalsys/imapflow/compare/v1.0.181...v1.0.182) (2025-03-04)
 
 
