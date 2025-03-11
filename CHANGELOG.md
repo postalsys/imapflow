@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.184](https://github.com/postalsys/imapflow/compare/v1.0.183...v1.0.184) (2025-03-11)
+
+
+### Bug Fixes
+
+* Allow to call the connect method only once ([ca7ec96](https://github.com/postalsys/imapflow/commit/ca7ec969f19a93c5dc574bf3873cd7afc4d7af47))
+* **Authentication:** Report errors; Fix LOGINDISABLED ([#275](https://github.com/postalsys/imapflow/issues/275)) ([a3a3fb9](https://github.com/postalsys/imapflow/commit/a3a3fb993dee66c02b34bba0e0b26fc349487b26))
+
 ## [1.0.183](https://github.com/postalsys/imapflow/compare/v1.0.182...v1.0.183) (2025-03-09)
 
 
