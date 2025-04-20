@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.186](https://github.com/postalsys/imapflow/compare/v1.0.185...v1.0.186) (2025-04-20)
+
+
+### Bug Fixes
+
+* **parsing:** Limit the depth of nested input ([c6cd7ce](https://github.com/postalsys/imapflow/commit/c6cd7cef9f9b8a1ff137a08e8aebf2555e596a23))
+
 ## [1.0.185](https://github.com/postalsys/imapflow/compare/v1.0.184...v1.0.185) (2025-04-14)
 
 
