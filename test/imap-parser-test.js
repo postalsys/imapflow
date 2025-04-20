@@ -981,7 +981,6 @@ module.exports['IMAP Parser, NO with a dot'] = test =>
 module.exports['IMAP Parser, no tag or response (Exchange)'] = test =>
     asyncWrapper(test, async test => {
         let parsed = await parser('Server Unavailable. 15');
-        console.log(parsed);
         test.equal(parsed.command, 'BAD');
         test.deepEqual(parsed.attributes, [{ type: 'TEXT', value: 'Server Unavailable. 15' }]);
     });
@@ -1236,4 +1235,17 @@ module.exports['IMAP Parser, FETCH with BODYSTRUCTURE'] = test =>
                 ]
             ]
         ]);
+    });
+
+module.exports['IMAP Parser, FETCH with BODYSTRUCTURE'] = test =>
+    asyncWrapper(test, async test => {
+        try {
+            let parsed = await parser('* 1 FETCH (UID 1 (((((((((((((((((((((((((');
+            test.ok(!parsed);
+        } catch (err) {
+            test.ok(err);
+            if (err.code !== 'MAX_IMAP_NESTING_REACHED') {
+                throw err;
+            }
+        }
     });

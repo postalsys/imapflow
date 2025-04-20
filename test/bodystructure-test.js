@@ -1125,8 +1125,6 @@ module.exports['Process non-standard unicode filename property'] = test => {
 
     let bodyStruct = parseBodystructure(attribute);
 
-    console.log(JSON.stringify(bodyStruct, false, 2));
-
     test.deepEqual(bodyStruct.childNodes[1].dispositionParameters.filename, 'Trang_ghi_âm (8) (1).xlsx');
     test.done();
 };
