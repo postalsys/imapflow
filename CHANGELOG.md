@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.185](https://github.com/postalsys/imapflow/compare/v1.0.184...v1.0.185) (2025-04-14)
+
+
+### Bug Fixes
+
+* **search:** add a `not` option for search options ([#281](https://github.com/postalsys/imapflow/issues/281)) ([000686b](https://github.com/postalsys/imapflow/commit/000686b2ace1ef0e21cca64d8e056d1f7f7f8914))
+
 ## [1.0.184](https://github.com/postalsys/imapflow/compare/v1.0.183...v1.0.184) (2025-03-11)
 
 
