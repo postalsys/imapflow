@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.188](https://github.com/postalsys/imapflow/compare/v1.0.187...v1.0.188) (2025-06-13)
+
+
+### Bug Fixes
+
+* **atom:** Allow &lt; and [ in an atom value ([53b96bb](https://github.com/postalsys/imapflow/commit/53b96bb347705bd96efa3bd2503784d5f501f728))
+
 ## [1.0.187](https://github.com/postalsys/imapflow/compare/v1.0.186...v1.0.187) (2025-05-20)
 
 
