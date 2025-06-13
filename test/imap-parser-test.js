@@ -439,8 +439,6 @@ module.exports['IMAP Parser: Section: allow trailing ws'] = test =>
         ])
     );
 
-module.exports['IMAP Parser: Tags: fail unknown section'] = test => asyncWrapperFail(test, async test => test.ok(await parser('TAG1 CMD KODY[]')));
-
 module.exports['IMAP Parser: Readable: simple'] = test =>
     asyncWrapper(test, async test =>
         test.deepEqual(await parser('* OK Hello world!'), {
@@ -816,8 +814,6 @@ module.exports['IMAP Parser: Partial: Section'] = test =>
             }
         ])
     );
-
-module.exports['IMAP Parser: Partial: fail unknown section'] = test => asyncWrapperFail(test, async test => test.ok(await parser('TAG1 CMD KODY<0.123>')));
 
 module.exports['IMAP Parser: Partial: fail zero prefix for start'] = test => asyncWrapperFail(test, async test => test.ok(await parser('TAG1 CMD BODY[]<01>')));
 
@@ -1248,4 +1244,18 @@ module.exports['IMAP Parser, FETCH with BODYSTRUCTURE'] = test =>
                 throw err;
             }
         }
+    });
+
+module.exports['IMAP Parser, ATOM with <, [, ]'] = test =>
+    asyncWrapper(test, async test => {
+        let password = `<[+=</$]`;
+        let parsed = await parser(`3 LOGIN user@domain ${password}`);
+        test.deepEqual(parsed, {
+            tag: '3',
+            command: 'LOGIN',
+            attributes: [
+                { type: 'ATOM', value: 'user@domain' },
+                { type: 'ATOM', value: password }
+            ]
+        });
     });
