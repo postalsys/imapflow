@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.189](https://github.com/postalsys/imapflow/compare/v1.0.188...v1.0.189) (2025-06-30)
+
+
+### Bug Fixes
+
+* improved error handling ([0b955e4](https://github.com/postalsys/imapflow/commit/0b955e4e4a4ce05cae61ae603b68b84f3e19539c))
+* Remove diacritics in ID values ([c79df56](https://github.com/postalsys/imapflow/commit/c79df5619f3cc6db36d3657a4746a112d2f33b15))
+
 ## [1.0.188](https://github.com/postalsys/imapflow/compare/v1.0.187...v1.0.188) (2025-06-13)
 
 
