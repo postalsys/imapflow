@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.190](https://github.com/postalsys/imapflow/compare/v1.0.189...v1.0.190) (2025-07-10)
+
+
+### Bug Fixes
+
+* **search:** Prefer WITHIN YOUNGER/OLDER instead of BEFORE/SINCE for searches if possible ([7492ac9](https://github.com/postalsys/imapflow/commit/7492ac9bd5598beadee7a72e3e3c63e25e9bc1f5))
+
 ## [1.0.189](https://github.com/postalsys/imapflow/compare/v1.0.188...v1.0.189) (2025-06-30)
 
 
