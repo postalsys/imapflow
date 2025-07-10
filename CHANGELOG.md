@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.191](https://github.com/postalsys/imapflow/compare/v1.0.190...v1.0.191) (2025-07-10)
+
+
+### Bug Fixes
+
+* **search:** Use the next day when searching BEFORE/SENTBEFORE to include current day in the range as well ([9e6d749](https://github.com/postalsys/imapflow/commit/9e6d749ac781c6240b3113f2ec8d329ad831d740))
+
 ## [1.0.190](https://github.com/postalsys/imapflow/compare/v1.0.189...v1.0.190) (2025-07-10)
 
 
