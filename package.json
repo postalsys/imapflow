@@ -1,6 +1,6 @@
 {
     "name": "imapflow",
-    "version": "1.0.189",
+    "version": "1.0.190",
     "description": "IMAP Client for Node",
     "main": "lib/imap-flow.js",
     "types": "lib/imap-flow.d.ts",
