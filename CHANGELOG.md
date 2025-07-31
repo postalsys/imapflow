@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.192](https://github.com/postalsys/imapflow/compare/v1.0.191...v1.0.192) (2025-07-31)
+
+
+### Bug Fixes
+
+* destroy _inflate and _deflate streams if set ([eab274b](https://github.com/postalsys/imapflow/commit/eab274b15b2ea2ee93aa027fd874249b1860167e))
+* do not allow too large IMAP literals ([680a44d](https://github.com/postalsys/imapflow/commit/680a44d6550d51fc00602c49d6c5a377046c3504))
+* Improved socket handler listener setup/cleanup ([0b72714](https://github.com/postalsys/imapflow/commit/0b727140866d220ff1df07d7245c60aa72e3be4a))
+* remove unneeded timer ([1867606](https://github.com/postalsys/imapflow/commit/1867606aaf5ea37935c460aca1b615ab2a2b6534))
+
 ## [1.0.191](https://github.com/postalsys/imapflow/compare/v1.0.190...v1.0.191) (2025-07-10)
 
 
