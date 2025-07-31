@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.193](https://github.com/postalsys/imapflow/compare/v1.0.192...v1.0.193) (2025-07-31)
+
+
+### Bug Fixes
+
+* Improved exception handling ([0eb77ac](https://github.com/postalsys/imapflow/commit/0eb77ac28a0f36b085769b6f9a20fd89d9214060))
+
 ## [1.0.192](https://github.com/postalsys/imapflow/compare/v1.0.191...v1.0.192) (2025-07-31)
 
 
