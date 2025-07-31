@@ -116,3 +116,5 @@ lib/types.d.ts
 
 examples/devel-*
 .DS_Store
+.claude
+.vscode
