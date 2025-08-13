@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.194](https://github.com/postalsys/imapflow/compare/v1.0.193...v1.0.194) (2025-08-13)
+
+
+### Bug Fixes
+
+* Fixed race condition when opening multiple mailboxes simultaneusly ([1248f84](https://github.com/postalsys/imapflow/commit/1248f8494afe0cc2c9faf31642fa3ea045ec0453))
+* Merge branch 'master' into mustang-im-trycatch ([b024a0a](https://github.com/postalsys/imapflow/commit/b024a0a6375e9e62b8f5a0e1183c34d7e39bd5b7))
+
 ## [1.0.193](https://github.com/postalsys/imapflow/compare/v1.0.192...v1.0.193) (2025-07-31)
 
 
