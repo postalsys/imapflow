@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.195](https://github.com/postalsys/imapflow/compare/v1.0.194...v1.0.195) (2025-08-26)
+
+
+### Bug Fixes
+
+* Add async yielding to compression readNext() to prevent CPU blocking ([18e806d](https://github.com/postalsys/imapflow/commit/18e806d5485defe6d4a0ef3eb502b17f3b2d8c2d))
+* Add async yielding to lock processing loop ([fbf1d9a](https://github.com/postalsys/imapflow/commit/fbf1d9a3aa93b4733a123553d8be0b1785f4135e))
+* Add async yielding to processInput() to prevent CPU blocking ([6b619ce](https://github.com/postalsys/imapflow/commit/6b619ced453c3ee8556e18646ad476ad82a68fbf))
+* Add async yielding to reader() method to prevent CPU blocking ([40574e3](https://github.com/postalsys/imapflow/commit/40574e322be27d8b3cdd1b32416e8395d7e395b5))
+* Add exponential backoff to FETCH retry logic ([fb99e2d](https://github.com/postalsys/imapflow/commit/fb99e2d26c9cb29e69b6d33083ef101264b4b039))
+* Add rate limiting for compression operations ([f54c1d0](https://github.com/postalsys/imapflow/commit/f54c1d0caf1bd8cc41a0779e12c915adbb55f346))
+* Correct log source indicator for client commands ([bb3ea09](https://github.com/postalsys/imapflow/commit/bb3ea09c3135c131fc8bedd733311aa3fe176261))
+
 ## [1.0.194](https://github.com/postalsys/imapflow/compare/v1.0.193...v1.0.194) (2025-08-13)
 
 
