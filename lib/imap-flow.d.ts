@@ -23,6 +23,8 @@ export interface ImapFlowOptions {
         accessToken?: string;
         /** Optional login method override. Set to 'LOGIN', 'AUTH=LOGIN' or 'AUTH=PLAIN' to use specific method */
         loginMethod?: string;
+        /** Authorization identity for SASL PLAIN (used for admin impersonation/delegation). When set, authenticates as `user` but authorizes as `authzid` */
+        authzid?: string;
     };
     /** Client identification info sent to the server if server supports ID extension */
     clientInfo?: IdInfoObject;

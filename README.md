@@ -73,6 +73,31 @@ const main = async () => {
 main().catch(err => console.error(err));
 ```
 
+### Admin Impersonation / Delegation (SASL PLAIN with authzid)
+
+ImapFlow supports admin impersonation for mail systems like Zimbra that allow administrators to access user mailboxes. This is done using the SASL PLAIN mechanism with an authorization identity (`authzid`).
+
+```js
+const { ImapFlow } = require('imapflow');
+const client = new ImapFlow({
+    host: 'mail.example.com',
+    port: 993,
+    secure: true,
+    auth: {
+        user: 'admin@example.com', // Admin credentials (authentication identity)
+        pass: 'adminpassword',
+        authzid: 'user@example.com', // User to impersonate (authorization identity)
+        loginMethod: 'AUTH=PLAIN' // Must use PLAIN mechanism for authzid
+    }
+});
+
+// Connection will authenticate as admin but authorize as the specified user
+await client.connect();
+// Now operating on user@example.com's mailbox as admin
+```
+
+**Note:** The `authzid` parameter only works with the `AUTH=PLAIN` mechanism. The server must support admin delegation/impersonation for this to work.
+
 ## Documentation
 
 [API reference](https://imapflow.com/module-imapflow-ImapFlow.html).
