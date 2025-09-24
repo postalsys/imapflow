@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.196](https://github.com/postalsys/imapflow/compare/v1.0.195...v1.0.196) (2025-09-14)
+
+
+### Bug Fixes
+
+* Added authzid option for AUTH=PLAIN authentication ([541c43a](https://github.com/postalsys/imapflow/commit/541c43ab0f15608c7d28f19c810e1a14bc8519bc))
+
 ## [1.0.195](https://github.com/postalsys/imapflow/compare/v1.0.194...v1.0.195) (2025-08-26)
 
 
