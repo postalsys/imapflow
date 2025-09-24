@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.197](https://github.com/postalsys/imapflow/compare/v1.0.196...v1.0.197) (2025-09-24)
+
+
+### Bug Fixes
+
+* **imap ID:** Re-request ID information if only a single key was returned ([87bc016](https://github.com/postalsys/imapflow/commit/87bc016ae677b4428916d4a2047abcdeb95950bb))
+
 ## [1.0.196](https://github.com/postalsys/imapflow/compare/v1.0.195...v1.0.196) (2025-09-14)
 
 
