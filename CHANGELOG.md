@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.199](https://github.com/postalsys/imapflow/compare/v1.0.198...v1.0.199) (2025-10-09)
+
+
+### Bug Fixes
+
+* Bumped deps ([fd568db](https://github.com/postalsys/imapflow/commit/fd568db7c0087bcee9c21e7be079b00a53d77040))
+
 ## [1.0.198](https://github.com/postalsys/imapflow/compare/v1.0.197...v1.0.198) (2025-09-29)
 
 
