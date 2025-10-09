@@ -32,7 +32,7 @@
         "@babel/eslint-plugin": "7.27.1",
         "@babel/plugin-syntax-class-properties": "7.12.13",
         "@babel/preset-env": "7.28.3",
-        "@types/node": "24.5.2",
+        "@types/node": "24.7.0",
         "eslint": "8.57.0",
         "eslint-config-nodemailer": "1.2.0",
         "eslint-config-prettier": "9.1.0",
@@ -43,7 +43,7 @@
         "imapflow-jsdoc-template": "3.4.0-imapflow.3",
         "jsdoc": "4.0.4",
         "st": "3.0.3",
-        "typescript": "5.9.2"
+        "typescript": "5.9.3"
     },
     "dependencies": {
         "encoding-japanese": "2.2.0",
@@ -52,8 +52,8 @@
         "libmime": "5.3.7",
         "libqp": "2.1.1",
         "mailsplit": "5.4.6",
-        "nodemailer": "7.0.6",
-        "pino": "9.12.0",
+        "nodemailer": "7.0.9",
+        "pino": "10.0.0",
         "socks": "2.8.7"
     }
 }
