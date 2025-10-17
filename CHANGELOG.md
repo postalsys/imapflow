@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.200](https://github.com/postalsys/imapflow/compare/v1.0.199...v1.0.200) (2025-10-17)
+
+
+### Bug Fixes
+
+* migrated from mailsplit to [@zone](https://github.com/zone).eu/mailsplit ([464f5f6](https://github.com/postalsys/imapflow/commit/464f5f6d68c57c4a60d284f94811c440f96031cc))
+
 ## [1.0.199](https://github.com/postalsys/imapflow/compare/v1.0.198...v1.0.199) (2025-10-09)
 
 
