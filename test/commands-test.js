@@ -7,7 +7,7 @@ module.exports['Commands: Client instantiation'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.ok(client);
     test.equal(typeof client.exec, 'function');
     test.done();
@@ -18,7 +18,7 @@ module.exports['Commands: Method availability'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     // Check that key IMAP methods exist
     test.equal(typeof client.connect, 'function');
     test.equal(typeof client.logout, 'function');
@@ -35,7 +35,7 @@ module.exports['Commands: State management methods'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.equal(typeof client.mailboxCreate, 'function');
     test.equal(typeof client.mailboxDelete, 'function');
     test.equal(typeof client.mailboxRename, 'function');
@@ -49,7 +49,7 @@ module.exports['Commands: Message operation methods'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.equal(typeof client.messageFlagsSet, 'function');
     test.equal(typeof client.messageFlagsAdd, 'function');
     test.equal(typeof client.messageFlagsRemove, 'function');
@@ -64,7 +64,7 @@ module.exports['Commands: Utility methods'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.equal(typeof client.noop, 'function');
     test.equal(typeof client.getQuota, 'function');
     test.equal(typeof client.stats, 'function');

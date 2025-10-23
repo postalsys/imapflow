@@ -3,12 +3,12 @@
 const { ImapFlow } = require('../lib/imap-flow');
 
 module.exports['Connection: Basic connection options'] = test => {
-    let client = new ImapFlow({ 
-        host: 'imap.example.com', 
+    let client = new ImapFlow({
+        host: 'imap.example.com',
         port: 993,
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.equal(client.host, 'imap.example.com');
     test.equal(client.port, 993);
     test.done();
@@ -19,7 +19,7 @@ module.exports['Connection: Default options'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.equal(client.port, 110);
     test.equal(client.secureConnection, false);
     test.done();
@@ -31,7 +31,7 @@ module.exports['Connection: Secure connection defaults'] = test => {
         port: 993,
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.equal(client.secureConnection, true);
     test.done();
 };
@@ -45,7 +45,7 @@ module.exports['Connection: TLS options'] = test => {
             minVersion: 'TLSv1.3'
         }
     });
-    
+
     test.equal(client.options.tls.rejectUnauthorized, false);
     test.equal(client.options.tls.minVersion, 'TLSv1.3');
     test.done();
@@ -60,7 +60,7 @@ module.exports['Connection: Authentication options'] = test => {
             accessToken: 'token123'
         }
     });
-    
+
     test.equal(client.options.auth.user, 'testuser');
     test.equal(client.options.auth.pass, 'testpass');
     test.equal(client.options.auth.accessToken, 'token123');
@@ -73,7 +73,7 @@ module.exports['Connection: Proxy configuration'] = test => {
         auth: { user: 'test', pass: 'test' },
         proxy: 'socks5://proxy.example.com:1080'
     });
-    
+
     test.equal(client.options.proxy, 'socks5://proxy.example.com:1080');
     test.done();
 };
@@ -84,13 +84,13 @@ module.exports['Connection: Client info'] = test => {
         version: '1.0.0',
         vendor: 'Test Corp'
     };
-    
+
     let client = new ImapFlow({
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' },
         clientInfo
     });
-    
+
     test.equal(client.clientInfo.name, 'Test Client');
     test.equal(client.clientInfo.version, '1.0.0');
     test.equal(client.clientInfo.vendor, 'Test Corp');
@@ -103,7 +103,7 @@ module.exports['Connection: Logger configuration'] = test => {
         auth: { user: 'test', pass: 'test' },
         logger: false
     });
-    
+
     test.equal(client.options.logger, false);
     test.done();
 };
@@ -113,7 +113,7 @@ module.exports['Connection: Stats tracking'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     let stats = client.stats();
     test.ok(Object.prototype.hasOwnProperty.call(stats, 'sent'));
     test.ok(Object.prototype.hasOwnProperty.call(stats, 'received'));
@@ -127,10 +127,10 @@ module.exports['Connection: Random ID generation'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     let id1 = client.getRandomId();
     let id2 = client.getRandomId();
-    
+
     test.ok(typeof id1 === 'string' && id1.length > 0);
     test.ok(typeof id2 === 'string' && id2.length > 0);
     test.notEqual(id1, id2, 'IDs should be unique');
@@ -142,7 +142,7 @@ module.exports['Connection: State management'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.equal(client.state, client.states.NOT_AUTHENTICATED);
     test.equal(client.authenticated, false);
     test.ok(client.capabilities instanceof Map);
@@ -154,7 +154,7 @@ module.exports['Connection: Event emitter setup'] = test => {
         host: 'imap.example.com',
         auth: { user: 'test', pass: 'test' }
     });
-    
+
     test.equal(typeof client.on, 'function');
     test.equal(typeof client.emit, 'function');
     test.equal(typeof client.removeListener, 'function');
