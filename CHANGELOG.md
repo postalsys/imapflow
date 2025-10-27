@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/postalsys/imapflow/compare/imapflow-v1.1.0...imapflow-v1.1.1) (2025-10-27)
+
+
+### Bug Fixes
+
+* prevent race condition in initial IMAP greeting reception ([4841f79](https://github.com/postalsys/imapflow/commit/4841f79cd4a94067747c3139fb1de41df49ed533))
+
 ## [1.1.0](https://github.com/postalsys/imapflow/compare/imapflow-v1.0.200...imapflow-v1.1.0) (2025-10-23)
 
 
