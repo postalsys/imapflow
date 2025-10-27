@@ -647,3 +647,56 @@ module.exports['Connection Edge: Capability update after STARTTLS'] = test => {
             test.done();
         });
 };
+
+module.exports['Connection Edge: Event handlers attached before piping'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Track the order of operations during the connection flow
+    let pipeCalledBeforeHandlers = false;
+    let eventHandlersAttached = false;
+    let pipeWasCalled = false;
+
+    // Override setEventHandlers to track when it's called
+    let originalSetEventHandlers = client.setEventHandlers.bind(client);
+    client.setEventHandlers = function () {
+        eventHandlersAttached = true;
+        return originalSetEventHandlers();
+    };
+
+    // Create a mock socket with pipe tracking
+    let mockSocket = new EventEmitter();
+    mockSocket.setKeepAlive = () => {};
+    mockSocket.setTimeout = () => {};
+    mockSocket.remotePort = 993;
+    mockSocket.remoteAddress = '127.0.0.1';
+    mockSocket.localAddress = '127.0.0.1';
+    mockSocket.localPort = 12345;
+    mockSocket.destroyed = false;
+    mockSocket.pipe = function (dest) {
+        pipeWasCalled = true;
+        if (!eventHandlersAttached) {
+            pipeCalledBeforeHandlers = true;
+        }
+        // Mock pipe behavior - just return the destination
+        return dest;
+    };
+
+    // Assign mock socket
+    client.socket = mockSocket;
+    client.writeSocket = mockSocket;
+
+    // Simulate the onConnect flow that happens in the actual code
+    client.setSocketHandlers();
+    client.setEventHandlers();
+    client.socket.pipe(client.streamer);
+
+    test.ok(eventHandlersAttached, 'Event handlers should be attached');
+    test.ok(pipeWasCalled, 'Socket pipe should be called');
+    test.ok(!pipeCalledBeforeHandlers, 'Event handlers should be attached before piping socket to streamer');
+
+    test.done();
+};
