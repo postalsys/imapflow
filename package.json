@@ -57,7 +57,7 @@
         "libmime": "5.3.7",
         "libqp": "2.1.1",
         "@zone-eu/mailsplit": "5.4.7",
-        "nodemailer": "7.0.10",
+        "nodemailer": "7.0.11",
         "pino": "10.1.0",
         "socks": "2.8.7"
     }
