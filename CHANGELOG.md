@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/postalsys/imapflow/compare/v1.2.0...v1.2.1) (2025-12-17)
+
+
+### Bug Fixes
+
+* Defer promise rejections on connection close to prevent unhandled rejections ([e53d9a8](https://github.com/postalsys/imapflow/commit/e53d9a8e0028197a5ff3c7cda342e0c11b64f228))
+
 ## [1.2.0](https://github.com/postalsys/imapflow/compare/v1.1.1...v1.2.0) (2025-12-11)
 
 
