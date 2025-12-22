@@ -700,3 +700,249 @@ module.exports['Connection Edge: Event handlers attached before piping'] = test 
 
     test.done();
 };
+
+module.exports['Connection Edge: Pending locks rejected on close'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Initialize locks array with pending locks
+    let rejectedErrors = [];
+    client.locks = [
+        {
+            path: 'INBOX',
+            lockId: 'lock1',
+            resolve: () => {},
+            reject: err => rejectedErrors.push(err)
+        },
+        {
+            path: 'Sent',
+            lockId: 'lock2',
+            resolve: () => {},
+            reject: err => rejectedErrors.push(err)
+        }
+    ];
+
+    // Mock socket to allow close() to run
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.usable = true;
+
+    // Call close
+    client.close();
+
+    // Rejections happen via setImmediate, so check after next tick
+    setImmediate(() => {
+        test.equal(rejectedErrors.length, 2, 'All pending locks should be rejected');
+        test.equal(rejectedErrors[0].code, 'NoConnection', 'Error should have NoConnection code');
+        test.equal(rejectedErrors[1].code, 'NoConnection', 'Error should have NoConnection code');
+        test.equal(client.locks.length, 0, 'Locks array should be cleared');
+        test.done();
+    });
+};
+
+module.exports['Connection Edge: Lock rejection includes byeReason'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Set byeReason before close
+    client.byeReason = 'Server shutting down';
+
+    let rejectedError = null;
+    client.locks = [
+        {
+            path: 'INBOX',
+            lockId: 'lock1',
+            resolve: () => {},
+            reject: err => {
+                rejectedError = err;
+            }
+        }
+    ];
+
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.usable = true;
+
+    client.close();
+
+    setImmediate(() => {
+        test.ok(rejectedError, 'Lock should be rejected');
+        test.equal(rejectedError.code, 'NoConnection');
+        test.equal(rejectedError.reason, 'Server shutting down', 'byeReason should be included');
+        test.done();
+    });
+};
+
+module.exports['Connection Edge: currentLock cleared on close'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Simulate an active lock
+    client.currentLock = {
+        path: 'INBOX',
+        lockId: 'active-lock',
+        release: () => {}
+    };
+    client.locks = [];
+
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.usable = true;
+
+    client.close();
+
+    test.equal(client.currentLock, false, 'currentLock should be cleared');
+    test.done();
+};
+
+module.exports['Connection Edge: Lock rejection handles missing reject function'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Create lock with missing reject function (edge case)
+    let validRejected = false;
+    client.locks = [
+        {
+            path: 'INBOX',
+            lockId: 'lock1',
+            resolve: () => {}
+            // No reject function
+        },
+        {
+            path: 'Sent',
+            lockId: 'lock2',
+            resolve: () => {},
+            reject: () => {
+                validRejected = true;
+            }
+        }
+    ];
+
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.usable = true;
+
+    // Should not throw
+    test.doesNotThrow(() => {
+        client.close();
+    }, 'Should handle missing reject function gracefully');
+
+    setImmediate(() => {
+        test.ok(validRejected, 'Valid lock should still be rejected');
+        test.equal(client.locks.length, 0, 'Locks array should be cleared');
+        test.done();
+    });
+};
+
+module.exports['Connection Edge: Close with empty locks array'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.locks = [];
+    client.currentLock = false;
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.usable = true;
+
+    // Should not throw with empty locks
+    test.doesNotThrow(() => {
+        client.close();
+    }, 'Should handle empty locks array');
+
+    test.equal(client.currentLock, false);
+    test.done();
+};
+
+module.exports['Connection Edge: Lock rejection is deferred via setImmediate'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    let rejectionTime = null;
+    let closeTime = null;
+
+    client.locks = [
+        {
+            path: 'INBOX',
+            lockId: 'lock1',
+            resolve: () => {},
+            reject: () => {
+                rejectionTime = Date.now();
+            }
+        }
+    ];
+
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.usable = true;
+
+    client.close();
+    closeTime = Date.now();
+
+    // Rejection should not have happened yet (synchronously)
+    test.equal(rejectionTime, null, 'Rejection should be deferred');
+
+    setImmediate(() => {
+        test.ok(rejectionTime !== null, 'Rejection should happen after setImmediate');
+        test.ok(rejectionTime >= closeTime, 'Rejection should happen after close()');
+        test.done();
+    });
+};
+
+module.exports['Connection Edge: Pending requests and locks both rejected on close'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    let requestRejected = false;
+    let lockRejected = false;
+
+    // Add pending request - must be in requestQueue and requestTagMap
+    let request = {
+        tag: 'A001',
+        reject: err => {
+            requestRejected = true;
+            test.equal(err.code, 'NoConnection');
+        }
+    };
+    client.requestTagMap = new Map();
+    client.requestTagMap.set('A001', request);
+    client.requestQueue = [request];
+
+    // Add pending lock
+    client.locks = [
+        {
+            path: 'INBOX',
+            lockId: 'lock1',
+            resolve: () => {},
+            reject: err => {
+                lockRejected = true;
+                test.equal(err.code, 'NoConnection');
+            }
+        }
+    ];
+
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.usable = true;
+
+    client.close();
+
+    setImmediate(() => {
+        test.ok(requestRejected, 'Pending request should be rejected');
+        test.ok(lockRejected, 'Pending lock should be rejected');
+        test.done();
+    });
+};
