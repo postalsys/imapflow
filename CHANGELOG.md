@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/postalsys/imapflow/compare/v1.2.1...v1.2.2) (2025-12-22)
+
+
+### Bug Fixes
+
+* Reject pending mailbox locks on connection close ([d20f060](https://github.com/postalsys/imapflow/commit/d20f060faafe5bf4740bdb067008d1d8e7b31592))
+
 ## [1.2.1](https://github.com/postalsys/imapflow/compare/v1.2.0...v1.2.1) (2025-12-17)
 
 
