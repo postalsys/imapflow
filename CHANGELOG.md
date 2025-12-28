@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/postalsys/imapflow/compare/v1.2.3...v1.2.4) (2025-12-28)
+
+
+### Bug Fixes
+
+* Improve resource cleanup on connection close ([7c3244c](https://github.com/postalsys/imapflow/commit/7c3244cd2d6c7c3d7be54ba26ad2ce5d8b9ddae9))
+
 ## [1.2.3](https://github.com/postalsys/imapflow/compare/v1.2.2...v1.2.3) (2025-12-22)
 
 
