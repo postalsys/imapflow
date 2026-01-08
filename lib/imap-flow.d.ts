@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { TlsOptions } from 'tls';
+import { ConnectionOptions } from 'tls';
 import { Readable } from 'stream';
 
 export interface ImapFlowOptions {
@@ -31,7 +31,7 @@ export interface ImapFlowOptions {
     /** If true, then do not start IDLE when connection is established */
     disableAutoIdle?: boolean;
     /** Additional TLS options (see Node.js TLS documentation) */
-    tls?: TlsOptions;
+    tls?: ConnectionOptions;
     /** Custom logger instance. Set to false to disable logging */
     logger?: Logger | false;
     /** If true, log data read and written to socket encoded in base64 */
@@ -300,6 +300,8 @@ export interface SearchObject {
     body?: string;
     /** Matches message subject */
     subject?: string;
+    /** Matches any text in headers and body */
+    text?: string;
     /** Matches messages larger than value */
     larger?: number;
     /** Matches messages smaller than value */
