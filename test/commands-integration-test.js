@@ -545,6 +545,182 @@ module.exports['Commands: store handles error'] = async test => {
     test.done();
 };
 
+module.exports['Commands: store error with serverResponseCode'] = async test => {
+    let capturedErr = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async () => {
+            const err = new Error('Store failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'CANNOT' }]
+                    },
+                    { type: 'TEXT', value: 'Cannot modify flags' }
+                ]
+            };
+            throw err;
+        },
+        log: {
+            warn: data => {
+                capturedErr = data.err;
+            }
+        }
+    });
+
+    const result = await storeCommand(connection, '1', ['\\Seen'], {});
+    test.equal(result, false);
+    test.ok(capturedErr);
+    test.equal(capturedErr.serverResponseCode, 'CANNOT');
+    test.done();
+};
+
+module.exports['Commands: store filters flags that cannot be used'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: {
+            permanentFlags: new Set(['\\Seen']) // Only \\Seen is allowed
+        },
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    // Try to add \\Deleted which is not in permanentFlags
+    const result = await storeCommand(connection, '1', ['\\Seen', '\\Deleted'], { operation: 'add' });
+    test.equal(result, true);
+    test.ok(execAttrs);
+    // Flags list should only contain \\Seen
+    const flagsList = execAttrs[2];
+    test.equal(flagsList.length, 1);
+    test.equal(flagsList[0].value, '\\Seen');
+    test.done();
+};
+
+module.exports['Commands: store remove operation uses minus prefix'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await storeCommand(connection, '1', ['\\Seen', '\\Deleted'], { operation: 'remove' });
+    test.equal(result, true);
+    test.ok(execAttrs);
+    // Remove operation should use -FLAGS prefix
+    test.equal(execAttrs[1].value, '-FLAGS');
+    const flagsList = execAttrs[2];
+    test.equal(flagsList.length, 2);
+    test.done();
+};
+
+module.exports['Commands: store returns false when no valid flags for add'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: {
+            permanentFlags: new Set() // No flags allowed
+        }
+    });
+
+    // All flags get filtered out
+    const result = await storeCommand(connection, '1', ['\\Seen', '\\Deleted'], { operation: 'add' });
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: store allows empty flags for set operation'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: {
+            permanentFlags: new Set() // No flags allowed, all get filtered
+        },
+        exec: async () => {
+            execCalled = true;
+            return { next: () => {} };
+        }
+    });
+
+    // Set operation with empty flags should still proceed (to clear flags)
+    const result = await storeCommand(connection, '1', ['\\Seen'], { operation: 'set' });
+    test.equal(result, true);
+    test.equal(execCalled, true);
+    test.done();
+};
+
+module.exports['Commands: store returns false with empty flags for remove'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: {
+            permanentFlags: new Set()
+        }
+    });
+
+    // Remove with no valid flags should return false (nothing to remove)
+    const result = await storeCommand(connection, '1', [], { operation: 'remove' });
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: store default operation is add'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await storeCommand(connection, '1', ['\\Seen'], {}); // No operation specified
+    test.ok(execAttrs);
+    test.equal(execAttrs[1].value, '+FLAGS');
+    test.done();
+};
+
+module.exports['Commands: store with labels uses X-GM-LABELS'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['X-GM-EXT-1', true]]),
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await storeCommand(connection, '1', ['Important'], { useLabels: true, operation: 'add' });
+    test.ok(execAttrs);
+    test.equal(execAttrs[1].value, '+X-GM-LABELS');
+    test.done();
+};
+
+module.exports['Commands: store silent does not apply to labels'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['X-GM-EXT-1', true]]),
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    // When using labels, silent flag should not add .SILENT suffix
+    await storeCommand(connection, '1', ['Important'], { useLabels: true, silent: true, operation: 'set' });
+    test.ok(execAttrs);
+    test.equal(execAttrs[1].value, 'X-GM-LABELS'); // Not X-GM-LABELS.SILENT
+    test.done();
+};
+
 // ============================================
 // COPY Command Tests
 // ============================================
@@ -4482,6 +4658,224 @@ module.exports['Commands: append works from SELECTED state'] = async test => {
     const result = await appendCommand(connection, 'INBOX', 'content');
     test.equal(execCalled, true);
     test.equal(result.destination, 'INBOX');
+    test.done();
+};
+
+module.exports['Commands: append error with serverResponseCode'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'OtherFolder' },
+        exec: async () => {
+            const err = new Error('Append failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'TRYCREATE' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox does not exist' }
+                ]
+            };
+            throw err;
+        }
+    });
+
+    try {
+        await appendCommand(connection, 'NonExistent', 'content');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.serverResponseCode, 'TRYCREATE');
+    }
+    test.done();
+};
+
+module.exports['Commands: append with invalid APPENDUID values'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'OtherFolder' },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [
+                            { type: 'ATOM', value: 'APPENDUID' },
+                            { type: 'ATOM', value: 'invalid' }, // Invalid uidValidity
+                            { type: 'ATOM', value: 'notanumber' } // Invalid uid
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await appendCommand(connection, 'INBOX', 'content');
+    test.ok(result);
+    test.equal(result.uidValidity, undefined);
+    test.equal(result.uid, undefined);
+    test.done();
+};
+
+module.exports['Commands: append NOOP error is caught'] = async test => {
+    let noopCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 10 },
+        exec: async cmd => {
+            if (cmd === 'APPEND') {
+                return {
+                    next: () => {},
+                    response: { attributes: [] }
+                };
+            }
+            if (cmd === 'NOOP') {
+                noopCalled = true;
+                const err = new Error('NOOP failed');
+                err.response = { attributes: [] };
+                throw err;
+            }
+        }
+    });
+
+    // Append to current mailbox, expectExists = true
+    const result = await appendCommand(connection, 'INBOX', 'content');
+    test.ok(result);
+    test.equal(noopCalled, true);
+    // Should not throw, NOOP error is caught
+    test.done();
+};
+
+module.exports['Commands: append EXISTS updates mailbox count'] = async test => {
+    let emittedEvent = null;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 10 },
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'APPEND' && opts && opts.untagged && opts.untagged.EXISTS) {
+                await opts.untagged.EXISTS({ command: '11' }); // New count
+            }
+            return {
+                next: () => {},
+                response: {
+                    attributes: [
+                        {
+                            type: 'ATOM',
+                            section: [
+                                { type: 'ATOM', value: 'APPENDUID' },
+                                { type: 'ATOM', value: '12345' },
+                                { type: 'ATOM', value: '100' }
+                            ]
+                        }
+                    ]
+                }
+            };
+        },
+        emit: (event, data) => {
+            if (event === 'exists') {
+                emittedEvent = data;
+            }
+        }
+    });
+
+    const result = await appendCommand(connection, 'INBOX', 'content');
+    test.ok(result);
+    test.equal(result.seq, 11);
+    test.equal(connection.mailbox.exists, 11);
+    test.ok(emittedEvent);
+    test.equal(emittedEvent.count, 11);
+    test.equal(emittedEvent.prevCount, 10);
+    test.done();
+};
+
+module.exports['Commands: append does not emit exists when count unchanged'] = async test => {
+    let emittedEvent = null;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 10 },
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'APPEND' && opts && opts.untagged && opts.untagged.EXISTS) {
+                await opts.untagged.EXISTS({ command: '10' }); // Same count
+            }
+            return {
+                next: () => {},
+                response: {
+                    attributes: [
+                        {
+                            type: 'ATOM',
+                            section: [
+                                { type: 'ATOM', value: 'APPENDUID' },
+                                { type: 'ATOM', value: '12345' },
+                                { type: 'ATOM', value: '100' }
+                            ]
+                        }
+                    ]
+                }
+            };
+        },
+        emit: (event, data) => {
+            if (event === 'exists') {
+                emittedEvent = data;
+            }
+        }
+    });
+
+    await appendCommand(connection, 'INBOX', 'content');
+    test.equal(emittedEvent, null); // No event emitted
+    test.done();
+};
+
+module.exports['Commands: append with both flags and date'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'OtherFolder' },
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    const testDate = new Date('2024-01-15T10:30:00Z');
+    await appendCommand(connection, 'INBOX', 'content', ['\\Seen'], testDate);
+    test.ok(execAttrs);
+    // Should have: path, flags array, date string, literal
+    test.equal(execAttrs.length, 4);
+    // Flags array
+    test.ok(Array.isArray(execAttrs[1]));
+    // Date string
+    test.equal(execAttrs[2].type, 'STRING');
+    test.done();
+};
+
+module.exports['Commands: append with disableBinary does not use literal8'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'OtherFolder' },
+        capabilities: new Map([['BINARY', true]]),
+        disableBinary: true,
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    // Content with NULL byte
+    const content = Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x57, 0x6f, 0x72, 0x6c, 0x64]);
+    await appendCommand(connection, 'INBOX', content);
+    test.ok(execAttrs);
+    const literalAttr = execAttrs.find(a => a && a.type === 'LITERAL');
+    test.ok(literalAttr);
+    test.equal(literalAttr.isLiteral8, false); // Not literal8 due to disableBinary
     test.done();
 };
 
