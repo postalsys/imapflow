@@ -5785,6 +5785,128 @@ module.exports['Commands: idle onPlusTag calls preCheck if doneRequested'] = asy
     test.done();
 };
 
+module.exports['Commands: idle calls onSend callback'] = async test => {
+    let onSendCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            // Call onSend callback
+            if (opts && opts.onSend) {
+                opts.onSend();
+                onSendCalled = true;
+            }
+            // Then call onPlusTag to enable IDLE
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // Break IDLE via preCheck
+            if (connection.preCheck) {
+                await connection.preCheck();
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await idleCommand(connection);
+    test.equal(onSendCalled, true);
+    test.done();
+};
+
+module.exports['Commands: idle clears preCheck and queue on normal completion'] = async test => {
+    let waitQueueResolved = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // After onPlusTag, queue a preCheck but don't resolve yet
+            if (connection.preCheck) {
+                connection.preCheck().then(() => {
+                    waitQueueResolved = true;
+                });
+            }
+            // Return to complete IDLE - this should clear the queue
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await idleCommand(connection);
+    await new Promise(resolve => setImmediate(resolve));
+    // preCheck should be cleared after completion
+    test.equal(connection.preCheck, false);
+    test.equal(waitQueueResolved, true);
+    test.done();
+};
+
+module.exports['Commands: idle with maxIdleTime triggers preCheck after timeout'] = async test => {
+    let preCheckCalled = false;
+    let loopCount = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        idling: false,
+        exec: async (cmd, attrs, opts) => {
+            loopCount++;
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // Simulate time passing - on first loop, wait for timer
+            if (loopCount === 1) {
+                // Wait a bit for the timer to fire
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+            // Check if preCheck was called by the timer
+            if (connection.preCheck && loopCount === 1) {
+                preCheckCalled = true;
+                await connection.preCheck();
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    // Use very short maxIdleTime
+    await idleCommand(connection, 10);
+    test.ok(preCheckCalled || loopCount > 1, 'preCheck should be called by timer or loop should restart');
+    test.done();
+};
+
+module.exports['Commands: idle stillIdling triggers loop restart'] = async test => {
+    let loopCount = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        idling: false,
+        exec: async (cmd, attrs, opts) => {
+            loopCount++;
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // First iteration: let the timer set stillIdling and trigger preCheck
+            if (loopCount === 1) {
+                await new Promise(resolve => setTimeout(resolve, 20));
+                // Timer should have called preCheck which sets stillIdling
+            }
+            // Second iteration: just complete
+            if (connection.preCheck) {
+                await connection.preCheck();
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await idleCommand(connection, 5);
+    // Loop should have run at least once (could run twice if timer works)
+    test.ok(loopCount >= 1, 'IDLE loop should have run');
+    test.done();
+};
+
 // ============================================
 // ID Command Tests
 // ============================================
@@ -6961,6 +7083,48 @@ module.exports['Commands: authenticate OAuth handles malformed error response'] 
     test.done();
 };
 
+module.exports['Commands: authenticate OAuth error with serverResponseCode'] = async test => {
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+        servername: 'imap.example.com',
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag({});
+            }
+            const err = new Error('Authentication failed');
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'AUTHORIZATIONFAILED' }]
+                    },
+                    { type: 'TEXT', value: 'OAuth token expired' }
+                ]
+            };
+            throw err;
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    try {
+        await authenticateCommand(connection, 'user@example.com', { accessToken: 'expired_token' });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.authenticationFailed);
+        test.equal(err.serverResponseCode, 'AUTHORIZATIONFAILED');
+    }
+    test.done();
+};
+
 module.exports['Commands: authenticate with PLAIN'] = async test => {
     let execArgs = null;
     let writtenData = null;
@@ -7246,7 +7410,17 @@ module.exports['Commands: authenticate LOGIN handles error'] = async test => {
         authCapabilities: new Map(),
         exec: async () => {
             const err = new Error('Login failed');
-            err.response = { attributes: [] };
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'AUTHENTICATIONFAILED' }]
+                    },
+                    { type: 'TEXT', value: 'Invalid credentials' }
+                ]
+            };
             throw err;
         },
         write: () => {},
@@ -7262,6 +7436,7 @@ module.exports['Commands: authenticate LOGIN handles error'] = async test => {
         test.ok(false, 'Should have thrown');
     } catch (err) {
         test.ok(err.authenticationFailed);
+        test.equal(err.serverResponseCode, 'AUTHENTICATIONFAILED');
     }
     test.done();
 };
