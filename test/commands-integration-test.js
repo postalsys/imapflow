@@ -649,6 +649,142 @@ module.exports['Commands: copy handles error'] = async test => {
     test.done();
 };
 
+module.exports['Commands: copy error with serverResponseCode'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async () => {
+            const err = new Error('Copy failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'TRYCREATE' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox does not exist' }
+                ]
+            };
+            throw err;
+        }
+    });
+
+    const result = await copyCommand(connection, '1:10', 'NonExistent', {});
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: copy with partial COPYUID response'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX' },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [
+                            { type: 'ATOM', value: 'COPYUID' },
+                            { type: 'ATOM', value: '12345' }
+                            // Missing source and destination UIDs
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await copyCommand(connection, '1:10', 'Archive', {});
+    test.ok(result);
+    test.equal(result.path, 'INBOX');
+    test.equal(result.destination, 'Archive');
+    test.equal(result.uidValidity, 12345n);
+    test.equal(result.uidMap, undefined);
+    test.done();
+};
+
+module.exports['Commands: copy with invalid uidValidity'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX' },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [
+                            { type: 'ATOM', value: 'COPYUID' },
+                            { type: 'ATOM', value: 'invalid' } // Non-numeric uidValidity
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await copyCommand(connection, '1:10', 'Archive', {});
+    test.ok(result);
+    test.equal(result.uidValidity, undefined);
+    test.done();
+};
+
+module.exports['Commands: copy with mismatched UID counts'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX' },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [
+                            { type: 'ATOM', value: 'COPYUID' },
+                            { type: 'ATOM', value: '12345' },
+                            { type: 'ATOM', value: '1:3' }, // 3 source UIDs
+                            { type: 'ATOM', value: '100:101' } // 2 destination UIDs
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await copyCommand(connection, '1:3', 'Archive', {});
+    test.ok(result);
+    test.equal(result.uidValidity, 12345n);
+    test.equal(result.uidMap, undefined); // Not set due to mismatch
+    test.done();
+};
+
+module.exports['Commands: copy with non-COPYUID response code'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX' },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [{ type: 'ATOM', value: 'APPENDUID' }] // Not COPYUID
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await copyCommand(connection, '1:10', 'Archive', {});
+    test.ok(result);
+    test.equal(result.path, 'INBOX');
+    test.equal(result.destination, 'Archive');
+    test.equal(result.uidValidity, undefined);
+    test.equal(result.uidMap, undefined);
+    test.done();
+};
+
 // ============================================
 // MOVE Command Tests
 // ============================================
@@ -1120,6 +1256,114 @@ module.exports['Commands: delete throws on error'] = async test => {
     } catch (err) {
         test.ok(err.message.includes('Delete failed'));
     }
+    test.done();
+};
+
+module.exports['Commands: delete closes mailbox when deleting current mailbox'] = async test => {
+    let closeCalled = false;
+    let execCmd = null;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'FolderToDelete' },
+        run: async cmd => {
+            if (cmd === 'CLOSE') {
+                closeCalled = true;
+            }
+        },
+        exec: async cmd => {
+            execCmd = cmd;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await deleteCommand(connection, 'FolderToDelete');
+    test.ok(closeCalled, 'CLOSE should be called');
+    test.equal(execCmd, 'DELETE');
+    test.ok(result);
+    test.equal(result.path, 'FolderToDelete');
+    test.done();
+};
+
+module.exports['Commands: delete does not close when deleting different mailbox'] = async test => {
+    let closeCalled = false;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'INBOX' },
+        run: async cmd => {
+            if (cmd === 'CLOSE') {
+                closeCalled = true;
+            }
+        },
+        exec: async () => ({ next: () => {} })
+    });
+
+    const result = await deleteCommand(connection, 'OtherFolder');
+    test.ok(!closeCalled, 'CLOSE should not be called');
+    test.ok(result);
+    test.equal(result.path, 'OtherFolder');
+    test.done();
+};
+
+module.exports['Commands: delete works in SELECTED state'] = async test => {
+    let execCmd = null;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'INBOX' },
+        exec: async cmd => {
+            execCmd = cmd;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await deleteCommand(connection, 'SomeFolder');
+    test.ok(result);
+    test.equal(execCmd, 'DELETE');
+    test.done();
+};
+
+module.exports['Commands: delete error with serverResponseCode'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Delete failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'NONEXISTENT' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox does not exist' }
+                ]
+            };
+            throw err;
+        }
+    });
+
+    try {
+        await deleteCommand(connection, 'NonExistent');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.serverResponseCode, 'NONEXISTENT');
+    }
+    test.done();
+};
+
+module.exports['Commands: delete normalizes path'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, args) => {
+            execArgs = args;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await deleteCommand(connection, 'INBOX/Subfolder');
+    test.ok(result);
+    test.equal(result.path, 'INBOX/Subfolder');
+    test.ok(execArgs);
     test.done();
 };
 
