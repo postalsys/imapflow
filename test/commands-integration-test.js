@@ -1422,6 +1422,116 @@ module.exports['Commands: rename throws on error'] = async test => {
     test.done();
 };
 
+module.exports['Commands: rename closes mailbox when renaming current mailbox'] = async test => {
+    let closeCalled = false;
+    let execCmd = null;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'OldFolder' },
+        run: async cmd => {
+            if (cmd === 'CLOSE') {
+                closeCalled = true;
+            }
+        },
+        exec: async cmd => {
+            execCmd = cmd;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await renameCommand(connection, 'OldFolder', 'NewFolder');
+    test.ok(closeCalled, 'CLOSE should be called');
+    test.equal(execCmd, 'RENAME');
+    test.ok(result);
+    test.equal(result.path, 'OldFolder');
+    test.equal(result.newPath, 'NewFolder');
+    test.done();
+};
+
+module.exports['Commands: rename does not close when renaming different mailbox'] = async test => {
+    let closeCalled = false;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'INBOX' },
+        run: async cmd => {
+            if (cmd === 'CLOSE') {
+                closeCalled = true;
+            }
+        },
+        exec: async () => ({ next: () => {} })
+    });
+
+    const result = await renameCommand(connection, 'OtherFolder', 'NewName');
+    test.ok(!closeCalled, 'CLOSE should not be called');
+    test.ok(result);
+    test.done();
+};
+
+module.exports['Commands: rename works in SELECTED state'] = async test => {
+    let execCmd = null;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'INBOX' },
+        exec: async cmd => {
+            execCmd = cmd;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await renameCommand(connection, 'SomeFolder', 'NewName');
+    test.ok(result);
+    test.equal(execCmd, 'RENAME');
+    test.done();
+};
+
+module.exports['Commands: rename error with serverResponseCode'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Rename failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'NONEXISTENT' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox does not exist' }
+                ]
+            };
+            throw err;
+        }
+    });
+
+    try {
+        await renameCommand(connection, 'NonExistent', 'NewName');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.serverResponseCode, 'NONEXISTENT');
+    }
+    test.done();
+};
+
+module.exports['Commands: rename normalizes paths'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, args) => {
+            execArgs = args;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await renameCommand(connection, 'INBOX/Old', 'INBOX/New');
+    test.ok(result);
+    test.equal(result.path, 'INBOX/Old');
+    test.equal(result.newPath, 'INBOX/New');
+    test.ok(execArgs);
+    test.equal(execArgs.length, 2);
+    test.done();
+};
+
 // ============================================
 // SUBSCRIBE/UNSUBSCRIBE Command Tests
 // ============================================
@@ -1474,6 +1584,176 @@ module.exports['Commands: unsubscribe skips when not authenticated'] = async tes
 
     const result = await unsubscribeCommand(connection, 'Folder');
     test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: subscribe works in SELECTED state'] = async test => {
+    let execCmd = null;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        exec: async cmd => {
+            execCmd = cmd;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await subscribeCommand(connection, 'Folder');
+    test.equal(result, true);
+    test.equal(execCmd, 'SUBSCRIBE');
+    test.done();
+};
+
+module.exports['Commands: subscribe returns false on error'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Subscribe failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [{ type: 'TEXT', value: 'Subscribe failed' }]
+            };
+            throw err;
+        }
+    });
+
+    const result = await subscribeCommand(connection, 'Folder');
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: subscribe error with serverResponseCode'] = async test => {
+    let capturedErr = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Subscribe failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'NONEXISTENT' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox does not exist' }
+                ]
+            };
+            throw err;
+        },
+        log: {
+            warn: data => {
+                capturedErr = data.err;
+            }
+        }
+    });
+
+    const result = await subscribeCommand(connection, 'NonExistent');
+    test.equal(result, false);
+    test.ok(capturedErr);
+    test.equal(capturedErr.serverResponseCode, 'NONEXISTENT');
+    test.done();
+};
+
+module.exports['Commands: subscribe normalizes path'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, args) => {
+            execArgs = args;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await subscribeCommand(connection, 'INBOX/Subfolder');
+    test.equal(result, true);
+    test.ok(execArgs);
+    test.equal(execArgs.length, 1);
+    test.done();
+};
+
+module.exports['Commands: unsubscribe works in SELECTED state'] = async test => {
+    let execCmd = null;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        exec: async cmd => {
+            execCmd = cmd;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await unsubscribeCommand(connection, 'Folder');
+    test.equal(result, true);
+    test.equal(execCmd, 'UNSUBSCRIBE');
+    test.done();
+};
+
+module.exports['Commands: unsubscribe returns false on error'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Unsubscribe failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [{ type: 'TEXT', value: 'Unsubscribe failed' }]
+            };
+            throw err;
+        }
+    });
+
+    const result = await unsubscribeCommand(connection, 'Folder');
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: unsubscribe error with serverResponseCode'] = async test => {
+    let capturedErr = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Unsubscribe failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'NONEXISTENT' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox does not exist' }
+                ]
+            };
+            throw err;
+        },
+        log: {
+            warn: data => {
+                capturedErr = data.err;
+            }
+        }
+    });
+
+    const result = await unsubscribeCommand(connection, 'NonExistent');
+    test.equal(result, false);
+    test.ok(capturedErr);
+    test.equal(capturedErr.serverResponseCode, 'NONEXISTENT');
+    test.done();
+};
+
+module.exports['Commands: unsubscribe normalizes path'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, args) => {
+            execArgs = args;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await unsubscribeCommand(connection, 'INBOX/Subfolder');
+    test.equal(result, true);
+    test.ok(execArgs);
+    test.equal(execArgs.length, 1);
     test.done();
 };
 
