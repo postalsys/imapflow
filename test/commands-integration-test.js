@@ -506,6 +506,43 @@ module.exports['Commands: search returns false for invalid query'] = async test 
     test.done();
 };
 
+module.exports['Commands: search error with serverResponseCode'] = async test => {
+    let capturedErr = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async () => {
+            const err = new Error('Search failed');
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'CANNOT' }]
+                    },
+                    { type: 'TEXT', value: 'Search not allowed' }
+                ]
+            };
+            throw err;
+        },
+        log: {
+            warn: data => {
+                capturedErr = data.err;
+            },
+            info: () => {},
+            debug: () => {},
+            trace: () => {},
+            error: () => {}
+        }
+    });
+
+    const result = await searchCommand(connection, { all: true }, {});
+    test.equal(result, false);
+    test.ok(capturedErr);
+    test.equal(capturedErr.serverResponseCode, 'CANNOT');
+    test.done();
+};
+
 // ============================================
 // STORE Command Tests
 // ============================================
@@ -1349,6 +1386,88 @@ module.exports['Commands: move normalizes destination path'] = async test => {
     await moveCommand(connection, '1:10', 'Archive', {});
     // The destination should be normalized
     test.ok(capturedAttrs);
+    test.done();
+};
+
+module.exports['Commands: move handles COPYUID with invalid uidValidity'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [
+                            { type: 'ATOM', value: 'COPYUID' },
+                            { value: 'invalid' }, // Invalid uidValidity (NaN)
+                            { value: '1:5' },
+                            { value: '100:104' }
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await moveCommand(connection, '1:5', 'Archive', {});
+    test.ok(result);
+    test.equal(result.uidValidity, undefined);
+    test.done();
+};
+
+module.exports['Commands: move handles COPYUID with mismatched UID counts'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [
+                            { type: 'ATOM', value: 'COPYUID' },
+                            { value: '12345' },
+                            { value: '1:5' }, // 5 source UIDs
+                            { value: '100:102' } // Only 3 destination UIDs - mismatch
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await moveCommand(connection, '1:5', 'Archive', {});
+    test.ok(result);
+    test.equal(result.uidValidity, BigInt(12345));
+    test.equal(result.uidMap, undefined); // Not set due to mismatch
+    test.done();
+};
+
+module.exports['Commands: move handles COPYUID with missing source/destination UIDs'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [
+                            { type: 'ATOM', value: 'COPYUID' },
+                            { value: '12345' },
+                            { value: null }, // Missing source UIDs
+                            { value: '100:104' }
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await moveCommand(connection, '1:5', 'Archive', {});
+    test.ok(result);
+    test.equal(result.uidMap, undefined);
     test.done();
 };
 
@@ -2626,6 +2745,24 @@ module.exports['Commands: fetch with threadId query'] = async test => {
     test.ok(queryAttrs);
     const hasTHREADID = JSON.stringify(queryAttrs).includes('THREADID');
     test.ok(hasTHREADID);
+    test.done();
+};
+
+module.exports['Commands: fetch with threadId and X-GM-EXT-1 fallback'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['X-GM-EXT-1', true]]), // No OBJECTID, but has X-GM-EXT-1
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { threadId: true });
+    test.ok(queryAttrs);
+    const hasXGMTHRID = JSON.stringify(queryAttrs).includes('X-GM-THRID');
+    test.ok(hasXGMTHRID, 'Should use X-GM-THRID as fallback for threadId');
     test.done();
 };
 
@@ -4065,6 +4202,115 @@ module.exports['Commands: select encodes path with special characters'] = async 
     // Path with & should use STRING type instead of ATOM
     test.ok(execAttrs);
     test.equal(execAttrs[0].type, 'STRING');
+    test.done();
+};
+
+module.exports['Commands: select handles empty OK attributes'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.OK) {
+                // Empty attributes - should return early
+                await opts.untagged.OK({
+                    attributes: []
+                });
+            }
+            if (opts && opts.untagged && opts.untagged.EXISTS) {
+                await opts.untagged.EXISTS({ command: '100' });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.ok(result);
+    test.done();
+};
+
+module.exports['Commands: select handles null FLAGS attributes'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.FLAGS) {
+                // Null/undefined attributes - should return early
+                await opts.untagged.FLAGS({
+                    attributes: null
+                });
+            }
+            if (opts && opts.untagged && opts.untagged.EXISTS) {
+                await opts.untagged.EXISTS({ command: '100' });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.ok(result);
+    test.equal(result.flags, undefined);
+    test.done();
+};
+
+module.exports['Commands: select handles NaN EXISTS'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.EXISTS) {
+                // NaN command value - should return false
+                await opts.untagged.EXISTS({ command: 'invalid' });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.ok(result);
+    test.equal(result.exists, undefined);
+    test.done();
+};
+
+module.exports['Commands: select error with serverResponseCode'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        exec: async () => {
+            const err = new Error('Select failed');
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'NONEXISTENT' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox does not exist' }
+                ]
+            };
+            throw err;
+        },
+        emit: () => {}
+    });
+
+    try {
+        await selectCommand(connection, 'INBOX');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.serverResponseCode, 'NONEXISTENT');
+    }
     test.done();
 };
 
@@ -6497,6 +6743,66 @@ module.exports['Commands: quota calculates percentage correctly'] = async test =
 
     const result = await quotaCommand(connection, 'INBOX');
     test.equal(result.message.status, '33%'); // Rounded
+    test.done();
+};
+
+module.exports['Commands: quota handles falsy key in attributes'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                // First attribute (i=0) has invalid key (null value), so key becomes false
+                // Then i=1 and i=2 should be skipped due to !key check
+                await opts.untagged.QUOTA({
+                    attributes: [
+                        { value: '' },
+                        [
+                            { value: null }, // Invalid key at i=0 -> key = false
+                            { value: '100' }, // i=1, skipped because !key
+                            { value: '1000' } // i=2, skipped because !key
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result);
+    // No quota data should be set since key was falsy
+    test.equal(Object.keys(result).filter(k => k !== 'path').length, 0);
+    test.done();
+};
+
+module.exports['Commands: quota sets limit without prior usage'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                // Provide only the limit (i=2) without usage (i=1) being valid
+                await opts.untagged.QUOTA({
+                    attributes: [
+                        { value: '' },
+                        [
+                            { value: 'STORAGE' }, // i=0, key = 'storage'
+                            { value: 'invalid' }, // i=1, usage - invalid number, skipped
+                            { value: '1000' } // i=2, limit - should create map[key] first
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result);
+    test.ok(result.storage);
+    test.equal(result.storage.limit, 1024000); // 1000 * 1024 for storage
+    test.equal(result.storage.usage, undefined);
     test.done();
 };
 
