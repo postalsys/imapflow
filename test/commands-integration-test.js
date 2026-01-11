@@ -4102,3 +4102,643 @@ module.exports['Commands: id replaces whitespace in values'] = async test => {
     test.ok(!nameValue.includes('\t'));
     test.done();
 };
+
+// ============================================
+// NAMESPACE Command Tests
+// ============================================
+
+const namespaceCommand = require('../lib/commands/namespace');
+
+module.exports['Commands: namespace skips when not authenticated'] = async test => {
+    const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+
+    const result = await namespaceCommand(connection);
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: namespace with NAMESPACE capability'] = async test => {
+    const connection = createMockConnection({
+        state: 2, // AUTHENTICATED
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            test.equal(cmd, 'NAMESPACE');
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                await opts.untagged.NAMESPACE({
+                    attributes: [
+                        // personal namespaces
+                        [[{ value: 'INBOX.' }, { value: '.' }]],
+                        // other users
+                        [[{ value: 'Users.' }, { value: '.' }]],
+                        // shared
+                        [[{ value: 'Shared.' }, { value: '.' }]]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(result.prefix, 'INBOX.');
+    test.equal(result.delimiter, '.');
+    test.equal(connection.namespaces.personal[0].prefix, 'INBOX.');
+    test.equal(connection.namespaces.other[0].prefix, 'Users.');
+    test.equal(connection.namespaces.shared[0].prefix, 'Shared.');
+    test.done();
+};
+
+module.exports['Commands: namespace fallback without capability'] = async test => {
+    const connection = createMockConnection({
+        state: 2, // AUTHENTICATED
+        capabilities: new Map(), // No NAMESPACE capability
+        exec: async (cmd, args, opts) => {
+            test.equal(cmd, 'LIST');
+            if (opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(result.delimiter, '/');
+    test.equal(connection.namespaces.other, false);
+    test.equal(connection.namespaces.shared, false);
+    test.done();
+};
+
+module.exports['Commands: namespace fallback adds delimiter to prefix'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '.' }, { value: 'INBOX' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(result.delimiter, '.');
+    test.done();
+};
+
+module.exports['Commands: namespace handles empty response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                // Provide minimal valid namespace even in "empty" case
+                await opts.untagged.NAMESPACE({
+                    attributes: [
+                        [[{ value: '' }, { value: '.' }]], // minimal personal namespace
+                        null,
+                        null
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(result.prefix, '');
+    test.equal(result.delimiter, '.');
+    test.done();
+};
+
+module.exports['Commands: namespace handles NIL namespaces'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                await opts.untagged.NAMESPACE({
+                    attributes: [
+                        [[{ value: '' }, { value: '/' }]], // personal
+                        null, // other (NIL)
+                        null // shared (NIL)
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(result.delimiter, '/');
+    test.equal(connection.namespaces.other, false);
+    test.equal(connection.namespaces.shared, false);
+    test.done();
+};
+
+module.exports['Commands: namespace handles multiple personal namespaces'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                await opts.untagged.NAMESPACE({
+                    attributes: [
+                        [
+                            [{ value: 'INBOX' }, { value: '.' }],
+                            [{ value: 'Mail' }, { value: '/' }]
+                        ],
+                        null,
+                        null
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(connection.namespaces.personal.length, 2);
+    test.equal(connection.namespaces.personal[0].prefix, 'INBOX.');
+    test.equal(connection.namespaces.personal[1].prefix, 'Mail/');
+    test.done();
+};
+
+module.exports['Commands: namespace works in SELECTED state'] = async test => {
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                await opts.untagged.NAMESPACE({
+                    attributes: [[[{ value: '' }, { value: '/' }]], null, null]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(result.delimiter, '/');
+    test.done();
+};
+
+module.exports['Commands: namespace handles error'] = async test => {
+    let warnLogged = false;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async () => {
+            const err = new Error('Namespace failed');
+            err.responseStatus = 'NO';
+            err.responseText = 'Command not supported';
+            throw err;
+        },
+        log: {
+            warn: () => {
+                warnLogged = true;
+            },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result.error);
+    test.equal(result.status, 'NO');
+    test.equal(result.text, 'Command not supported');
+    test.ok(warnLogged);
+    test.done();
+};
+
+module.exports['Commands: namespace fallback handles LIST error'] = async test => {
+    let warnLogged = false;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map(), // No NAMESPACE capability
+        exec: async () => {
+            throw new Error('LIST failed');
+        },
+        log: {
+            warn: () => {
+                warnLogged = true;
+            },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    // Should return default namespace even on error
+    test.equal(result.prefix, '');
+    test.ok(warnLogged);
+    test.done();
+};
+
+module.exports['Commands: namespace appends delimiter to prefix if missing'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                await opts.untagged.NAMESPACE({
+                    attributes: [
+                        // prefix without trailing delimiter
+                        [[{ value: 'INBOX' }, { value: '.' }]],
+                        null,
+                        null
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.equal(result.prefix, 'INBOX.');
+    test.done();
+};
+
+module.exports['Commands: namespace fallback strips leading delimiter from prefix'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: '/INBOX' } // Leading delimiter
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.equal(result.prefix, 'INBOX/');
+    test.done();
+};
+
+// ============================================
+// QUOTA Command Tests
+// ============================================
+
+const quotaCommand = require('../lib/commands/quota');
+
+module.exports['Commands: quota skips when not authenticated'] = async test => {
+    const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: quota skips when no path'] = async test => {
+    const connection = createMockConnection({ state: 2 });
+
+    const result = await quotaCommand(connection, null);
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: quota returns false without capability'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map() // No QUOTA capability
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: quota with storage quota'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            test.equal(cmd, 'GETQUOTAROOT');
+            if (opts && opts.untagged) {
+                if (opts.untagged.QUOTAROOT) {
+                    await opts.untagged.QUOTAROOT({
+                        attributes: [
+                            { value: 'INBOX' },
+                            { value: 'user.root' } // quota root
+                        ]
+                    });
+                }
+                if (opts.untagged.QUOTA) {
+                    await opts.untagged.QUOTA({
+                        attributes: [
+                            { value: 'user.root' },
+                            [
+                                { value: 'STORAGE' },
+                                { value: '500' }, // 500 KB used
+                                { value: '1000' } // 1000 KB limit
+                            ]
+                        ]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result);
+    test.equal(result.path, 'INBOX');
+    test.equal(result.quotaRoot, 'user.root');
+    test.equal(result.storage.usage, 500 * 1024); // Converted to bytes
+    test.equal(result.storage.limit, 1000 * 1024);
+    test.equal(result.storage.status, '50%');
+    test.done();
+};
+
+module.exports['Commands: quota with message quota'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [{ value: 'root' }, [{ value: 'MESSAGE' }, { value: '100' }, { value: '1000' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result);
+    // MESSAGE quota is not multiplied by 1024
+    test.equal(result.message.usage, 100);
+    test.equal(result.message.limit, 1000);
+    test.equal(result.message.status, '10%');
+    test.done();
+};
+
+module.exports['Commands: quota with multiple quota types'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [
+                        { value: '' },
+                        [{ value: 'STORAGE' }, { value: '250' }, { value: '500' }, { value: 'MESSAGE' }, { value: '50' }, { value: '100' }]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result.storage);
+    test.ok(result.message);
+    test.equal(result.storage.usage, 250 * 1024);
+    test.equal(result.message.usage, 50);
+    test.done();
+};
+
+module.exports['Commands: quota fetches GETQUOTA when quotaRoot but no QUOTA response'] = async test => {
+    let getQuotaCalled = false;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (cmd === 'GETQUOTAROOT') {
+                if (opts && opts.untagged && opts.untagged.QUOTAROOT) {
+                    await opts.untagged.QUOTAROOT({
+                        attributes: [{ value: 'INBOX' }, { value: 'user.root' }]
+                    });
+                }
+                // No QUOTA response
+            } else if (cmd === 'GETQUOTA') {
+                getQuotaCalled = true;
+                test.deepEqual(args, [{ type: 'ATOM', value: 'user.root' }]);
+                if (opts && opts.untagged && opts.untagged.QUOTA) {
+                    await opts.untagged.QUOTA({
+                        attributes: [{ value: 'user.root' }, [{ value: 'STORAGE' }, { value: '100' }, { value: '200' }]]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(getQuotaCalled);
+    test.equal(result.quotaRoot, 'user.root');
+    test.equal(result.storage.usage, 100 * 1024);
+    test.done();
+};
+
+module.exports['Commands: quota handles zero limit'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [
+                        { value: '' },
+                        [
+                            { value: 'STORAGE' },
+                            { value: '0' },
+                            { value: '0' } // Zero limit
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result.storage);
+    test.equal(result.storage.usage, 0);
+    test.equal(result.storage.limit, 0);
+    // No status when limit is 0
+    test.equal(result.storage.status, undefined);
+    test.done();
+};
+
+module.exports['Commands: quota handles empty attributes'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [
+                        { value: '' },
+                        [] // Empty quota list
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result);
+    test.equal(result.path, 'INBOX');
+    test.equal(result.storage, undefined);
+    test.done();
+};
+
+module.exports['Commands: quota works in SELECTED state'] = async test => {
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [{ value: '' }, [{ value: 'STORAGE' }, { value: '10' }, { value: '100' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result);
+    test.equal(result.storage.status, '10%');
+    test.done();
+};
+
+module.exports['Commands: quota handles error'] = async test => {
+    let warnLogged = false;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async () => {
+            const err = new Error('Quota failed');
+            err.response = { attributes: [] };
+            throw err;
+        },
+        log: {
+            warn: () => {
+                warnLogged = true;
+            },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.equal(result, false);
+    test.ok(warnLogged);
+    test.done();
+};
+
+module.exports['Commands: quota handles error with status code'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async () => {
+            const err = new Error('Quota failed');
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        value: '',
+                        section: [{ type: 'ATOM', value: 'NOQUOTA' }]
+                    }
+                ]
+            };
+            throw err;
+        },
+        log: {
+            warn: () => {},
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: quota normalizes path'] = async test => {
+    let capturedArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        namespace: { delimiter: '/', prefix: 'INBOX/' },
+        exec: async (cmd, args) => {
+            capturedArgs = args;
+            return { next: () => {} };
+        }
+    });
+
+    await quotaCommand(connection, 'Subfolder');
+    test.ok(capturedArgs);
+    test.done();
+};
+
+module.exports['Commands: quota handles non-numeric values'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [
+                        { value: '' },
+                        [
+                            { value: 'STORAGE' },
+                            { value: 'invalid' }, // Non-numeric usage
+                            { value: 'also-invalid' } // Non-numeric limit
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result);
+    // Non-numeric values should be skipped - no storage data set
+    test.equal(result.storage, undefined);
+    test.done();
+};
+
+module.exports['Commands: quota calculates percentage correctly'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [{ value: '' }, [{ value: 'MESSAGE' }, { value: '333' }, { value: '1000' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.equal(result.message.status, '33%'); // Rounded
+    test.done();
+};
