@@ -1125,6 +1125,203 @@ module.exports['Commands: expunge handles error'] = async test => {
     test.done();
 };
 
+module.exports['Commands: expunge parses HIGHESTMODSEQ response'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { highestModseq: 100n },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [
+                            { type: 'ATOM', value: 'HIGHESTMODSEQ' },
+                            { type: 'ATOM', value: '9122' }
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await expungeCommand(connection, '1:*', {});
+    test.equal(result, true);
+    test.equal(connection.mailbox.highestModseq, 9122n);
+    test.done();
+};
+
+module.exports['Commands: expunge does not update lower HIGHESTMODSEQ'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { highestModseq: 10000n },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [
+                            { type: 'ATOM', value: 'HIGHESTMODSEQ' },
+                            { type: 'ATOM', value: '5000' }
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await expungeCommand(connection, '1:*', {});
+    test.equal(result, true);
+    test.equal(connection.mailbox.highestModseq, 10000n); // Should not be updated
+    test.done();
+};
+
+module.exports['Commands: expunge handles invalid HIGHESTMODSEQ value'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { highestModseq: 100n },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [
+                            { type: 'ATOM', value: 'HIGHESTMODSEQ' },
+                            { type: 'ATOM', value: 'invalid' }
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await expungeCommand(connection, '1:*', {});
+    test.equal(result, true);
+    test.equal(connection.mailbox.highestModseq, 100n); // Should not be updated
+    test.done();
+};
+
+module.exports['Commands: expunge updates HIGHESTMODSEQ when mailbox has none'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: {}, // No highestModseq
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [
+                            { type: 'ATOM', value: 'HIGHESTMODSEQ' },
+                            { type: 'ATOM', value: '500' }
+                        ]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await expungeCommand(connection, '1:*', {});
+    test.equal(result, true);
+    test.equal(connection.mailbox.highestModseq, 500n);
+    test.done();
+};
+
+module.exports['Commands: expunge error with serverResponseCode'] = async test => {
+    let capturedErr = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async () => {
+            const err = new Error('Expunge failed');
+            err.response = {
+                tag: '*',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'CANNOT' }]
+                    },
+                    { type: 'TEXT', value: 'Cannot expunge' }
+                ]
+            };
+            throw err;
+        },
+        log: {
+            warn: data => {
+                capturedErr = data.err;
+            }
+        }
+    });
+
+    const result = await expungeCommand(connection, '1:*', {});
+    test.equal(result, false);
+    test.ok(capturedErr);
+    test.equal(capturedErr.serverResponseCode, 'CANNOT');
+    test.done();
+};
+
+module.exports['Commands: expunge without UID when UIDPLUS not available'] = async test => {
+    let execCmd = null;
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(), // No UIDPLUS
+        exec: async (cmd, attrs) => {
+            execCmd = cmd;
+            execAttrs = attrs;
+            return { next: () => {}, response: { attributes: [] } };
+        }
+    });
+
+    await expungeCommand(connection, '1:100', { uid: true });
+    test.equal(execCmd, 'EXPUNGE'); // Falls back to EXPUNGE
+    test.equal(execAttrs, false); // No attributes for regular EXPUNGE
+    test.done();
+};
+
+module.exports['Commands: expunge with UID EXPUNGE includes range'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['UIDPLUS', true]]),
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return { next: () => {}, response: { attributes: [] } };
+        }
+    });
+
+    await expungeCommand(connection, '1:50', { uid: true });
+    test.ok(execAttrs);
+    test.equal(execAttrs[0].type, 'SEQUENCE');
+    test.equal(execAttrs[0].value, '1:50');
+    test.done();
+};
+
+module.exports['Commands: expunge with non-HIGHESTMODSEQ response code'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { highestModseq: 100n },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        section: [{ type: 'ATOM', value: 'OTHERCODE' }]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await expungeCommand(connection, '1:*', {});
+    test.equal(result, true);
+    test.equal(connection.mailbox.highestModseq, 100n); // Should not be updated
+    test.done();
+};
+
 // ============================================
 // CREATE Command Tests
 // ============================================
@@ -3733,6 +3930,175 @@ module.exports['Commands: status updates HIGHESTMODSEQ for current mailbox'] = a
 
     await statusCommand(connection, 'INBOX', { highestModseq: true });
     test.equal(connection.mailbox.highestModseq, BigInt(200));
+    test.done();
+};
+
+module.exports['Commands: status handles NaN values in response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'TestFolder' },
+                        [
+                            { value: 'MESSAGES' },
+                            { value: 'invalid' }, // NaN
+                            { value: 'RECENT' },
+                            { value: 'notanumber' }, // NaN
+                            { value: 'UIDNEXT' },
+                            { value: 'abc' }, // NaN
+                            { value: 'UIDVALIDITY' },
+                            { value: 'xyz' }, // NaN
+                            { value: 'UNSEEN' },
+                            { value: 'bad' } // NaN
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'TestFolder', {
+        messages: true,
+        recent: true,
+        uidNext: true,
+        uidValidity: true,
+        unseen: true
+    });
+    test.ok(result);
+    test.equal(result.path, 'TestFolder');
+    // NaN values should not be set
+    test.equal(result.messages, undefined);
+    test.equal(result.recent, undefined);
+    test.equal(result.uidNext, undefined);
+    test.equal(result.uidValidity, undefined);
+    test.equal(result.unseen, undefined);
+    test.done();
+};
+
+module.exports['Commands: status handles NaN HIGHESTMODSEQ'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['CONDSTORE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [{ value: 'TestFolder' }, [{ value: 'HIGHESTMODSEQ' }, { value: 'notvalid' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'TestFolder', { highestModseq: true });
+    test.ok(result);
+    test.equal(result.highestModseq, undefined);
+    test.done();
+};
+
+module.exports['Commands: status filters falsy query values'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    // Mix of truthy and falsy values
+    const result = await statusCommand(connection, 'TestFolder', {
+        messages: true,
+        recent: false, // Should be filtered
+        uidNext: 0, // Falsy, should be filtered
+        uidValidity: true,
+        unseen: null // Falsy, should be filtered
+    });
+    test.ok(result);
+    // Query should only include messages and uidValidity
+    test.ok(queryAttrs);
+    const queryList = queryAttrs[1];
+    test.equal(queryList.length, 2);
+    test.done();
+};
+
+module.exports['Commands: status handles missing entry value'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'TestFolder' },
+                        [
+                            { value: 'MESSAGES' },
+                            null, // Missing value
+                            { value: 'RECENT' },
+                            { value: '5' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'TestFolder', {
+        messages: true,
+        recent: true
+    });
+    test.ok(result);
+    test.equal(result.messages, undefined); // Skipped due to null value
+    test.equal(result.recent, 5);
+    test.done();
+};
+
+module.exports['Commands: status handles missing key in response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'TestFolder' },
+                        [
+                            null, // Missing key
+                            { value: '10' },
+                            { value: 'MESSAGES' },
+                            { value: '20' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'TestFolder', { messages: true });
+    test.ok(result);
+    test.equal(result.messages, 20);
+    test.done();
+};
+
+module.exports['Commands: status handles unknown key in response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [{ value: 'TestFolder' }, [{ value: 'UNKNOWNKEY' }, { value: '999' }, { value: 'MESSAGES' }, { value: '10' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'TestFolder', { messages: true });
+    test.ok(result);
+    test.equal(result.messages, 10);
+    test.equal(result.UNKNOWNKEY, undefined); // Unknown keys ignored
     test.done();
 };
 
