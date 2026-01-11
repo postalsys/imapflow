@@ -1134,3 +1134,1057 @@ module.exports['Commands: starttls handles error'] = async test => {
     test.equal(result, false);
     test.done();
 };
+
+// ============================================
+// FETCH Command Tests
+// ============================================
+
+const fetchCommand = require('../lib/commands/fetch');
+
+module.exports['Commands: fetch basic query'] = async test => {
+    let execCalled = false;
+    let execCommand = '';
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        exec: async (cmd, attrs, opts) => {
+            execCalled = true;
+            execCommand = cmd;
+            // Simulate a FETCH response
+            if (opts && opts.untagged && opts.untagged.FETCH) {
+                await opts.untagged.FETCH({
+                    command: '1',
+                    attributes: [
+                        { value: '1' },
+                        [
+                            { type: 'ATOM', value: 'UID' },
+                            { type: 'ATOM', value: '100' },
+                            { type: 'ATOM', value: 'FLAGS' },
+                            [{ value: '\\Seen' }]
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await fetchCommand(connection, '1:*', { uid: true, flags: true });
+    test.equal(execCalled, true);
+    test.equal(execCommand, 'FETCH');
+    test.ok(result);
+    test.equal(result.count, 1);
+    test.ok(Array.isArray(result.list));
+    test.done();
+};
+
+module.exports['Commands: fetch with UID option'] = async test => {
+    let execCommand = '';
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd) => {
+            execCommand = cmd;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1:*', { uid: true }, { uid: true });
+    test.equal(execCommand, 'UID FETCH');
+    test.done();
+};
+
+module.exports['Commands: fetch skips when not selected'] = async test => {
+    const connection = createMockConnection({ state: 2 }); // AUTHENTICATED, not SELECTED
+
+    const result = await fetchCommand(connection, '1:*', { uid: true });
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: fetch skips when no range'] = async test => {
+    const connection = createMockConnection({ state: 3 });
+
+    const result = await fetchCommand(connection, null, { uid: true });
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: fetch with envelope query'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { envelope: true });
+    test.ok(queryAttrs);
+    // Check that ENVELOPE is in the query
+    const hasEnvelope = JSON.stringify(queryAttrs).includes('ENVELOPE');
+    test.ok(hasEnvelope);
+    test.done();
+};
+
+module.exports['Commands: fetch with bodyStructure query'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { bodyStructure: true });
+    test.ok(queryAttrs);
+    const hasBODYSTRUCTURE = JSON.stringify(queryAttrs).includes('BODYSTRUCTURE');
+    test.ok(hasBODYSTRUCTURE);
+    test.done();
+};
+
+module.exports['Commands: fetch with size query'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { size: true });
+    test.ok(queryAttrs);
+    const hasRFC822SIZE = JSON.stringify(queryAttrs).includes('RFC822.SIZE');
+    test.ok(hasRFC822SIZE);
+    test.done();
+};
+
+module.exports['Commands: fetch with source query'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { source: true });
+    test.ok(queryAttrs);
+    const hasBODYPEEK = JSON.stringify(queryAttrs).includes('BODY.PEEK');
+    test.ok(hasBODYPEEK);
+    test.done();
+};
+
+module.exports['Commands: fetch with source partial'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { source: { start: 0, maxLength: 1024 } });
+    test.ok(queryAttrs);
+    // Partial should be set
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('BODY.PEEK'));
+    test.done();
+};
+
+module.exports['Commands: fetch with BINARY capability'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['BINARY', true]]),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { source: true }, { binary: true });
+    test.ok(queryAttrs);
+    const hasBINARYPEEK = JSON.stringify(queryAttrs).includes('BINARY.PEEK');
+    test.ok(hasBINARYPEEK);
+    test.done();
+};
+
+module.exports['Commands: fetch with OBJECTID capability'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['OBJECTID', true]]),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { flags: true });
+    test.ok(queryAttrs);
+    const hasEMAILID = JSON.stringify(queryAttrs).includes('EMAILID');
+    test.ok(hasEMAILID);
+    test.done();
+};
+
+module.exports['Commands: fetch with X-GM-EXT-1 capability'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['X-GM-EXT-1', true]]),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { flags: true });
+    test.ok(queryAttrs);
+    const hasXGMMSGID = JSON.stringify(queryAttrs).includes('X-GM-MSGID');
+    test.ok(hasXGMMSGID);
+    test.done();
+};
+
+module.exports['Commands: fetch with threadId query'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['OBJECTID', true]]),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { threadId: true });
+    test.ok(queryAttrs);
+    const hasTHREADID = JSON.stringify(queryAttrs).includes('THREADID');
+    test.ok(hasTHREADID);
+    test.done();
+};
+
+module.exports['Commands: fetch with labels query'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['X-GM-EXT-1', true]]),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { labels: true });
+    test.ok(queryAttrs);
+    const hasXGMLABELS = JSON.stringify(queryAttrs).includes('X-GM-LABELS');
+    test.ok(hasXGMLABELS);
+    test.done();
+};
+
+module.exports['Commands: fetch with CONDSTORE enabled'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        enabled: new Set(['CONDSTORE']),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { flags: true });
+    test.ok(queryAttrs);
+    const hasMODSEQ = JSON.stringify(queryAttrs).includes('MODSEQ');
+    test.ok(hasMODSEQ);
+    test.done();
+};
+
+module.exports['Commands: fetch with headers array'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { headers: ['Subject', 'From', 'To'] });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('HEADER.FIELDS'));
+    test.done();
+};
+
+module.exports['Commands: fetch with headers true'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { headers: true });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('HEADER'));
+    test.done();
+};
+
+module.exports['Commands: fetch with bodyParts'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { bodyParts: ['1', '2'] });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('BODY.PEEK'));
+    test.done();
+};
+
+module.exports['Commands: fetch with bodyParts object'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { bodyParts: [{ key: '1', start: 0, maxLength: 100 }] });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('BODY.PEEK'));
+    test.done();
+};
+
+module.exports['Commands: fetch with bodyParts skips invalid'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    // Invalid entries: null, object without key, number
+    await fetchCommand(connection, '1', { bodyParts: [null, { noKey: true }, 123, '1'] });
+    test.ok(queryAttrs);
+    // Should still work - just skips invalid entries
+    test.done();
+};
+
+module.exports['Commands: fetch with changedSince'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        enabled: new Set(['CONDSTORE']),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { flags: true }, { changedSince: '12345' });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('CHANGEDSINCE'));
+    test.done();
+};
+
+module.exports['Commands: fetch with changedSince and QRESYNC'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        enabled: new Set(['CONDSTORE', 'QRESYNC']),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { flags: true }, { changedSince: '12345', uid: true });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('VANISHED'));
+    test.done();
+};
+
+module.exports['Commands: fetch with onUntaggedFetch callback'] = async test => {
+    let callbackCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.FETCH) {
+                await opts.untagged.FETCH({
+                    command: '1',
+                    attributes: [
+                        { value: '1' },
+                        [
+                            { type: 'ATOM', value: 'UID' },
+                            { type: 'ATOM', value: '100' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { uid: true }, {
+        onUntaggedFetch: (msg, done) => {
+            callbackCalled = true;
+            done();
+        }
+    });
+    test.equal(callbackCalled, true);
+    test.done();
+};
+
+module.exports['Commands: fetch callback error propagates'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.FETCH) {
+                await opts.untagged.FETCH({
+                    command: '1',
+                    attributes: [
+                        { value: '1' },
+                        [
+                            { type: 'ATOM', value: 'UID' },
+                            { type: 'ATOM', value: '100' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    try {
+        await fetchCommand(connection, '1', { uid: true }, {
+            onUntaggedFetch: (msg, done) => {
+                done(new Error('Callback error'));
+            }
+        });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.message, 'Callback error');
+    }
+    test.done();
+};
+
+module.exports['Commands: fetch handles error'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async () => { throw new Error('Fetch failed'); }
+    });
+
+    try {
+        await fetchCommand(connection, '1', { uid: true });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.message, 'Fetch failed');
+    }
+    test.done();
+};
+
+module.exports['Commands: fetch retries on throttle error'] = async test => {
+    let attempts = 0;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async () => {
+            attempts++;
+            if (attempts < 3) {
+                const err = new Error('Throttled');
+                err.code = 'ETHROTTLE';
+                err.throttleReset = 10; // 10ms for testing
+                throw err;
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await fetchCommand(connection, '1', { uid: true });
+    test.ok(result);
+    test.equal(attempts, 3);
+    test.done();
+};
+
+module.exports['Commands: fetch with all/fast/full query'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { all: true, fast: true, full: true, internalDate: true });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('ALL'));
+    test.ok(queryStr.includes('FAST'));
+    test.ok(queryStr.includes('FULL'));
+    test.ok(queryStr.includes('INTERNALDATE'));
+    test.done();
+};
+
+// ============================================
+// LIST Command Tests
+// ============================================
+
+const listCommand = require('../lib/commands/list');
+
+module.exports['Commands: list basic'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            execCalled = true;
+            // Simulate LIST response
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'INBOX' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(execCalled, true);
+    test.ok(Array.isArray(result));
+    test.done();
+};
+
+module.exports['Commands: list with XLIST capability'] = async test => {
+    let usedListCommand = '';
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['XLIST', true]]),
+        exec: async (cmd, attrs, opts) => {
+            // Capture the first LIST/XLIST command, not LSUB
+            if ((cmd === 'LIST' || cmd === 'XLIST') && !usedListCommand) {
+                usedListCommand = cmd;
+            }
+            if (opts && opts.untagged && opts.untagged[cmd]) {
+                await opts.untagged[cmd]({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'INBOX' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await listCommand(connection, '', '*');
+    test.equal(usedListCommand, 'XLIST');
+    test.done();
+};
+
+module.exports['Commands: list prefers LIST over XLIST when SPECIAL-USE available'] = async test => {
+    let usedListCommand = '';
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['XLIST', true], ['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            // Capture the first LIST/XLIST command, not LSUB
+            if ((cmd === 'LIST' || cmd === 'XLIST') && !usedListCommand) {
+                usedListCommand = cmd;
+            }
+            if (opts && opts.untagged && opts.untagged[cmd]) {
+                await opts.untagged[cmd]({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'INBOX' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await listCommand(connection, '', '*');
+    test.equal(usedListCommand, 'LIST');
+    test.done();
+};
+
+module.exports['Commands: list with statusQuery'] = async test => {
+    let listAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['LIST-STATUS', true], ['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                listAttrs = attrs;
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [
+                            [{ value: '\\HasNoChildren' }],
+                            { value: '/' },
+                            { value: 'INBOX' }
+                        ]
+                    });
+                }
+                if (opts && opts.untagged && opts.untagged.STATUS) {
+                    await opts.untagged.STATUS({
+                        attributes: [
+                            { value: 'INBOX' },
+                            [
+                                { value: 'MESSAGES' }, { value: '10' },
+                                { value: 'UNSEEN' }, { value: '5' }
+                            ]
+                        ]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', {
+        statusQuery: { messages: true, unseen: true }
+    });
+    test.ok(listAttrs);
+    const attrsStr = JSON.stringify(listAttrs);
+    test.ok(attrsStr.includes('RETURN'));
+    test.ok(attrsStr.includes('STATUS'));
+    test.ok(Array.isArray(result));
+    test.done();
+};
+
+module.exports['Commands: list with CONDSTORE status query'] = async test => {
+    let listAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['LIST-STATUS', true], ['CONDSTORE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                listAttrs = attrs;
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [
+                            [{ value: '\\HasNoChildren' }],
+                            { value: '/' },
+                            { value: 'INBOX' }
+                        ]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await listCommand(connection, '', '*', {
+        statusQuery: { highestModseq: true }
+    });
+    test.ok(listAttrs);
+    const attrsStr = JSON.stringify(listAttrs);
+    test.ok(attrsStr.includes('HIGHESTMODSEQ'));
+    test.done();
+};
+
+module.exports['Commands: list with listOnly option'] = async test => {
+    let lsubCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                lsubCalled = true;
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'INBOX' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', { listOnly: true });
+    test.equal(lsubCalled, false);
+    test.ok(Array.isArray(result));
+    test.done();
+};
+
+module.exports['Commands: list with specialUseHints'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'Sent Items' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', {
+        specialUseHints: { sent: 'Sent Items' }
+    });
+    test.ok(Array.isArray(result));
+    // The Sent Items folder should have specialUse set
+    const sentFolder = result.find(e => e.path === 'Sent Items');
+    test.ok(sentFolder);
+    test.equal(sentFolder.specialUse, '\\Sent');
+    test.done();
+};
+
+module.exports['Commands: list handles INBOX specially'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if ((cmd === 'LIST' || cmd === 'LSUB') && opts && opts.untagged) {
+                const handler = opts.untagged[cmd];
+                if (handler) {
+                    await handler({
+                        attributes: [
+                            [{ value: '\\HasNoChildren' }],
+                            { value: '/' },
+                            { value: 'INBOX' }
+                        ]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const inbox = result.find(e => e.path === 'INBOX');
+    test.ok(inbox);
+    test.equal(inbox.specialUse, '\\Inbox');
+    // INBOX should always be subscribed
+    test.equal(inbox.subscribed, true);
+    test.done();
+};
+
+module.exports['Commands: list runs separate INBOX query when using namespace'] = async test => {
+    let listCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                listCalls++;
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    // First call is for the namespace, second for INBOX
+                    if (listCalls === 1) {
+                        await opts.untagged.LIST({
+                            attributes: [
+                                [{ value: '\\HasNoChildren' }],
+                                { value: '/' },
+                                { value: 'INBOX/Subfolder' }
+                            ]
+                        });
+                    } else {
+                        await opts.untagged.LIST({
+                            attributes: [
+                                [{ value: '\\HasNoChildren' }],
+                                { value: '/' },
+                                { value: 'INBOX' }
+                            ]
+                        });
+                    }
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await listCommand(connection, 'INBOX/', '*');
+    // Should have called LIST twice - once for namespace, once for INBOX
+    test.equal(listCalls, 2);
+    test.done();
+};
+
+module.exports['Commands: list handles LSUB merging'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'Folder1' }
+                    ]
+                });
+            }
+            if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
+                await opts.untagged.LSUB({
+                    attributes: [
+                        [{ value: '\\Subscribed' }],
+                        { value: '/' },
+                        { value: 'Folder1' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const folder = result.find(e => e.path === 'Folder1');
+    test.ok(folder);
+    test.equal(folder.subscribed, true);
+    test.equal(folder.listed, true);
+    test.done();
+};
+
+module.exports['Commands: list handles error'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async () => { throw new Error('List failed'); }
+    });
+
+    try {
+        await listCommand(connection, '', '*');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.message, 'List failed');
+    }
+    test.done();
+};
+
+module.exports['Commands: list handles empty attributes'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Empty attributes - should be skipped
+                await opts.untagged.LIST({ attributes: [] });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.ok(Array.isArray(result));
+    test.equal(result.length, 0);
+    test.done();
+};
+
+module.exports['Commands: list status fallback when LIST-STATUS not supported'] = async test => {
+    let statusCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(), // No LIST-STATUS
+        run: async (cmd, path, query) => {
+            if (cmd === 'STATUS') {
+                statusCalls++;
+                return { messages: 10, unseen: 5, path };
+            }
+        },
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'INBOX' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', {
+        statusQuery: { messages: true, unseen: true }
+    });
+    test.ok(Array.isArray(result));
+    // STATUS should have been called for each folder
+    test.equal(statusCalls, 1);
+    test.done();
+};
+
+module.exports['Commands: list handles STATUS errors gracefully'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(),
+        run: async (cmd) => {
+            if (cmd === 'STATUS') {
+                throw new Error('Status failed');
+            }
+        },
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'INBOX' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', {
+        statusQuery: { messages: true }
+    });
+    const inbox = result.find(e => e.path === 'INBOX');
+    test.ok(inbox);
+    // Status should have error property
+    test.ok(inbox.status);
+    test.ok(inbox.status.error);
+    test.done();
+};
+
+module.exports['Commands: list sorts by special use'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Add folders out of order
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\Trash' }],
+                        { value: '/' },
+                        { value: 'Trash' }
+                    ]
+                });
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'INBOX' }
+                    ]
+                });
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\Sent' }],
+                        { value: '/' },
+                        { value: 'Sent' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // INBOX should be first (has \\Inbox special use)
+    test.equal(result[0].specialUse, '\\Inbox');
+    test.done();
+};
+
+module.exports['Commands: list handles delimiter in path'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: '/Leading/Slash' } // Path starts with delimiter
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const folder = result.find(e => e.name === 'Slash');
+    test.ok(folder);
+    // Leading delimiter should be removed
+    test.equal(folder.path, 'Leading/Slash');
+    test.done();
+};
+
+module.exports['Commands: list skips Noselect folders for status'] = async test => {
+    let statusCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(),
+        run: async (cmd) => {
+            if (cmd === 'STATUS') {
+                statusCalls++;
+                return { messages: 10 };
+            }
+        },
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [
+                        [{ value: '\\Noselect' }],
+                        { value: '/' },
+                        { value: 'Parent' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await listCommand(connection, '', '*', { statusQuery: { messages: true } });
+    // STATUS should not be called for Noselect folders
+    test.equal(statusCalls, 0);
+    test.done();
+};
+
+module.exports['Commands: list XLIST removes Inbox flag from non-INBOX'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['XLIST', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'XLIST' && opts && opts.untagged && opts.untagged.XLIST) {
+                // XLIST may have localised inbox name with \\Inbox flag
+                await opts.untagged.XLIST({
+                    attributes: [
+                        [{ value: '\\Inbox' }, { value: '\\HasNoChildren' }],
+                        { value: '/' },
+                        { value: 'Posteingang' } // German for inbox
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const folder = result.find(e => e.path === 'Posteingang');
+    test.ok(folder);
+    // \\Inbox flag should be removed from flags set
+    test.equal(folder.flags.has('\\Inbox'), false);
+    // But it should have \\Inbox special use
+    test.equal(folder.specialUse, '\\Inbox');
+    test.done();
+};
