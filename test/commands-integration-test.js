@@ -207,6 +207,36 @@ module.exports['Commands: login handles error'] = async test => {
     test.done();
 };
 
+module.exports['Commands: login error includes serverResponseCode'] = async test => {
+    const connection = createMockConnection({
+        state: 1,
+        exec: async () => {
+            const err = new Error('Auth failed');
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'AUTHENTICATIONFAILED' }]
+                    },
+                    { type: 'TEXT', value: 'Authentication failed' }
+                ]
+            };
+            throw err;
+        }
+    });
+
+    try {
+        await loginCommand(connection, 'testuser', 'wrongpass');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.authenticationFailed, true);
+        test.equal(err.serverResponseCode, 'AUTHENTICATIONFAILED');
+    }
+    test.done();
+};
+
 // ============================================
 // LOGOUT Command Tests
 // ============================================
@@ -6039,6 +6069,84 @@ module.exports['Commands: namespace fallback strips leading delimiter from prefi
 
     const result = await namespaceCommand(connection);
     test.equal(result.prefix, 'INBOX/');
+    test.done();
+};
+
+module.exports['Commands: namespace ignores empty NAMESPACE response attributes'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (cmd === 'NAMESPACE' && opts && opts.untagged && opts.untagged.NAMESPACE) {
+                // Empty attributes - the callback should return early
+                await opts.untagged.NAMESPACE({
+                    attributes: []
+                });
+                // Also provide a valid NAMESPACE to avoid error
+                await opts.untagged.NAMESPACE({
+                    attributes: [[[{ value: 'INBOX.' }, { value: '.' }]], null, null]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    // Should return namespace from the second call
+    test.equal(result.prefix, 'INBOX.');
+    test.equal(result.delimiter, '.');
+    test.done();
+};
+
+module.exports['Commands: namespace sets default when personal namespace is empty array'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (cmd === 'NAMESPACE' && opts && opts.untagged && opts.untagged.NAMESPACE) {
+                // Provide an array where entries don't pass the filter
+                // (entry.length < 2), so getNamsepaceInfo returns []
+                await opts.untagged.NAMESPACE({
+                    attributes: [
+                        [[]], // array with one empty entry - filter removes it, returns []
+                        null, // other
+                        null // shared
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    // Should set default personal namespace when personal[0] is falsy
+    test.equal(result.prefix, '');
+    test.equal(result.delimiter, '.');
+    test.done();
+};
+
+module.exports['Commands: namespace fallback ignores empty LIST attributes'] = async test => {
+    let listCallCount = 0;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map(), // No NAMESPACE capability
+        exec: async (cmd, args, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                listCallCount++;
+                // Empty attributes - the callback should return early
+                await opts.untagged.LIST({
+                    attributes: []
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(listCallCount, 1);
+    // With empty LIST, prefix and delimiter are undefined
+    test.equal(result.prefix, '');
     test.done();
 };
 
