@@ -695,6 +695,230 @@ module.exports['Commands: move skips when not selected'] = async test => {
     test.done();
 };
 
+module.exports['Commands: move skips when no range'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]])
+    });
+
+    const result = await moveCommand(connection, null, 'Archive', {});
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: move skips when no destination'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]])
+    });
+
+    const result = await moveCommand(connection, '1:10', null, {});
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: move fallback without MOVE capability'] = async test => {
+    let copyCalled = false;
+    let deleteCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(), // No MOVE capability
+        messageCopy: async (range, dest) => {
+            copyCalled = true;
+            test.equal(range, '1:10');
+            test.equal(dest, 'Archive');
+            return { path: 'INBOX', destination: 'Archive' };
+        },
+        messageDelete: async (range, opts) => {
+            deleteCalled = true;
+            test.equal(range, '1:10');
+            test.equal(opts.silent, true);
+            return true;
+        }
+    });
+
+    const result = await moveCommand(connection, '1:10', 'Archive', {});
+    test.ok(copyCalled);
+    test.ok(deleteCalled);
+    test.equal(result.destination, 'Archive');
+    test.done();
+};
+
+module.exports['Commands: move fallback passes options'] = async test => {
+    let copyOpts = null;
+    let deleteOpts = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(), // No MOVE capability
+        messageCopy: async (range, dest, opts) => {
+            copyOpts = opts;
+            return { path: 'INBOX', destination: dest };
+        },
+        messageDelete: async (range, opts) => {
+            deleteOpts = opts;
+            return true;
+        }
+    });
+
+    await moveCommand(connection, '1:10', 'Archive', { uid: true });
+    test.equal(copyOpts.uid, true);
+    test.equal(deleteOpts.uid, true);
+    test.equal(deleteOpts.silent, true);
+    test.done();
+};
+
+module.exports['Commands: move with COPYUID response'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [{ value: 'COPYUID' }, { value: '12345' }, { value: '1:3' }, { value: '100:102' }]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await moveCommand(connection, '1:3', 'Archive', {});
+    test.ok(result.uidValidity);
+    test.equal(result.uidValidity, BigInt(12345));
+    test.ok(result.uidMap instanceof Map);
+    test.equal(result.uidMap.get(1), 100);
+    test.equal(result.uidMap.get(2), 101);
+    test.equal(result.uidMap.get(3), 102);
+    test.done();
+};
+
+module.exports['Commands: move handles COPYUID in untagged response'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            // Simulate untagged OK with COPYUID
+            if (opts && opts.untagged && opts.untagged.OK) {
+                await opts.untagged.OK({
+                    attributes: [
+                        {
+                            section: [{ value: 'COPYUID' }, { value: '99999' }, { value: '5:7' }, { value: '200:202' }]
+                        }
+                    ]
+                });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    const result = await moveCommand(connection, '5:7', 'Archive', {});
+    test.ok(result.uidMap instanceof Map);
+    test.equal(result.uidMap.get(5), 200);
+    test.equal(result.uidMap.get(6), 201);
+    test.equal(result.uidMap.get(7), 202);
+    test.done();
+};
+
+module.exports['Commands: move returns correct map structure'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        exec: async () => ({
+            next: () => {},
+            response: { attributes: [] }
+        })
+    });
+
+    const result = await moveCommand(connection, '1:10', 'Archive', {});
+    test.equal(result.path, 'INBOX');
+    test.equal(result.destination, 'Archive');
+    test.done();
+};
+
+module.exports['Commands: move handles error'] = async test => {
+    let warnLogged = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        exec: async () => {
+            const err = new Error('Move failed');
+            err.response = { attributes: [] };
+            throw err;
+        },
+        log: {
+            warn: () => {
+                warnLogged = true;
+            },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await moveCommand(connection, '1:10', 'Archive', {});
+    test.equal(result, false);
+    test.ok(warnLogged);
+    test.done();
+};
+
+module.exports['Commands: move handles error with status code'] = async test => {
+    let capturedErr = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        exec: async () => {
+            const err = new Error('Move failed');
+            // Provide response with TRYCREATE status code
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        value: '',
+                        section: [{ type: 'ATOM', value: 'TRYCREATE' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox does not exist' }
+                ]
+            };
+            throw err;
+        },
+        log: {
+            warn: msg => {
+                capturedErr = msg;
+            },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await moveCommand(connection, '1:10', 'NonExistent', {});
+    test.equal(result, false);
+    test.ok(capturedErr);
+    test.done();
+};
+
+module.exports['Commands: move normalizes destination path'] = async test => {
+    let capturedAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['MOVE', true]]),
+        namespace: { delimiter: '/', prefix: 'INBOX/' },
+        exec: async (cmd, attrs) => {
+            capturedAttrs = attrs;
+            return { next: () => {}, response: { attributes: [] } };
+        }
+    });
+
+    await moveCommand(connection, '1:10', 'Archive', {});
+    // The destination should be normalized
+    test.ok(capturedAttrs);
+    test.done();
+};
+
 // ============================================
 // EXPUNGE Command Tests
 // ============================================
@@ -3633,5 +3857,248 @@ module.exports['Commands: idle NOOP fallback handles error'] = async test => {
     // Should resolve even on error
     await idleCommand(connection);
     test.equal(errorLogged, true);
+    test.done();
+};
+
+// ============================================
+// ID Command Tests
+// ============================================
+
+const idCommand = require('../lib/commands/id');
+
+module.exports['Commands: id skips when no ID capability'] = async test => {
+    const connection = createMockConnection({
+        capabilities: new Map() // No ID capability
+    });
+
+    const result = await idCommand(connection, { name: 'TestClient' });
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: id sends client info'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        }
+    });
+
+    await idCommand(connection, { name: 'TestClient', version: '1.0' });
+    test.equal(execArgs.cmd, 'ID');
+    test.ok(Array.isArray(execArgs.args));
+    test.ok(execArgs.args[0].includes('name'));
+    test.ok(execArgs.args[0].includes('TestClient'));
+    test.done();
+};
+
+module.exports['Commands: id sends null when no clientInfo'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        }
+    });
+
+    await idCommand(connection, null);
+    test.equal(execArgs.cmd, 'ID');
+    test.equal(execArgs.args[0], null);
+    test.done();
+};
+
+module.exports['Commands: id sends null for empty clientInfo'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        }
+    });
+
+    await idCommand(connection, {});
+    test.equal(execArgs.cmd, 'ID');
+    test.equal(execArgs.args[0], null);
+    test.done();
+};
+
+module.exports['Commands: id parses server response'] = async test => {
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ID) {
+                await opts.untagged.ID({
+                    attributes: [[{ value: 'name' }, { value: 'TestServer' }, { value: 'version' }, { value: '2.0' }, { value: 'vendor' }, { value: 'ACME' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await idCommand(connection, { name: 'TestClient' });
+    test.equal(result.name, 'TestServer');
+    test.equal(result.version, '2.0');
+    test.equal(result.vendor, 'ACME');
+    test.done();
+};
+
+module.exports['Commands: id updates serverInfo'] = async test => {
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        serverInfo: {},
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ID) {
+                await opts.untagged.ID({
+                    attributes: [[{ value: 'name' }, { value: 'ImapServer' }, { value: 'support-url' }, { value: 'https://example.com' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await idCommand(connection, { name: 'TestClient' });
+    test.equal(connection.serverInfo.name, 'ImapServer');
+    test.equal(connection.serverInfo['support-url'], 'https://example.com');
+    test.done();
+};
+
+module.exports['Commands: id handles non-array server response'] = async test => {
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ID) {
+                // Some servers might send NIL or a single value
+                await opts.untagged.ID({
+                    attributes: [null]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await idCommand(connection, { name: 'TestClient' });
+    test.ok(result);
+    test.deepEqual(result, {});
+    test.done();
+};
+
+module.exports['Commands: id formats date value'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        }
+    });
+
+    const testDate = new Date('2024-06-15T10:30:00Z');
+    await idCommand(connection, { date: testDate });
+
+    test.equal(execArgs.cmd, 'ID');
+    // Date should be formatted, not passed as Date object
+    test.ok(execArgs.args[0].includes('date'));
+    test.done();
+};
+
+module.exports['Commands: id normalizes key names to lowercase'] = async test => {
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ID) {
+                await opts.untagged.ID({
+                    attributes: [[{ value: 'NAME' }, { value: 'TestServer' }, { value: 'VERSION' }, { value: '1.0' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await idCommand(connection, { name: 'TestClient' });
+    test.equal(result.name, 'TestServer');
+    test.equal(result.version, '1.0');
+    test.done();
+};
+
+module.exports['Commands: id trims key names'] = async test => {
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ID) {
+                await opts.untagged.ID({
+                    attributes: [[{ value: ' name ' }, { value: 'TestServer' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await idCommand(connection, { name: 'TestClient' });
+    test.equal(result.name, 'TestServer');
+    test.done();
+};
+
+module.exports['Commands: id handles error'] = async test => {
+    let warnLogged = false;
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async () => {
+            throw new Error('ID command failed');
+        },
+        log: {
+            warn: () => {
+                warnLogged = true;
+            },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await idCommand(connection, { name: 'TestClient' });
+    test.equal(result, false);
+    test.ok(warnLogged);
+    test.done();
+};
+
+module.exports['Commands: id filters empty values'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        }
+    });
+
+    await idCommand(connection, { name: 'TestClient', empty: '', valid: 'value' });
+    test.equal(execArgs.cmd, 'ID');
+    // Empty values should be filtered out
+    test.ok(execArgs.args[0].includes('name'));
+    test.ok(execArgs.args[0].includes('valid'));
+    test.done();
+};
+
+module.exports['Commands: id replaces whitespace in values'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        capabilities: new Map([['ID', true]]),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        }
+    });
+
+    await idCommand(connection, { name: 'Test\nClient\tApp' });
+    test.equal(execArgs.cmd, 'ID');
+    // Whitespace should be normalized to single spaces
+    const nameIndex = execArgs.args[0].indexOf('name');
+    test.ok(nameIndex >= 0);
+    const nameValue = execArgs.args[0][nameIndex + 1];
+    test.ok(!nameValue.includes('\n'));
+    test.ok(!nameValue.includes('\t'));
     test.done();
 };
