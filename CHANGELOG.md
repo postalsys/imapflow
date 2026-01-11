@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/postalsys/imapflow/compare/v1.2.4...v1.2.5) (2026-01-11)
+
+
+### Bug Fixes
+
+* add missing 'text' search property to TypeScript definitions ([#327](https://github.com/postalsys/imapflow/issues/327)) ([0d1e43d](https://github.com/postalsys/imapflow/commit/0d1e43daa671131929a63c42cfef6ef32dda4c8e))
+
 ## [1.2.4](https://github.com/postalsys/imapflow/compare/v1.2.3...v1.2.4) (2025-12-28)
 
 
