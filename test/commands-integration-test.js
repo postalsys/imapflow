@@ -5288,3 +5288,558 @@ module.exports['Commands: authenticate prefers OAuth when accessToken provided']
     test.equal(execArgs.args[0].value, 'OAUTHBEARER'); // OAuth preferred when token provided
     test.done();
 };
+
+// ============================================
+// CREATE Command Tests
+// ============================================
+
+module.exports['Commands: create skips when not authenticated'] = async test => {
+    const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+
+    const result = await createCommand(connection, 'NewFolder');
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: create mailbox success'] = async test => {
+    let execArgs = null;
+    let subscribeCalled = false;
+    const connection = createMockConnection({
+        state: 2, // AUTHENTICATED
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        },
+        run: async (cmd, path) => {
+            if (cmd === 'SUBSCRIBE') {
+                subscribeCalled = true;
+                test.equal(path, 'NewFolder');
+            }
+        }
+    });
+
+    const result = await createCommand(connection, 'NewFolder');
+    test.ok(result);
+    test.equal(result.path, 'NewFolder');
+    test.equal(result.created, true);
+    test.equal(execArgs.cmd, 'CREATE');
+    test.ok(subscribeCalled);
+    test.done();
+};
+
+module.exports['Commands: create works in SELECTED state'] = async test => {
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        exec: async () => ({
+            next: () => {},
+            response: { attributes: [] }
+        }),
+        run: async () => {}
+    });
+
+    const result = await createCommand(connection, 'NewFolder');
+    test.ok(result);
+    test.equal(result.created, true);
+    test.done();
+};
+
+module.exports['Commands: create with MAILBOXID response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [{ value: 'MAILBOXID' }, [{ value: 'F12345' }]]
+                    }
+                ]
+            }
+        }),
+        run: async () => {}
+    });
+
+    const result = await createCommand(connection, 'NewFolder');
+    test.ok(result);
+    test.equal(result.mailboxId, 'F12345');
+    test.equal(result.created, true);
+    test.done();
+};
+
+module.exports['Commands: create normalizes path'] = async test => {
+    let capturedArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        namespace: { delimiter: '/', prefix: 'INBOX/' },
+        exec: async (cmd, args) => {
+            capturedArgs = args;
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        },
+        run: async () => {}
+    });
+
+    await createCommand(connection, 'Subfolder');
+    test.ok(capturedArgs);
+    test.done();
+};
+
+module.exports['Commands: create handles ALREADYEXISTS'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Mailbox already exists');
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        value: '',
+                        section: [{ type: 'ATOM', value: 'ALREADYEXISTS' }]
+                    }
+                ]
+            };
+            throw err;
+        },
+        run: async () => {},
+        log: {
+            warn: () => {},
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await createCommand(connection, 'ExistingFolder');
+    test.ok(result);
+    test.equal(result.path, 'ExistingFolder');
+    test.equal(result.created, false);
+    test.done();
+};
+
+module.exports['Commands: create throws on other errors'] = async test => {
+    let warnLogged = false;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Permission denied');
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        value: '',
+                        section: [{ type: 'ATOM', value: 'NOPERM' }]
+                    }
+                ]
+            };
+            throw err;
+        },
+        run: async () => {},
+        log: {
+            warn: () => {
+                warnLogged = true;
+            },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    try {
+        await createCommand(connection, 'RestrictedFolder');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.serverResponseCode, 'NOPERM');
+        test.ok(warnLogged);
+    }
+    test.done();
+};
+
+module.exports['Commands: create handles empty section'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [] // Empty section
+                    }
+                ]
+            }
+        }),
+        run: async () => {}
+    });
+
+    const result = await createCommand(connection, 'NewFolder');
+    test.ok(result);
+    test.equal(result.created, true);
+    test.equal(result.mailboxId, undefined);
+    test.done();
+};
+
+module.exports['Commands: create handles invalid MAILBOXID format'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [
+                            { value: 'MAILBOXID' },
+                            { value: 'not-an-array' } // Should be array
+                        ]
+                    }
+                ]
+            }
+        }),
+        run: async () => {}
+    });
+
+    const result = await createCommand(connection, 'NewFolder');
+    test.ok(result);
+    test.equal(result.created, true);
+    // mailboxId should not be set due to invalid format
+    test.equal(result.mailboxId, undefined);
+    test.done();
+};
+
+module.exports['Commands: create handles null key in section'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [
+                            null, // null key
+                            [{ value: 'F12345' }]
+                        ]
+                    }
+                ]
+            }
+        }),
+        run: async () => {}
+    });
+
+    const result = await createCommand(connection, 'NewFolder');
+    test.ok(result);
+    test.equal(result.created, true);
+    test.done();
+};
+
+// ============================================
+// ENABLE Command Tests
+// ============================================
+
+module.exports['Commands: enable skips without ENABLE capability'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map() // No ENABLE capability
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: enable skips when not authenticated'] = async test => {
+    const connection = createMockConnection({
+        state: 3, // SELECTED - not AUTHENTICATED
+        capabilities: new Map([['ENABLE', true]])
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: enable skips when no supported extensions'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['ENABLE', true]]) // Has ENABLE but not CONDSTORE
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: enable single extension'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
+        enabled: new Set(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: [{ value: 'CONDSTORE' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.ok(result instanceof Set);
+    test.ok(result.has('CONDSTORE'));
+    test.equal(execArgs.cmd, 'ENABLE');
+    test.equal(execArgs.args[0].value, 'CONDSTORE');
+    test.ok(connection.enabled.has('CONDSTORE'));
+    test.done();
+};
+
+module.exports['Commands: enable multiple extensions'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true],
+            ['QRESYNC', true]
+        ]),
+        enabled: new Set(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: [{ value: 'CONDSTORE' }, { value: 'QRESYNC' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE', 'QRESYNC']);
+    test.ok(result instanceof Set);
+    test.ok(result.has('CONDSTORE'));
+    test.ok(result.has('QRESYNC'));
+    test.equal(execArgs.args.length, 2);
+    test.done();
+};
+
+module.exports['Commands: enable filters unsupported extensions'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+            // QRESYNC not supported
+        ]),
+        enabled: new Set(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: [{ value: 'CONDSTORE' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE', 'QRESYNC']);
+    test.ok(result instanceof Set);
+    test.ok(result.has('CONDSTORE'));
+    test.ok(!result.has('QRESYNC'));
+    // Only CONDSTORE should be in the request
+    test.equal(execArgs.args.length, 1);
+    test.equal(execArgs.args[0].value, 'CONDSTORE');
+    test.done();
+};
+
+module.exports['Commands: enable converts to uppercase'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
+        enabled: new Set(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: [{ value: 'condstore' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['condstore']); // lowercase
+    test.ok(result instanceof Set);
+    test.ok(result.has('CONDSTORE')); // Stored as uppercase
+    test.equal(execArgs.args[0].value, 'CONDSTORE'); // Sent as uppercase
+    test.done();
+};
+
+module.exports['Commands: enable handles empty ENABLED response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
+        enabled: new Set(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: [] // Empty
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.ok(result instanceof Set);
+    test.equal(result.size, 0);
+    test.done();
+};
+
+module.exports['Commands: enable handles null attributes'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
+        enabled: new Set(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: null
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.ok(result instanceof Set);
+    test.equal(result.size, 0);
+    test.done();
+};
+
+module.exports['Commands: enable trims response values'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
+        enabled: new Set(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: [{ value: '  CONDSTORE  ' }] // With whitespace
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.ok(result.has('CONDSTORE'));
+    test.done();
+};
+
+module.exports['Commands: enable handles error'] = async test => {
+    let warnLogged = false;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
+        enabled: new Set(),
+        exec: async () => {
+            throw new Error('Enable failed');
+        },
+        log: {
+            warn: () => {
+                warnLogged = true;
+            },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.equal(result, false);
+    test.ok(warnLogged);
+    test.done();
+};
+
+module.exports['Commands: enable skips non-string attribute values'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
+        enabled: new Set(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: [
+                        { value: 'CONDSTORE' },
+                        { value: null }, // null value
+                        { value: 123 }, // number value
+                        { notValue: 'test' } // missing value property
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['CONDSTORE']);
+    test.ok(result instanceof Set);
+    test.equal(result.size, 1);
+    test.ok(result.has('CONDSTORE'));
+    test.done();
+};
+
+module.exports['Commands: enable updates connection.enabled'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true],
+            ['UTF8=ACCEPT', true]
+        ]),
+        enabled: new Set(['EXISTING']),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({
+                    attributes: [{ value: 'CONDSTORE' }, { value: 'UTF8=ACCEPT' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await enableCommand(connection, ['CONDSTORE', 'UTF8=ACCEPT']);
+    // connection.enabled should be replaced with new set
+    test.ok(connection.enabled.has('CONDSTORE'));
+    test.ok(connection.enabled.has('UTF8=ACCEPT'));
+    test.ok(!connection.enabled.has('EXISTING')); // Old value should be gone
+    test.done();
+};
