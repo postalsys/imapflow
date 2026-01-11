@@ -2188,3 +2188,841 @@ module.exports['Commands: list XLIST removes Inbox flag from non-INBOX'] = async
     test.equal(folder.specialUse, '\\Inbox');
     test.done();
 };
+
+// ============================================
+// SELECT Command Tests
+// ============================================
+
+const selectCommand = require('../lib/commands/select');
+
+module.exports['Commands: select basic'] = async test => {
+    let execCalled = false;
+    let execCommand = '';
+    const connection = createMockConnection({
+        state: 2, // AUTHENTICATED
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            execCalled = true;
+            execCommand = cmd;
+            // Simulate SELECT response
+            if (opts && opts.untagged) {
+                if (opts.untagged.FLAGS) {
+                    await opts.untagged.FLAGS({
+                        attributes: [[{ value: '\\Seen' }, { value: '\\Answered' }, { value: '\\Flagged' }]]
+                    });
+                }
+                if (opts.untagged.EXISTS) {
+                    await opts.untagged.EXISTS({ command: '100' });
+                }
+                if (opts.untagged.OK) {
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'UIDVALIDITY' }, { value: '12345' }] }]
+                    });
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'UIDNEXT' }, { value: '1000' }] }]
+                    });
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'PERMANENTFLAGS' }, [{ value: '\\*' }]] }]
+                    });
+                }
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.equal(execCalled, true);
+    test.equal(execCommand, 'SELECT');
+    test.ok(result);
+    test.equal(result.path, 'INBOX');
+    test.equal(result.exists, 100);
+    test.equal(result.readOnly, false);
+    test.done();
+};
+
+module.exports['Commands: select with readOnly option uses EXAMINE'] = async test => {
+    let execCommand = '';
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async (cmd) => {
+            execCommand = cmd;
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-ONLY' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX', { readOnly: true });
+    test.equal(execCommand, 'EXAMINE');
+    test.equal(result.readOnly, true);
+    test.done();
+};
+
+module.exports['Commands: select skips when not authenticated'] = async test => {
+    const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: select fetches folder list if not cached'] = async test => {
+    let listCalled = false;
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map(), // Empty - will trigger LIST
+        run: async (cmd) => {
+            if (cmd === 'LIST') {
+                listCalled = true;
+                return [{ path: 'INBOX', delimiter: '/' }];
+            }
+        },
+        exec: async () => ({
+            next: () => {},
+            response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+        }),
+        emit: () => {}
+    });
+
+    await selectCommand(connection, 'INBOX');
+    test.equal(listCalled, true);
+    test.done();
+};
+
+module.exports['Commands: select throws when LIST fails'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map(),
+        run: async () => null // LIST returns null
+    });
+
+    try {
+        await selectCommand(connection, 'INBOX');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.message, 'Failed to fetch folders');
+    }
+    test.done();
+};
+
+module.exports['Commands: select with QRESYNC'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        enabled: new Set(['QRESYNC']),
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            execAttrs = attrs;
+            // Must return matching UIDVALIDITY and HIGHESTMODSEQ for QRESYNC to remain valid
+            if (opts && opts.untagged && opts.untagged.OK) {
+                await opts.untagged.OK({
+                    attributes: [{ section: [{ type: 'ATOM', value: 'UIDVALIDITY' }, { value: '67890' }] }]
+                });
+                await opts.untagged.OK({
+                    attributes: [{ section: [{ type: 'ATOM', value: 'HIGHESTMODSEQ' }, { value: '100' }] }]
+                });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {},
+        untaggedVanished: async () => {},
+        untaggedFetch: async () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX', {
+        changedSince: '12345',
+        uidValidity: BigInt(67890)
+    });
+    test.ok(execAttrs);
+    const attrsStr = JSON.stringify(execAttrs);
+    test.ok(attrsStr.includes('QRESYNC'));
+    test.equal(result.qresync, true);
+    test.done();
+};
+
+module.exports['Commands: select QRESYNC invalidated when UIDVALIDITY mismatch'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        enabled: new Set(['QRESYNC']),
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            // Return different UIDVALIDITY
+            if (opts && opts.untagged && opts.untagged.OK) {
+                await opts.untagged.OK({
+                    attributes: [{ section: [{ type: 'ATOM', value: 'UIDVALIDITY' }, { value: '99999' }] }]
+                });
+                await opts.untagged.OK({
+                    attributes: [{ section: [{ type: 'ATOM', value: 'HIGHESTMODSEQ' }, { value: '100' }] }]
+                });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX', {
+        changedSince: '12345',
+        uidValidity: BigInt(67890) // Different from server's 99999
+    });
+    // QRESYNC should be invalidated due to UIDVALIDITY mismatch
+    test.equal(result.qresync, false);
+    test.done();
+};
+
+module.exports['Commands: select QRESYNC invalidated when NOMODSEQ'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        enabled: new Set(['QRESYNC']),
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.OK) {
+                await opts.untagged.OK({
+                    attributes: [{ section: [{ type: 'ATOM', value: 'UIDVALIDITY' }, { value: '67890' }] }]
+                });
+                // NOMODSEQ present
+                await opts.untagged.OK({
+                    attributes: [{ section: [{ type: 'ATOM', value: 'NOMODSEQ' }] }]
+                });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX', {
+        changedSince: '12345',
+        uidValidity: BigInt(67890)
+    });
+    test.equal(result.noModseq, true);
+    test.equal(result.qresync, false);
+    test.done();
+};
+
+module.exports['Commands: select parses HIGHESTMODSEQ'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.OK) {
+                await opts.untagged.OK({
+                    attributes: [{ section: [{ type: 'ATOM', value: 'HIGHESTMODSEQ' }, { value: '9876543210' }] }]
+                });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.equal(result.highestModseq, BigInt('9876543210'));
+    test.done();
+};
+
+module.exports['Commands: select parses MAILBOXID'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.OK) {
+                await opts.untagged.OK({
+                    attributes: [{ section: [{ type: 'ATOM', value: 'MAILBOXID' }, [{ value: 'abc123' }]] }]
+                });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.equal(result.mailboxId, 'abc123');
+    test.done();
+};
+
+module.exports['Commands: select emits mailboxOpen event'] = async test => {
+    let emittedEvents = [];
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: false, // No current mailbox
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async () => ({
+            next: () => {},
+            response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+        }),
+        emit: (event) => { emittedEvents.push(event); }
+    });
+
+    await selectCommand(connection, 'INBOX');
+    test.ok(emittedEvents.includes('mailboxOpen'));
+    test.done();
+};
+
+module.exports['Commands: select emits mailboxClose when switching'] = async test => {
+    let emittedEvents = [];
+    const connection = createMockConnection({
+        state: 3, // Already SELECTED
+        mailbox: { path: 'OldFolder' },
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async () => ({
+            next: () => {},
+            response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+        }),
+        emit: (event) => { emittedEvents.push(event); }
+    });
+
+    await selectCommand(connection, 'INBOX');
+    test.ok(emittedEvents.includes('mailboxClose'));
+    test.ok(emittedEvents.includes('mailboxOpen'));
+    test.done();
+};
+
+module.exports['Commands: select handles error'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async () => {
+            const err = new Error('Select failed');
+            err.response = { attributes: [] };
+            throw err;
+        },
+        emit: () => {}
+    });
+
+    try {
+        await selectCommand(connection, 'INBOX');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.message, 'Select failed');
+    }
+    test.done();
+};
+
+module.exports['Commands: select resets state on error when SELECTED'] = async test => {
+    let emittedEvent = '';
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'CurrentFolder' },
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async () => {
+            const err = new Error('Select failed');
+            err.response = { attributes: [] };
+            throw err;
+        },
+        emit: (event) => { emittedEvent = event; }
+    });
+
+    try {
+        await selectCommand(connection, 'INBOX');
+    } catch (err) {
+        // Expected
+    }
+    test.equal(connection.state, 2); // Reset to AUTHENTICATED
+    test.equal(connection.mailbox, false);
+    test.equal(emittedEvent, 'mailboxClose');
+    test.done();
+};
+
+module.exports['Commands: select copies folder metadata'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', {
+            path: 'INBOX',
+            delimiter: '/',
+            specialUse: '\\Inbox',
+            subscribed: true,
+            listed: true
+        }]]),
+        run: async () => [],
+        exec: async () => ({
+            next: () => {},
+            response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+        }),
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.equal(result.delimiter, '/');
+    test.equal(result.specialUse, '\\Inbox');
+    test.equal(result.subscribed, true);
+    test.equal(result.listed, true);
+    test.done();
+};
+
+module.exports['Commands: select handles VANISHED untagged'] = async test => {
+    let vanishedCalled = false;
+    const connection = createMockConnection({
+        state: 2,
+        enabled: new Set(['QRESYNC']),
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.VANISHED) {
+                await opts.untagged.VANISHED({ attributes: [] });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {},
+        untaggedVanished: async () => { vanishedCalled = true; }
+    });
+
+    await selectCommand(connection, 'INBOX', { changedSince: '100', uidValidity: BigInt(123) });
+    test.equal(vanishedCalled, true);
+    test.done();
+};
+
+module.exports['Commands: select handles FETCH untagged'] = async test => {
+    let fetchCalled = false;
+    const connection = createMockConnection({
+        state: 2,
+        enabled: new Set(['QRESYNC']),
+        folders: new Map([['INBOX', { path: 'INBOX' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.FETCH) {
+                await opts.untagged.FETCH({ command: '1', attributes: [] });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {},
+        untaggedFetch: async () => { fetchCalled = true; }
+    });
+
+    await selectCommand(connection, 'INBOX', { changedSince: '100', uidValidity: BigInt(123) });
+    test.equal(fetchCalled, true);
+    test.done();
+};
+
+module.exports['Commands: select encodes path with special characters'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['Test&Folder', { path: 'Test&Folder' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    await selectCommand(connection, 'Test&Folder');
+    // Path with & should use STRING type instead of ATOM
+    test.ok(execAttrs);
+    test.equal(execAttrs[0].type, 'STRING');
+    test.done();
+};
+
+// ============================================
+// STATUS Command Tests
+// ============================================
+
+const statusCommand = require('../lib/commands/status');
+
+module.exports['Commands: status basic'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 2, // AUTHENTICATED
+        exec: async (cmd, attrs, opts) => {
+            execCalled = true;
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [
+                            { value: 'MESSAGES' }, { value: '100' },
+                            { value: 'UNSEEN' }, { value: '10' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true, unseen: true });
+    test.equal(execCalled, true);
+    test.ok(result);
+    test.equal(result.path, 'INBOX');
+    test.equal(result.messages, 100);
+    test.equal(result.unseen, 10);
+    test.done();
+};
+
+module.exports['Commands: status skips when not authenticated'] = async test => {
+    const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true });
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: status skips when no path'] = async test => {
+    const connection = createMockConnection({ state: 2 });
+
+    const result = await statusCommand(connection, '', { messages: true });
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: status skips when no query attributes'] = async test => {
+    const connection = createMockConnection({ state: 2 });
+
+    const result = await statusCommand(connection, 'INBOX', {});
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: status skips when all query values are false'] = async test => {
+    const connection = createMockConnection({ state: 2 });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: false, unseen: false });
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: status with all standard query attributes'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            queryAttrs = attrs;
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [
+                            { value: 'MESSAGES' }, { value: '100' },
+                            { value: 'RECENT' }, { value: '5' },
+                            { value: 'UIDNEXT' }, { value: '1000' },
+                            { value: 'UIDVALIDITY' }, { value: '12345' },
+                            { value: 'UNSEEN' }, { value: '10' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', {
+        messages: true,
+        recent: true,
+        uidNext: true,
+        uidValidity: true,
+        unseen: true
+    });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('MESSAGES'));
+    test.ok(queryStr.includes('RECENT'));
+    test.ok(queryStr.includes('UIDNEXT'));
+    test.ok(queryStr.includes('UIDVALIDITY'));
+    test.ok(queryStr.includes('UNSEEN'));
+
+    test.equal(result.messages, 100);
+    test.equal(result.recent, 5);
+    test.equal(result.uidNext, 1000);
+    test.equal(result.uidValidity, BigInt(12345));
+    test.equal(result.unseen, 10);
+    test.done();
+};
+
+module.exports['Commands: status with HIGHESTMODSEQ and CONDSTORE'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['CONDSTORE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            queryAttrs = attrs;
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [
+                            { value: 'HIGHESTMODSEQ' }, { value: '9876543210' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { highestModseq: true });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('HIGHESTMODSEQ'));
+    test.equal(result.highestModseq, BigInt('9876543210'));
+    test.done();
+};
+
+module.exports['Commands: status ignores HIGHESTMODSEQ without CONDSTORE'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map(), // No CONDSTORE
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { highestModseq: true });
+    // Should return false since no valid query attributes
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: status updates current mailbox when SELECTED'] = async test => {
+    let existsEmitted = false;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'INBOX', exists: 50, uidNext: 500 },
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [
+                            { value: 'MESSAGES' }, { value: '100' },
+                            { value: 'UIDNEXT' }, { value: '1000' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        },
+        emit: (event) => {
+            if (event === 'exists') existsEmitted = true;
+        }
+    });
+
+    await statusCommand(connection, 'INBOX', { messages: true, uidNext: true });
+    // Mailbox should be updated
+    test.equal(connection.mailbox.exists, 100);
+    test.equal(connection.mailbox.uidNext, 1000);
+    // exists event should be emitted since count changed
+    test.equal(existsEmitted, true);
+    test.done();
+};
+
+module.exports['Commands: status does not emit exists when count unchanged'] = async test => {
+    let existsEmitted = false;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 100 }, // Same as response
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [{ value: 'MESSAGES' }, { value: '100' }]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        },
+        emit: (event) => {
+            if (event === 'exists') existsEmitted = true;
+        }
+    });
+
+    await statusCommand(connection, 'INBOX', { messages: true });
+    test.equal(existsEmitted, false);
+    test.done();
+};
+
+module.exports['Commands: status handles error with NO response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        run: async () => [], // LIST returns empty - folder doesn't exist
+        exec: async () => {
+            const err = new Error('Mailbox not found');
+            err.responseStatus = 'NO';
+            throw err;
+        }
+    });
+
+    try {
+        await statusCommand(connection, 'NonExistent', { messages: true });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'NotFound');
+    }
+    test.done();
+};
+
+module.exports['Commands: status returns false on other errors'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async () => {
+            const err = new Error('Some error');
+            err.responseStatus = 'BAD';
+            throw err;
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true });
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: status handles empty STATUS response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                // Empty list - should be ignored
+                await opts.untagged.STATUS({
+                    attributes: [{ value: 'INBOX' }, false]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true });
+    test.ok(result);
+    test.equal(result.path, 'INBOX');
+    // No messages property since response was empty
+    test.equal(result.messages, undefined);
+    test.done();
+};
+
+module.exports['Commands: status handles invalid entry values'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [
+                            { value: 'MESSAGES' }, { value: 'not-a-number' },
+                            { value: 'UNSEEN' }, { value: '10' },
+                            null, { value: '5' }, // Invalid key
+                            { value: 'RECENT' }, null // Invalid value
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true, unseen: true, recent: true });
+    test.ok(result);
+    // MESSAGES with invalid value should be skipped (isNaN check fails)
+    test.equal(result.messages, undefined);
+    // UNSEEN should work
+    test.equal(result.unseen, 10);
+    // RECENT with null value should be skipped
+    test.equal(result.recent, undefined);
+    test.done();
+};
+
+module.exports['Commands: status encodes path with special characters'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs) => {
+            execAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await statusCommand(connection, 'Test&Folder', { messages: true });
+    // Path with & should use STRING type instead of ATOM
+    test.ok(execAttrs);
+    test.equal(execAttrs[0].type, 'STRING');
+    test.done();
+};
+
+module.exports['Commands: status works from SELECTED state'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'OtherFolder' }, // Different folder
+        exec: async (cmd, attrs, opts) => {
+            execCalled = true;
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [{ value: 'MESSAGES' }, { value: '50' }]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true });
+    test.equal(execCalled, true);
+    test.equal(result.messages, 50);
+    test.done();
+};
+
+module.exports['Commands: status updates HIGHESTMODSEQ for current mailbox'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['CONDSTORE', true]]),
+        mailbox: { path: 'INBOX', highestModseq: BigInt(100) },
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [{ value: 'HIGHESTMODSEQ' }, { value: '200' }]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await statusCommand(connection, 'INBOX', { highestModseq: true });
+    test.equal(connection.mailbox.highestModseq, BigInt(200));
+    test.done();
+};
