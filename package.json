@@ -6,6 +6,7 @@
     "types": "lib/imap-flow.d.ts",
     "scripts": {
         "test": "grunt",
+        "coverage": "c8 --reporter=text --reporter=html npx nodeunit test/*-test.js",
         "prepare": "npm run build",
         "docs": "rm -rf docs && mkdir -p docs && jsdoc lib/imap-flow.js -c jsdoc.json -R README.md --destination docs/ && cp assets/favicon.ico docs",
         "build": "npm run docs",
@@ -30,6 +31,7 @@
     },
     "homepage": "https://imapflow.com/",
     "devDependencies": {
+        "c8": "10.1.3",
         "@babel/eslint-parser": "7.28.5",
         "@babel/eslint-plugin": "7.27.1",
         "@babel/plugin-syntax-class-properties": "7.12.13",
