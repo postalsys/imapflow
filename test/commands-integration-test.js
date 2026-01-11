@@ -3725,6 +3725,139 @@ module.exports['Commands: list handles STATUS NaN values in LSUB response'] = as
     test.done();
 };
 
+module.exports['Commands: list STATUS parses UIDVALIDITY UNSEEN HIGHESTMODSEQ'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['LIST-STATUS', true],
+            ['CONDSTORE', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'TestFolder' }]
+                    });
+                }
+                if (opts && opts.untagged && opts.untagged.STATUS) {
+                    await opts.untagged.STATUS({
+                        attributes: [
+                            { value: 'TestFolder' },
+                            [
+                                { value: 'UIDVALIDITY' },
+                                { value: '123456789' },
+                                { value: 'UNSEEN' },
+                                { value: '42' },
+                                { value: 'HIGHESTMODSEQ' },
+                                { value: '999999999' }
+                            ]
+                        ]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', {
+        statusQuery: { uidValidity: true, unseen: true, highestModseq: true }
+    });
+    const folder = result.find(e => e.path === 'TestFolder');
+    test.ok(folder);
+    test.ok(folder.status);
+    test.equal(folder.status.uidValidity, BigInt(123456789));
+    test.equal(folder.status.unseen, 42);
+    test.equal(folder.status.highestModseq, BigInt(999999999));
+    test.done();
+};
+
+module.exports['Commands: list LSUB folder not in LIST entries'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Only return INBOX in LIST
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+            }
+            if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
+                // Return a folder in LSUB that wasn't in LIST (hits else branch)
+                await opts.untagged.LSUB({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'SubscribedOnly' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // The subscribed-only folder should not be in results (else branch ignores it)
+    const subscribedOnly = result.find(e => e.path === 'SubscribedOnly');
+    test.equal(subscribedOnly, undefined);
+    // INBOX should still be there
+    const inbox = result.find(e => e.path === 'INBOX');
+    test.ok(inbox);
+    test.done();
+};
+
+module.exports['Commands: list sort b has specialUse a does not'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // First add a folder without special use
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'AAA_Regular' }]
+                });
+                // Then add INBOX which gets special use
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // When sorting, INBOX has specialUse, AAA_Regular does not
+    // So the comparison should hit: !a.specialUse && b.specialUse returns 1
+    // This means INBOX should come first even though AAA_Regular is alphabetically first
+    test.ok(result.length >= 2);
+    test.equal(result[0].path, 'INBOX');
+    test.equal(result[0].specialUse, '\\Inbox');
+    test.done();
+};
+
+module.exports['Commands: list sort fallback path comparison'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Create folders where parent parts match but paths differ at the end
+                // A/B/C and A/B will have matching parts up to a point
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Parent/Child/Deep' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Parent/Child' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // Parent/Child should come before Parent/Child/Deep
+    const childIndex = result.findIndex(e => e.path === 'Parent/Child');
+    const deepIndex = result.findIndex(e => e.path === 'Parent/Child/Deep');
+    test.ok(childIndex < deepIndex, 'Shorter path should sort before longer when parent matches');
+    test.done();
+};
+
 // ============================================
 // SELECT Command Tests
 // ============================================
