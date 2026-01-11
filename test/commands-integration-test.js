@@ -287,6 +287,50 @@ module.exports['Commands: close handles error'] = async test => {
     test.done();
 };
 
+module.exports['Commands: close emits mailboxClose event'] = async test => {
+    let emittedMailbox = null;
+    const testMailbox = { path: 'INBOX', uidValidity: 12345n };
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: testMailbox,
+        currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
+        exec: async () => ({ next: () => {} }),
+        emit: (event, data) => {
+            if (event === 'mailboxClose') {
+                emittedMailbox = data;
+            }
+        }
+    });
+
+    const result = await closeCommand(connection);
+    test.equal(result, true);
+    test.ok(emittedMailbox);
+    test.equal(emittedMailbox.path, 'INBOX');
+    test.equal(connection.mailbox, false);
+    test.equal(connection.currentSelectCommand, false);
+    test.equal(connection.state, 2); // AUTHENTICATED
+    test.done();
+};
+
+module.exports['Commands: close without mailbox does not emit event'] = async test => {
+    let eventEmitted = false;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: false, // No mailbox
+        exec: async () => ({ next: () => {} }),
+        emit: event => {
+            if (event === 'mailboxClose') {
+                eventEmitted = true;
+            }
+        }
+    });
+
+    const result = await closeCommand(connection);
+    test.equal(result, true);
+    test.equal(eventEmitted, false);
+    test.done();
+};
+
 // ============================================
 // SEARCH Command Tests
 // ============================================
@@ -5141,6 +5185,89 @@ module.exports['Commands: idle NOOP fallback handles error'] = async test => {
     // Should resolve even on error
     await idleCommand(connection);
     test.equal(errorLogged, true);
+    test.done();
+};
+
+module.exports['Commands: idle clears wait queue on normal completion'] = async test => {
+    let preCheckResolved = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // Simulate waiting preCheck request before completion
+            if (connection.preCheck) {
+                // Queue a preCheck request
+                connection.preCheck().then(() => {
+                    preCheckResolved = true;
+                });
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await idleCommand(connection);
+    // Wait a tick for the promise to resolve
+    await new Promise(resolve => setImmediate(resolve));
+    test.equal(preCheckResolved, true);
+    test.done();
+};
+
+module.exports['Commands: idle rejects wait queue on error'] = async test => {
+    let preCheckRejected = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // Queue a preCheck request then throw
+            if (connection.preCheck) {
+                connection.preCheck().catch(() => {
+                    preCheckRejected = true;
+                });
+            }
+            throw new Error('IDLE failed');
+        }
+    });
+
+    const result = await idleCommand(connection);
+    test.equal(result, false);
+    // Wait a tick for the promise to reject
+    await new Promise(resolve => setImmediate(resolve));
+    test.equal(preCheckRejected, true);
+    test.done();
+};
+
+module.exports['Commands: idle onPlusTag calls preCheck if doneRequested'] = async test => {
+    let doneSent = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            // Request done before onPlusTag is called
+            if (connection.preCheck) {
+                connection.preCheck().catch(() => {});
+            }
+            // Then call onPlusTag which should send DONE
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            return { next: () => {} };
+        },
+        write: data => {
+            if (data === 'DONE') {
+                doneSent = true;
+            }
+        }
+    });
+
+    await idleCommand(connection);
+    test.equal(doneSent, true);
     test.done();
 };
 
