@@ -37,7 +37,8 @@ const createMockConnection = (overrides = {}) => {
             warn: () => {},
             info: () => {},
             error: () => {},
-            debug: () => {}
+            debug: () => {},
+            trace: () => {}
         },
         close: overrides.close || (() => {}),
         emit: overrides.emit || (() => {}),
@@ -3024,5 +3025,650 @@ module.exports['Commands: status updates HIGHESTMODSEQ for current mailbox'] = a
 
     await statusCommand(connection, 'INBOX', { highestModseq: true });
     test.equal(connection.mailbox.highestModseq, BigInt(200));
+    test.done();
+};
+
+// ============================================
+// APPEND Command Tests
+// ============================================
+
+const appendCommand = require('../lib/commands/append');
+
+module.exports['Commands: append basic'] = async test => {
+    let appendCalled = false;
+    const connection = createMockConnection({
+        state: 2, // AUTHENTICATED
+        mailbox: { path: 'OtherFolder' }, // Different folder to avoid EXISTS handling
+        exec: async (cmd) => {
+            if (cmd === 'APPEND') {
+                appendCalled = true;
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    const result = await appendCommand(connection, 'INBOX', 'Test message content');
+    test.equal(appendCalled, true);
+    test.ok(result);
+    test.equal(result.destination, 'INBOX');
+    test.done();
+};
+
+module.exports['Commands: append with Buffer content'] = async test => {
+    let contentAttr = null;
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'OtherFolder' },
+        exec: async (cmd, attrs) => {
+            if (cmd === 'APPEND' && Array.isArray(attrs)) {
+                contentAttr = attrs.find(a => a && a.type === 'LITERAL');
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    const buffer = Buffer.from('Test message');
+    await appendCommand(connection, 'INBOX', buffer);
+    test.ok(contentAttr);
+    test.ok(Buffer.isBuffer(contentAttr.value));
+    test.equal(contentAttr.value.toString(), 'Test message');
+    test.done();
+};
+
+module.exports['Commands: append skips when not authenticated'] = async test => {
+    const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+
+    const result = await appendCommand(connection, 'INBOX', 'content');
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: append skips when no destination'] = async test => {
+    const connection = createMockConnection({ state: 2 });
+
+    const result = await appendCommand(connection, '', 'content');
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: append with flags'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'OtherFolder', permanentFlags: new Set(['\\*']) },
+        exec: async (cmd, attrs) => {
+            if (cmd === 'APPEND' && Array.isArray(attrs)) {
+                execAttrs = attrs;
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    await appendCommand(connection, 'INBOX', 'content', ['\\Seen', '\\Flagged']);
+    test.ok(execAttrs);
+    // Should have flags array between path and content
+    const flagsAttr = execAttrs.find(a => Array.isArray(a));
+    test.ok(flagsAttr);
+    test.ok(flagsAttr.some(f => f.value === '\\Seen'));
+    test.ok(flagsAttr.some(f => f.value === '\\Flagged'));
+    test.done();
+};
+
+module.exports['Commands: append with internal date'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'OtherFolder' },
+        exec: async (cmd, attrs) => {
+            if (cmd === 'APPEND' && Array.isArray(attrs)) {
+                execAttrs = attrs;
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    const date = new Date('2024-01-15T10:30:00Z');
+    await appendCommand(connection, 'INBOX', 'content', [], date);
+    test.ok(execAttrs);
+    // Should have date string
+    const dateAttr = execAttrs.find(a => a && a.type === 'STRING');
+    test.ok(dateAttr);
+    test.ok(dateAttr.value.includes('2024'));
+    test.done();
+};
+
+module.exports['Commands: append checks APPENDLIMIT'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['APPENDLIMIT', 100]]), // 100 byte limit
+        mailbox: { path: 'INBOX' }
+    });
+
+    const largeContent = Buffer.alloc(200, 'x'); // 200 bytes, exceeds limit
+
+    try {
+        await appendCommand(connection, 'INBOX', largeContent);
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.serverResponseCode, 'APPENDLIMIT');
+        test.ok(err.message.includes('APPENDLIMIT'));
+    }
+    test.done();
+};
+
+module.exports['Commands: append allows content within APPENDLIMIT'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['APPENDLIMIT', 1000]]),
+        mailbox: { path: 'INBOX' },
+        exec: async () => {
+            execCalled = true;
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    const content = Buffer.alloc(500, 'x'); // Within limit
+    await appendCommand(connection, 'INBOX', content);
+    test.equal(execCalled, true);
+    test.done();
+};
+
+module.exports['Commands: append with APPENDUID response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'INBOX' },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [{
+                    section: [
+                        { value: 'APPENDUID' },
+                        { value: '12345' }, // uidValidity
+                        { value: '100' }    // uid
+                    ]
+                }]
+            }
+        })
+    });
+
+    const result = await appendCommand(connection, 'INBOX', 'content');
+    test.equal(result.uidValidity, BigInt(12345));
+    test.equal(result.uid, 100);
+    test.done();
+};
+
+module.exports['Commands: append to current mailbox triggers EXISTS'] = async test => {
+    let existsEmitted = false;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'INBOX', exists: 10 },
+        exec: async (cmd, attrs, opts) => {
+            // Simulate EXISTS untagged response
+            if (cmd === 'APPEND' && opts && opts.untagged && opts.untagged.EXISTS) {
+                await opts.untagged.EXISTS({ command: '11' });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        },
+        emit: (event) => {
+            if (event === 'exists') existsEmitted = true;
+        },
+        search: async () => [100] // Return UID
+    });
+
+    await appendCommand(connection, 'INBOX', 'content');
+    test.equal(existsEmitted, true);
+    test.equal(connection.mailbox.exists, 11);
+    test.done();
+};
+
+module.exports['Commands: append runs NOOP to get sequence if not in EXISTS'] = async test => {
+    let noopCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 10 },
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'NOOP') {
+                noopCalled = true;
+                if (opts && opts.untagged && opts.untagged.EXISTS) {
+                    await opts.untagged.EXISTS({ command: '11' });
+                }
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        },
+        emit: () => {},
+        search: async () => [100] // Return UID
+    });
+
+    const result = await appendCommand(connection, 'INBOX', 'content');
+    test.equal(noopCalled, true);
+    test.equal(result.seq, 11);
+    test.done();
+};
+
+module.exports['Commands: append searches for UID if seq but no uid'] = async test => {
+    let searchCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 10 },
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.EXISTS) {
+                await opts.untagged.EXISTS({ command: '11' });
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        },
+        emit: () => {},
+        search: async () => {
+            searchCalled = true;
+            return [100];
+        }
+    });
+
+    const result = await appendCommand(connection, 'INBOX', 'content');
+    test.equal(searchCalled, true);
+    test.equal(result.uid, 100);
+    test.done();
+};
+
+module.exports['Commands: append with BINARY and NULL bytes'] = async test => {
+    let literalAttr = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['BINARY', true]]),
+        mailbox: { path: 'INBOX' },
+        exec: async (cmd, attrs) => {
+            literalAttr = attrs.find(a => a.type === 'LITERAL');
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    // Content with NULL byte
+    const content = Buffer.concat([Buffer.from('test'), Buffer.from([0]), Buffer.from('data')]);
+    await appendCommand(connection, 'INBOX', content);
+    test.ok(literalAttr);
+    test.equal(literalAttr.isLiteral8, true);
+    test.done();
+};
+
+module.exports['Commands: append without BINARY uses regular literal'] = async test => {
+    let literalAttr = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map(), // No BINARY
+        mailbox: { path: 'INBOX' },
+        exec: async (cmd, attrs) => {
+            literalAttr = attrs.find(a => a.type === 'LITERAL');
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    const content = Buffer.concat([Buffer.from('test'), Buffer.from([0]), Buffer.from('data')]);
+    await appendCommand(connection, 'INBOX', content);
+    test.ok(literalAttr);
+    test.equal(literalAttr.isLiteral8, false);
+    test.done();
+};
+
+module.exports['Commands: append handles error'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: { path: 'OtherFolder' },
+        exec: async () => {
+            const err = new Error('Append failed');
+            err.response = { attributes: [] };
+            throw err;
+        }
+    });
+
+    try {
+        await appendCommand(connection, 'INBOX', 'content');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.message, 'Append failed');
+    }
+    test.done();
+};
+
+module.exports['Commands: append filters invalid flags'] = async test => {
+    let execAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        mailbox: {
+            path: 'OtherFolder',
+            permanentFlags: new Set(['\\Seen', '\\Flagged']) // Only allow these
+        },
+        exec: async (cmd, attrs) => {
+            if (cmd === 'APPEND' && Array.isArray(attrs)) {
+                execAttrs = attrs;
+            }
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    // Mix of valid and invalid flags
+    await appendCommand(connection, 'INBOX', 'content', ['\\Seen', '\\CustomFlag', null, '\\Flagged']);
+    test.ok(execAttrs);
+    const flagsAttr = execAttrs.find(a => Array.isArray(a));
+    test.ok(flagsAttr);
+    // Should only contain allowed flags
+    test.equal(flagsAttr.length, 2);
+    test.done();
+};
+
+module.exports['Commands: append works from SELECTED state'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        mailbox: { path: 'OtherFolder', exists: 10 },
+        exec: async () => {
+            execCalled = true;
+            return {
+                next: () => {},
+                response: { attributes: [] }
+            };
+        }
+    });
+
+    // Append to different folder than current
+    const result = await appendCommand(connection, 'INBOX', 'content');
+    test.equal(execCalled, true);
+    test.equal(result.destination, 'INBOX');
+    test.done();
+};
+
+// ============================================
+// IDLE Command Tests
+// ============================================
+
+const idleCommand = require('../lib/commands/idle');
+
+module.exports['Commands: idle with IDLE capability'] = async test => {
+    let execCommand = '';
+    let idlingSet = false;
+    const connection = createMockConnection({
+        state: 3, // SELECTED
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            execCommand = cmd;
+            idlingSet = connection.idling;
+            // Simulate continuation response
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await idleCommand(connection);
+    test.equal(execCommand, 'IDLE');
+    test.equal(idlingSet, true);
+    test.done();
+};
+
+module.exports['Commands: idle skips when not selected'] = async test => {
+    const connection = createMockConnection({ state: 2 }); // AUTHENTICATED
+
+    const result = await idleCommand(connection);
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: idle falls back to NOOP without IDLE capability'] = async test => {
+    let noopCalled = false;
+    let resolved = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(), // No IDLE
+        currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
+        exec: async (cmd) => {
+            if (cmd === 'NOOP') {
+                noopCalled = true;
+                // Break out of the loop by calling preCheck
+                if (connection.preCheck) {
+                    await connection.preCheck();
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    // Start idle - it will loop with NOOP
+    const idlePromise = idleCommand(connection);
+
+    // Give it a moment to start, then break the loop
+    await new Promise(resolve => setTimeout(resolve, 10));
+    if (connection.preCheck) {
+        await connection.preCheck();
+    }
+
+    await idlePromise;
+    test.equal(noopCalled, true);
+    test.done();
+};
+
+module.exports['Commands: idle preCheck breaks IDLE'] = async test => {
+    let doneSent = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // After IDLE is initiated, trigger preCheck
+            if (connection.preCheck) {
+                await connection.preCheck();
+            }
+            return { next: () => {} };
+        },
+        write: (data) => {
+            if (data === 'DONE') {
+                doneSent = true;
+            }
+        }
+    });
+
+    await idleCommand(connection);
+    test.equal(doneSent, true);
+    test.equal(connection.idling, false);
+    test.done();
+};
+
+module.exports['Commands: idle handles error'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async () => {
+            throw new Error('IDLE failed');
+        }
+    });
+
+    const result = await idleCommand(connection);
+    test.equal(result, false);
+    test.equal(connection.idling, false);
+    test.done();
+};
+
+module.exports['Commands: idle with maxIdleTime restarts loop'] = async test => {
+    let idleCount = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            idleCount++;
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // Break after second iteration
+            if (idleCount >= 2 && connection.preCheck) {
+                await connection.preCheck();
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    // Very short maxIdleTime to trigger restart
+    await idleCommand(connection, 5);
+    test.ok(idleCount >= 1);
+    test.done();
+};
+
+module.exports['Commands: idle without currentSelectCommand returns immediately'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(), // No IDLE
+        currentSelectCommand: false // No select command
+    });
+
+    // Should resolve immediately
+    await idleCommand(connection);
+    test.ok(true);
+    test.done();
+};
+
+module.exports['Commands: idle NOOP fallback uses STATUS when configured'] = async test => {
+    let statusCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(),
+        currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
+        missingIdleCommand: 'STATUS',
+        exec: async (cmd) => {
+            if (cmd === 'STATUS') {
+                statusCalled = true;
+                if (connection.preCheck) {
+                    await connection.preCheck();
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await idleCommand(connection);
+    test.equal(statusCalled, true);
+    test.done();
+};
+
+module.exports['Commands: idle NOOP fallback uses SELECT when configured'] = async test => {
+    let selectCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(),
+        currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
+        missingIdleCommand: 'SELECT',
+        exec: async (cmd) => {
+            if (cmd === 'SELECT') {
+                selectCalled = true;
+                if (connection.preCheck) {
+                    await connection.preCheck();
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await idleCommand(connection);
+    test.equal(selectCalled, true);
+    test.done();
+};
+
+module.exports['Commands: idle sets preCheck function'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            // Check that preCheck is set
+            test.equal(typeof connection.preCheck, 'function');
+            // Break the IDLE
+            if (connection.preCheck) {
+                await connection.preCheck();
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await idleCommand(connection);
+    test.done();
+};
+
+module.exports['Commands: idle clears preCheck on completion'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IDLE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            if (connection.preCheck) {
+                await connection.preCheck();
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await idleCommand(connection);
+    test.equal(connection.preCheck, false);
+    test.done();
+};
+
+module.exports['Commands: idle NOOP fallback handles error'] = async test => {
+    let errorLogged = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(),
+        currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
+        exec: async () => {
+            throw new Error('NOOP failed');
+        },
+        log: {
+            warn: () => { errorLogged = true; },
+            debug: () => {},
+            trace: () => {}
+        }
+    });
+
+    // Should resolve even on error
+    await idleCommand(connection);
+    test.equal(errorLogged, true);
     test.done();
 };
