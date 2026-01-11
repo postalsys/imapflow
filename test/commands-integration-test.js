@@ -241,6 +241,53 @@ module.exports['Commands: logout handles error'] = async test => {
     test.done();
 };
 
+module.exports['Commands: logout returns early when already in LOGOUT state'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 4, // LOGOUT
+        exec: async () => {
+            execCalled = true;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await logoutCommand(connection);
+    test.equal(result, false);
+    test.equal(execCalled, false);
+    test.done();
+};
+
+module.exports['Commands: logout handles NOT_AUTHENTICATED state'] = async test => {
+    let closeCalled = false;
+    const connection = createMockConnection({
+        state: 1, // NOT_AUTHENTICATED (mock states: 1=NOT_AUTH, 2=AUTH, 3=SELECTED, 4=LOGOUT)
+        exec: async () => ({ next: () => {} }),
+        close: () => {
+            closeCalled = true;
+        }
+    });
+
+    const result = await logoutCommand(connection);
+    test.equal(result, false);
+    test.equal(connection.state, connection.states.LOGOUT);
+    test.equal(closeCalled, true);
+    test.done();
+};
+
+module.exports['Commands: logout handles NoConnection error'] = async test => {
+    const connection = createMockConnection({
+        exec: async () => {
+            const err = new Error('No connection');
+            err.code = 'NoConnection';
+            throw err;
+        }
+    });
+
+    const result = await logoutCommand(connection);
+    test.equal(result, true);
+    test.done();
+};
+
 // ============================================
 // CLOSE Command Tests
 // ============================================
@@ -3317,6 +3364,197 @@ module.exports['Commands: list XLIST removes Inbox flag from non-INBOX'] = async
     test.equal(folder.flags.has('\\Inbox'), false);
     // But it should have \\Inbox special use
     test.equal(folder.specialUse, '\\Inbox');
+    test.done();
+};
+
+module.exports['Commands: list LSUB path with leading delimiter'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
+                // LSUB returns path with leading delimiter
+                await opts.untagged.LSUB({
+                    attributes: [
+                        [{ value: '\\Subscribed' }],
+                        { value: '/' },
+                        { value: '/Folder1' } // Leading delimiter
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const folder = result.find(e => e.path === 'Folder1');
+    test.ok(folder);
+    test.equal(folder.subscribed, true);
+    test.done();
+};
+
+module.exports['Commands: list sorts non-special-use after special-use'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Regular folder first
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'ZFolder' }]
+                });
+                // Then INBOX (special use)
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // INBOX (special use) should come before ZFolder (no special use)
+    const inboxIndex = result.findIndex(e => e.path === 'INBOX');
+    const zFolderIndex = result.findIndex(e => e.path === 'ZFolder');
+    test.ok(inboxIndex < zFolderIndex, 'Special use folders should sort before non-special-use');
+    test.done();
+};
+
+module.exports['Commands: list sorts alphabetically when no special use'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Folders without special use in reverse alphabetical order
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Zebra' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Alpha' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Middle' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // Should be sorted alphabetically
+    const alphaIndex = result.findIndex(e => e.path === 'Alpha');
+    const middleIndex = result.findIndex(e => e.path === 'Middle');
+    const zebraIndex = result.findIndex(e => e.path === 'Zebra');
+    test.ok(alphaIndex < middleIndex, 'Alpha should come before Middle');
+    test.ok(middleIndex < zebraIndex, 'Middle should come before Zebra');
+    test.done();
+};
+
+module.exports['Commands: list sorts nested folders by parent path'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Nested folders
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasChildren' }], { value: '/' }, { value: 'B' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'B/Nested' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasChildren' }], { value: '/' }, { value: 'A' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'A/Nested' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // A folders should come before B folders
+    const aIndex = result.findIndex(e => e.path === 'A');
+    const aNestedIndex = result.findIndex(e => e.path === 'A/Nested');
+    const bIndex = result.findIndex(e => e.path === 'B');
+    const bNestedIndex = result.findIndex(e => e.path === 'B/Nested');
+    test.ok(aIndex < bIndex, 'A should come before B');
+    test.ok(aNestedIndex < bIndex, 'A/Nested should come before B');
+    test.ok(bIndex < bNestedIndex || aNestedIndex < bNestedIndex, 'Parent folders sort correctly');
+    test.done();
+};
+
+module.exports['Commands: list handles LSUB with empty attributes'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['SPECIAL-USE', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'TestFolder' }]
+                });
+            }
+            if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
+                // Empty attributes
+                await opts.untagged.LSUB({
+                    attributes: []
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.ok(result.length >= 1);
+    test.done();
+};
+
+module.exports['Commands: list handles STATUS NaN values in LSUB response'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['SPECIAL-USE', true],
+            ['LIST-STATUS', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged) {
+                if (opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'TestFolder' }]
+                    });
+                }
+                if (opts.untagged.STATUS) {
+                    await opts.untagged.STATUS({
+                        attributes: [
+                            { value: 'TestFolder' },
+                            [
+                                { value: 'MESSAGES' },
+                                { value: 'NaN' }, // Invalid number
+                                { value: 'RECENT' },
+                                { value: 'invalid' } // Invalid value
+                            ]
+                        ]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', { statusQuery: { messages: true, recent: true } });
+    const folder = result.find(e => e.path === 'TestFolder');
+    test.ok(folder);
+    // NaN values should be filtered out (value === false check)
+    test.equal(folder.status.messages, undefined);
+    test.equal(folder.status.recent, undefined);
     test.done();
 };
 
