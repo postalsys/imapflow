@@ -1,17 +1,16 @@
 'use strict';
 
 const { LimitedPassthrough } = require('../lib/limited-passthrough');
-const { PassThrough } = require('stream');
+const { PassThrough, Transform } = require('stream');
 
 // Helper to collect stream output
-const collectStream = stream => {
-    return new Promise((resolve, reject) => {
+const collectStream = stream =>
+    new Promise((resolve, reject) => {
         const chunks = [];
         stream.on('data', chunk => chunks.push(chunk));
         stream.on('end', () => resolve(Buffer.concat(chunks)));
         stream.on('error', reject);
     });
-};
 
 // ============================================
 // Constructor tests
@@ -41,7 +40,7 @@ module.exports['LimitedPassthrough: constructor with null options'] = test => {
 
 module.exports['LimitedPassthrough: is a Transform stream'] = test => {
     let stream = new LimitedPassthrough();
-    test.ok(stream instanceof require('stream').Transform);
+    test.ok(stream instanceof Transform);
     test.ok(typeof stream.pipe === 'function');
     test.ok(typeof stream.write === 'function');
     test.done();
@@ -89,7 +88,7 @@ module.exports['LimitedPassthrough: limits across multiple chunks'] = async test
     let output = collectStream(stream);
 
     stream.write(Buffer.from('hello ')); // 6 bytes
-    stream.write(Buffer.from('world'));  // 5 bytes, only 2 should pass
+    stream.write(Buffer.from('world')); // 5 bytes, only 2 should pass
     stream.end();
 
     let result = await output;
@@ -103,7 +102,7 @@ module.exports['LimitedPassthrough: drops data after limit reached'] = async tes
     let stream = new LimitedPassthrough({ maxBytes: 5 });
     let output = collectStream(stream);
 
-    stream.write(Buffer.from('hello'));  // exactly 5 bytes
+    stream.write(Buffer.from('hello')); // exactly 5 bytes
     stream.write(Buffer.from(' world')); // should be dropped
     stream.write(Buffer.from('!')); // should be dropped
     stream.end();

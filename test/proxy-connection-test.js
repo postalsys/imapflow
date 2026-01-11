@@ -126,6 +126,8 @@ module.exports['Proxy Connection: HTTP proxy failure hides password'] = async te
     try {
         await proxyConnection(logger, 'http://user:secret@proxy.example.com:8080', '192.168.1.1', 993);
     } catch (err) {
+        // Error expected - we just need to verify logging
+        err.expected = true;
         test.ok(!logger._logs.error[0].proxyUrl.includes('secret'));
         test.ok(logger._logs.error[0].proxyUrl.includes('(hidden)'));
     }
@@ -345,6 +347,8 @@ module.exports['Proxy Connection: SOCKS proxy failure hides password'] = async t
     try {
         await proxyConnection(logger, 'socks5://user:secret@proxy.example.com:1080', '192.168.1.1', 993);
     } catch (err) {
+        // Error expected - we just need to verify logging
+        err.expected = true;
         test.ok(!logger._logs.error[0].proxyUrl.includes('secret'));
         test.ok(logger._logs.error[0].proxyUrl.includes('(hidden)'));
     }

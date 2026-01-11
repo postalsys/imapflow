@@ -2,17 +2,17 @@
 
 const { searchCompiler } = require('../lib/search-compiler');
 
+// Mock mailbox for testing
+let createMockMailbox = () => ({
+    flags: new Set(['\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft', '$CustomFlag']),
+    permanentFlags: new Set(['\\*'])
+});
+
 // Helper to create mock connection with customizable capabilities
 let createMockConnection = (options = {}) => ({
     capabilities: new Map(options.capabilities || [['IMAP4rev1', true]]),
     enabled: new Set(options.enabled || []),
     mailbox: options.mailbox || createMockMailbox()
-});
-
-// Mock mailbox for testing
-let createMockMailbox = () => ({
-    flags: new Set(['\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft', '$CustomFlag']),
-    permanentFlags: new Set(['\\*'])
 });
 
 // Helper to find attribute by value
@@ -681,10 +681,7 @@ module.exports['Search Compiler: NOT ignored when falsy'] = test => {
 module.exports['Search Compiler: OR with two conditions'] = test => {
     let connection = createMockConnection();
     let compiled = searchCompiler(connection, {
-        or: [
-            { from: 'alice@example.com' },
-            { from: 'bob@example.com' }
-        ]
+        or: [{ from: 'alice@example.com' }, { from: 'bob@example.com' }]
     });
 
     test.ok(hasAttr(compiled, 'OR'));
@@ -710,11 +707,7 @@ module.exports['Search Compiler: OR with single condition'] = test => {
 module.exports['Search Compiler: OR with three conditions'] = test => {
     let connection = createMockConnection();
     let compiled = searchCompiler(connection, {
-        or: [
-            { from: 'a@example.com' },
-            { from: 'b@example.com' },
-            { from: 'c@example.com' }
-        ]
+        or: [{ from: 'a@example.com' }, { from: 'b@example.com' }, { from: 'c@example.com' }]
     });
 
     // Should have OR for tree structure
@@ -728,12 +721,7 @@ module.exports['Search Compiler: OR with three conditions'] = test => {
 module.exports['Search Compiler: OR with four conditions'] = test => {
     let connection = createMockConnection();
     let compiled = searchCompiler(connection, {
-        or: [
-            { from: 'a@example.com' },
-            { from: 'b@example.com' },
-            { from: 'c@example.com' },
-            { from: 'd@example.com' }
-        ]
+        or: [{ from: 'a@example.com' }, { from: 'b@example.com' }, { from: 'c@example.com' }, { from: 'd@example.com' }]
     });
 
     test.ok(hasAttr(compiled, 'OR'));
@@ -760,10 +748,7 @@ module.exports['Search Compiler: OR ignored when empty'] = test => {
 module.exports['Search Compiler: OR with null entry in array'] = test => {
     let connection = createMockConnection();
     let compiled = searchCompiler(connection, {
-        or: [
-            { from: 'test@example.com' },
-            null
-        ]
+        or: [{ from: 'test@example.com' }, null]
     });
 
     // Should still process valid entries
@@ -838,7 +823,7 @@ module.exports['Search Compiler: HEADER with Unicode adds CHARSET'] = test => {
         enabled: new Set()
     });
     let compiled = searchCompiler(connection, {
-        header: { 'Subject': 'ASCII only' }
+        header: { Subject: 'ASCII only' }
     });
 
     test.ok(!hasAttr(compiled, 'CHARSET'));
@@ -869,10 +854,7 @@ module.exports['Search Compiler: OR combined with other criteria'] = test => {
     let connection = createMockConnection();
     let compiled = searchCompiler(connection, {
         seen: true,
-        or: [
-            { from: 'a@example.com' },
-            { from: 'b@example.com' }
-        ]
+        or: [{ from: 'a@example.com' }, { from: 'b@example.com' }]
     });
 
     test.ok(hasAttr(compiled, 'SEEN'));

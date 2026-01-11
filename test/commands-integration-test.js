@@ -1,5 +1,8 @@
 'use strict';
 
+/* eslint-disable new-cap */
+// BigInt() is a standard JS function but triggers new-cap rule
+
 // ============================================
 // Mock Connection Factory
 // ============================================
@@ -45,10 +48,12 @@ const createMockConnection = (overrides = {}) => {
         currentSelectCommand: false,
         messageFlagsAdd: overrides.messageFlagsAdd || (async () => {}),
         run: overrides.run || (async () => {}),
-        exec: overrides.exec || (async () => ({
-            next: () => {},
-            response: { attributes: [] }
-        })),
+        exec:
+            overrides.exec ||
+            (async () => ({
+                next: () => {},
+                response: { attributes: [] }
+            })),
         ...overrides
     };
 };
@@ -61,7 +66,10 @@ const capabilityCommand = require('../lib/commands/capability');
 
 module.exports['Commands: capability returns cached when available'] = async test => {
     const connection = createMockConnection({
-        capabilities: new Map([['IMAP4rev1', true], ['IDLE', true]]),
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['IDLE', true]
+        ]),
         expectCapabilityUpdate: false
     });
 
@@ -101,7 +109,9 @@ module.exports['Commands: capability fetches when update expected'] = async test
 module.exports['Commands: capability handles error'] = async test => {
     const connection = createMockConnection({
         capabilities: new Map(),
-        exec: async () => { throw new Error('Command failed'); }
+        exec: async () => {
+            throw new Error('Command failed');
+        }
     });
 
     const result = await capabilityCommand(connection);
@@ -118,7 +128,7 @@ const noopCommand = require('../lib/commands/noop');
 module.exports['Commands: noop success'] = async test => {
     let execCalled = false;
     const connection = createMockConnection({
-        exec: async (cmd) => {
+        exec: async cmd => {
             test.equal(cmd, 'NOOP');
             execCalled = true;
             return { next: () => {} };
@@ -133,7 +143,9 @@ module.exports['Commands: noop success'] = async test => {
 
 module.exports['Commands: noop handles error'] = async test => {
     const connection = createMockConnection({
-        exec: async () => { throw new Error('Command failed'); }
+        exec: async () => {
+            throw new Error('Command failed');
+        }
     });
 
     const result = await noopCommand(connection);
@@ -204,7 +216,7 @@ const logoutCommand = require('../lib/commands/logout');
 module.exports['Commands: logout success'] = async test => {
     let execCalled = false;
     const connection = createMockConnection({
-        exec: async (cmd) => {
+        exec: async cmd => {
             test.equal(cmd, 'LOGOUT');
             execCalled = true;
             return { next: () => {} };
@@ -219,7 +231,9 @@ module.exports['Commands: logout success'] = async test => {
 
 module.exports['Commands: logout handles error'] = async test => {
     const connection = createMockConnection({
-        exec: async () => { throw new Error('Command failed'); }
+        exec: async () => {
+            throw new Error('Command failed');
+        }
     });
 
     const result = await logoutCommand(connection);
@@ -237,7 +251,7 @@ module.exports['Commands: close success'] = async test => {
     let execCalled = false;
     const connection = createMockConnection({
         state: 3, // SELECTED
-        exec: async (cmd) => {
+        exec: async cmd => {
             test.equal(cmd, 'CLOSE');
             execCalled = true;
             return { next: () => {} };
@@ -263,7 +277,9 @@ module.exports['Commands: close skips when not selected'] = async test => {
 module.exports['Commands: close handles error'] = async test => {
     const connection = createMockConnection({
         state: 3,
-        exec: async () => { throw new Error('Command failed'); }
+        exec: async () => {
+            throw new Error('Command failed');
+        }
     });
 
     const result = await closeCommand(connection);
@@ -286,11 +302,7 @@ module.exports['Commands: search with ALL'] = async test => {
             // Simulate SEARCH response
             if (opts && opts.untagged && opts.untagged.SEARCH) {
                 await opts.untagged.SEARCH({
-                    attributes: [
-                        { value: '1' },
-                        { value: '2' },
-                        { value: '3' }
-                    ]
+                    attributes: [{ value: '1' }, { value: '2' }, { value: '3' }]
                 });
             }
             return { next: () => {} };
@@ -433,7 +445,7 @@ module.exports['Commands: store with UID'] = async test => {
     let execCmd = null;
     const connection = createMockConnection({
         state: 3,
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCmd = cmd;
             return { next: () => {} };
         }
@@ -563,7 +575,7 @@ module.exports['Commands: copy with UID'] = async test => {
     let execCmd = null;
     const connection = createMockConnection({
         state: 3,
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCmd = cmd;
             return { next: () => {}, response: { attributes: [] } };
         }
@@ -580,14 +592,11 @@ module.exports['Commands: copy with COPYUID response'] = async test => {
         exec: async () => ({
             next: () => {},
             response: {
-                attributes: [{
-                    section: [
-                        { value: 'COPYUID' },
-                        { value: '12345' },
-                        { value: '1:3' },
-                        { value: '100:102' }
-                    ]
-                }]
+                attributes: [
+                    {
+                        section: [{ value: 'COPYUID' }, { value: '12345' }, { value: '1:3' }, { value: '100:102' }]
+                    }
+                ]
             }
         })
     });
@@ -651,7 +660,7 @@ module.exports['Commands: move with MOVE capability'] = async test => {
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map([['MOVE', true]]),
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCmd = cmd;
             return { next: () => {}, response: { attributes: [] } };
         }
@@ -667,7 +676,7 @@ module.exports['Commands: move with UID and MOVE capability'] = async test => {
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map([['MOVE', true]]),
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCmd = cmd;
             return { next: () => {}, response: { attributes: [] } };
         }
@@ -696,7 +705,7 @@ module.exports['Commands: expunge success'] = async test => {
     let execCalled = false;
     const connection = createMockConnection({
         state: 3,
-        exec: async (cmd) => {
+        exec: async cmd => {
             test.equal(cmd, 'EXPUNGE');
             execCalled = true;
             return { next: () => {}, response: { attributes: [] } };
@@ -714,7 +723,7 @@ module.exports['Commands: expunge with UID range'] = async test => {
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map([['UIDPLUS', true]]),
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCmd = cmd;
             return { next: () => {}, response: { attributes: [] } };
         }
@@ -795,10 +804,13 @@ module.exports['Commands: create handles ALREADYEXISTS'] = async test => {
             err.response = {
                 tag: '*',
                 command: 'NO',
-                attributes: [{
-                    type: 'SECTION',
-                    section: [{ type: 'ATOM', value: 'ALREADYEXISTS' }]
-                }, { type: 'TEXT', value: 'Mailbox already exists' }]
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'ALREADYEXISTS' }]
+                    },
+                    { type: 'TEXT', value: 'Mailbox already exists' }
+                ]
             };
             throw err;
         }
@@ -843,7 +855,7 @@ module.exports['Commands: delete success'] = async test => {
     let execCmd = null;
     const connection = createMockConnection({
         state: 2,
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCmd = cmd;
             return { next: () => {} };
         }
@@ -953,7 +965,7 @@ module.exports['Commands: subscribe success'] = async test => {
     let execCmd = null;
     const connection = createMockConnection({
         state: 2,
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCmd = cmd;
             return { next: () => {} };
         }
@@ -977,7 +989,7 @@ module.exports['Commands: unsubscribe success'] = async test => {
     let execCmd = null;
     const connection = createMockConnection({
         state: 2,
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCmd = cmd;
             return { next: () => {} };
         }
@@ -1006,7 +1018,10 @@ const enableCommand = require('../lib/commands/enable');
 module.exports['Commands: enable success'] = async test => {
     const connection = createMockConnection({
         state: 2,
-        capabilities: new Map([['ENABLE', true], ['CONDSTORE', true]]),
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
         exec: async () => ({ next: () => {} })
     });
 
@@ -1039,8 +1054,13 @@ module.exports['Commands: enable handles error'] = async test => {
     const connection = createMockConnection({
         state: 2,
         // Need to include CONDSTORE so the filter doesn't skip it
-        capabilities: new Map([['ENABLE', true], ['CONDSTORE', true]]),
-        exec: async () => { throw new Error('Enable failed'); }
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['CONDSTORE', true]
+        ]),
+        exec: async () => {
+            throw new Error('Enable failed');
+        }
     });
 
     const result = await enableCommand(connection, ['CONDSTORE']);
@@ -1084,7 +1104,9 @@ module.exports['Commands: compress skips when not supported'] = async test => {
 module.exports['Commands: compress handles error'] = async test => {
     const connection = createMockConnection({
         capabilities: new Map([['COMPRESS=DEFLATE', true]]),
-        exec: async () => { throw new Error('Compress failed'); }
+        exec: async () => {
+            throw new Error('Compress failed');
+        }
     });
 
     const result = await compressCommand(connection);
@@ -1128,7 +1150,9 @@ module.exports['Commands: starttls skips when not supported'] = async test => {
 module.exports['Commands: starttls handles error'] = async test => {
     const connection = createMockConnection({
         capabilities: new Map([['STARTTLS', true]]),
-        exec: async () => { throw new Error('STARTTLS failed'); }
+        exec: async () => {
+            throw new Error('STARTTLS failed');
+        }
     });
 
     const result = await starttlsCommand(connection);
@@ -1156,12 +1180,7 @@ module.exports['Commands: fetch basic query'] = async test => {
                     command: '1',
                     attributes: [
                         { value: '1' },
-                        [
-                            { type: 'ATOM', value: 'UID' },
-                            { type: 'ATOM', value: '100' },
-                            { type: 'ATOM', value: 'FLAGS' },
-                            [{ value: '\\Seen' }]
-                        ]
+                        [{ type: 'ATOM', value: 'UID' }, { type: 'ATOM', value: '100' }, { type: 'ATOM', value: 'FLAGS' }, [{ value: '\\Seen' }]]
                     ]
                 });
             }
@@ -1182,7 +1201,7 @@ module.exports['Commands: fetch with UID option'] = async test => {
     let execCommand = '';
     const connection = createMockConnection({
         state: 3,
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCommand = cmd;
             return { next: () => {} };
         }
@@ -1546,12 +1565,17 @@ module.exports['Commands: fetch with onUntaggedFetch callback'] = async test => 
         }
     });
 
-    await fetchCommand(connection, '1', { uid: true }, {
-        onUntaggedFetch: (msg, done) => {
-            callbackCalled = true;
-            done();
+    await fetchCommand(
+        connection,
+        '1',
+        { uid: true },
+        {
+            onUntaggedFetch: (msg, done) => {
+                callbackCalled = true;
+                done();
+            }
         }
-    });
+    );
     test.equal(callbackCalled, true);
     test.done();
 };
@@ -1577,11 +1601,16 @@ module.exports['Commands: fetch callback error propagates'] = async test => {
     });
 
     try {
-        await fetchCommand(connection, '1', { uid: true }, {
-            onUntaggedFetch: (msg, done) => {
-                done(new Error('Callback error'));
+        await fetchCommand(
+            connection,
+            '1',
+            { uid: true },
+            {
+                onUntaggedFetch: (msg, done) => {
+                    done(new Error('Callback error'));
+                }
             }
-        });
+        );
         test.ok(false, 'Should have thrown');
     } catch (err) {
         test.equal(err.message, 'Callback error');
@@ -1592,7 +1621,9 @@ module.exports['Commands: fetch callback error propagates'] = async test => {
 module.exports['Commands: fetch handles error'] = async test => {
     const connection = createMockConnection({
         state: 3,
-        exec: async () => { throw new Error('Fetch failed'); }
+        exec: async () => {
+            throw new Error('Fetch failed');
+        }
     });
 
     try {
@@ -1661,11 +1692,7 @@ module.exports['Commands: list basic'] = async test => {
             // Simulate LIST response
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'INBOX' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                 });
             }
             return { next: () => {} };
@@ -1690,11 +1717,7 @@ module.exports['Commands: list with XLIST capability'] = async test => {
             }
             if (opts && opts.untagged && opts.untagged[cmd]) {
                 await opts.untagged[cmd]({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'INBOX' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                 });
             }
             return { next: () => {} };
@@ -1710,7 +1733,10 @@ module.exports['Commands: list prefers LIST over XLIST when SPECIAL-USE availabl
     let usedListCommand = '';
     const connection = createMockConnection({
         state: 3,
-        capabilities: new Map([['XLIST', true], ['SPECIAL-USE', true]]),
+        capabilities: new Map([
+            ['XLIST', true],
+            ['SPECIAL-USE', true]
+        ]),
         exec: async (cmd, attrs, opts) => {
             // Capture the first LIST/XLIST command, not LSUB
             if ((cmd === 'LIST' || cmd === 'XLIST') && !usedListCommand) {
@@ -1718,11 +1744,7 @@ module.exports['Commands: list prefers LIST over XLIST when SPECIAL-USE availabl
             }
             if (opts && opts.untagged && opts.untagged[cmd]) {
                 await opts.untagged[cmd]({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'INBOX' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                 });
             }
             return { next: () => {} };
@@ -1738,28 +1760,21 @@ module.exports['Commands: list with statusQuery'] = async test => {
     let listAttrs = null;
     const connection = createMockConnection({
         state: 3,
-        capabilities: new Map([['LIST-STATUS', true], ['SPECIAL-USE', true]]),
+        capabilities: new Map([
+            ['LIST-STATUS', true],
+            ['SPECIAL-USE', true]
+        ]),
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LIST') {
                 listAttrs = attrs;
                 if (opts && opts.untagged && opts.untagged.LIST) {
                     await opts.untagged.LIST({
-                        attributes: [
-                            [{ value: '\\HasNoChildren' }],
-                            { value: '/' },
-                            { value: 'INBOX' }
-                        ]
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                     });
                 }
                 if (opts && opts.untagged && opts.untagged.STATUS) {
                     await opts.untagged.STATUS({
-                        attributes: [
-                            { value: 'INBOX' },
-                            [
-                                { value: 'MESSAGES' }, { value: '10' },
-                                { value: 'UNSEEN' }, { value: '5' }
-                            ]
-                        ]
+                        attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '10' }, { value: 'UNSEEN' }, { value: '5' }]]
                     });
                 }
             }
@@ -1782,17 +1797,16 @@ module.exports['Commands: list with CONDSTORE status query'] = async test => {
     let listAttrs = null;
     const connection = createMockConnection({
         state: 3,
-        capabilities: new Map([['LIST-STATUS', true], ['CONDSTORE', true]]),
+        capabilities: new Map([
+            ['LIST-STATUS', true],
+            ['CONDSTORE', true]
+        ]),
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LIST') {
                 listAttrs = attrs;
                 if (opts && opts.untagged && opts.untagged.LIST) {
                     await opts.untagged.LIST({
-                        attributes: [
-                            [{ value: '\\HasNoChildren' }],
-                            { value: '/' },
-                            { value: 'INBOX' }
-                        ]
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                     });
                 }
             }
@@ -1819,11 +1833,7 @@ module.exports['Commands: list with listOnly option'] = async test => {
             }
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'INBOX' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                 });
             }
             return { next: () => {} };
@@ -1842,11 +1852,7 @@ module.exports['Commands: list with specialUseHints'] = async test => {
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'Sent Items' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Sent Items' }]
                 });
             }
             return { next: () => {} };
@@ -1872,11 +1878,7 @@ module.exports['Commands: list handles INBOX specially'] = async test => {
                 const handler = opts.untagged[cmd];
                 if (handler) {
                     await handler({
-                        attributes: [
-                            [{ value: '\\HasNoChildren' }],
-                            { value: '/' },
-                            { value: 'INBOX' }
-                        ]
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                     });
                 }
             }
@@ -1904,19 +1906,11 @@ module.exports['Commands: list runs separate INBOX query when using namespace'] 
                     // First call is for the namespace, second for INBOX
                     if (listCalls === 1) {
                         await opts.untagged.LIST({
-                            attributes: [
-                                [{ value: '\\HasNoChildren' }],
-                                { value: '/' },
-                                { value: 'INBOX/Subfolder' }
-                            ]
+                            attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX/Subfolder' }]
                         });
                     } else {
                         await opts.untagged.LIST({
-                            attributes: [
-                                [{ value: '\\HasNoChildren' }],
-                                { value: '/' },
-                                { value: 'INBOX' }
-                            ]
+                            attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                         });
                     }
                 }
@@ -1937,20 +1931,12 @@ module.exports['Commands: list handles LSUB merging'] = async test => {
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'Folder1' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
                 });
             }
             if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
                 await opts.untagged.LSUB({
-                    attributes: [
-                        [{ value: '\\Subscribed' }],
-                        { value: '/' },
-                        { value: 'Folder1' }
-                    ]
+                    attributes: [[{ value: '\\Subscribed' }], { value: '/' }, { value: 'Folder1' }]
                 });
             }
             return { next: () => {} };
@@ -1968,7 +1954,9 @@ module.exports['Commands: list handles LSUB merging'] = async test => {
 module.exports['Commands: list handles error'] = async test => {
     const connection = createMockConnection({
         state: 3,
-        exec: async () => { throw new Error('List failed'); }
+        exec: async () => {
+            throw new Error('List failed');
+        }
     });
 
     try {
@@ -2003,6 +1991,7 @@ module.exports['Commands: list status fallback when LIST-STATUS not supported'] 
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map(), // No LIST-STATUS
+        // eslint-disable-next-line no-unused-vars
         run: async (cmd, path, query) => {
             if (cmd === 'STATUS') {
                 statusCalls++;
@@ -2012,11 +2001,7 @@ module.exports['Commands: list status fallback when LIST-STATUS not supported'] 
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'INBOX' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                 });
             }
             return { next: () => {} };
@@ -2036,7 +2021,7 @@ module.exports['Commands: list handles STATUS errors gracefully'] = async test =
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map(),
-        run: async (cmd) => {
+        run: async cmd => {
             if (cmd === 'STATUS') {
                 throw new Error('Status failed');
             }
@@ -2044,11 +2029,7 @@ module.exports['Commands: list handles STATUS errors gracefully'] = async test =
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'INBOX' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                 });
             }
             return { next: () => {} };
@@ -2074,25 +2055,13 @@ module.exports['Commands: list sorts by special use'] = async test => {
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
                 // Add folders out of order
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\Trash' }],
-                        { value: '/' },
-                        { value: 'Trash' }
-                    ]
+                    attributes: [[{ value: '\\Trash' }], { value: '/' }, { value: 'Trash' }]
                 });
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\HasNoChildren' }],
-                        { value: '/' },
-                        { value: 'INBOX' }
-                    ]
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
                 });
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\Sent' }],
-                        { value: '/' },
-                        { value: 'Sent' }
-                    ]
+                    attributes: [[{ value: '\\Sent' }], { value: '/' }, { value: 'Sent' }]
                 });
             }
             return { next: () => {} };
@@ -2135,7 +2104,7 @@ module.exports['Commands: list skips Noselect folders for status'] = async test 
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map(),
-        run: async (cmd) => {
+        run: async cmd => {
             if (cmd === 'STATUS') {
                 statusCalls++;
                 return { messages: 10 };
@@ -2144,11 +2113,7 @@ module.exports['Commands: list skips Noselect folders for status'] = async test 
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
                 await opts.untagged.LIST({
-                    attributes: [
-                        [{ value: '\\Noselect' }],
-                        { value: '/' },
-                        { value: 'Parent' }
-                    ]
+                    attributes: [[{ value: '\\Noselect' }], { value: '/' }, { value: 'Parent' }]
                 });
             }
             return { next: () => {} };
@@ -2252,7 +2217,7 @@ module.exports['Commands: select with readOnly option uses EXAMINE'] = async tes
         state: 2,
         folders: new Map([['INBOX', { path: 'INBOX' }]]),
         run: async () => [],
-        exec: async (cmd) => {
+        exec: async cmd => {
             execCommand = cmd;
             return {
                 next: () => {},
@@ -2281,7 +2246,7 @@ module.exports['Commands: select fetches folder list if not cached'] = async tes
     const connection = createMockConnection({
         state: 2,
         folders: new Map(), // Empty - will trigger LIST
-        run: async (cmd) => {
+        run: async cmd => {
             if (cmd === 'LIST') {
                 listCalled = true;
                 return [{ path: 'INBOX', delimiter: '/' }];
@@ -2479,7 +2444,9 @@ module.exports['Commands: select emits mailboxOpen event'] = async test => {
             next: () => {},
             response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
         }),
-        emit: (event) => { emittedEvents.push(event); }
+        emit: event => {
+            emittedEvents.push(event);
+        }
     });
 
     await selectCommand(connection, 'INBOX');
@@ -2498,7 +2465,9 @@ module.exports['Commands: select emits mailboxClose when switching'] = async tes
             next: () => {},
             response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
         }),
-        emit: (event) => { emittedEvents.push(event); }
+        emit: event => {
+            emittedEvents.push(event);
+        }
     });
 
     await selectCommand(connection, 'INBOX');
@@ -2541,13 +2510,16 @@ module.exports['Commands: select resets state on error when SELECTED'] = async t
             err.response = { attributes: [] };
             throw err;
         },
-        emit: (event) => { emittedEvent = event; }
+        emit: event => {
+            emittedEvent = event;
+        }
     });
 
     try {
         await selectCommand(connection, 'INBOX');
     } catch (err) {
-        // Expected
+        // Expected - error is intentionally ignored
+        err.expected = true;
     }
     test.equal(connection.state, 2); // Reset to AUTHENTICATED
     test.equal(connection.mailbox, false);
@@ -2558,13 +2530,18 @@ module.exports['Commands: select resets state on error when SELECTED'] = async t
 module.exports['Commands: select copies folder metadata'] = async test => {
     const connection = createMockConnection({
         state: 2,
-        folders: new Map([['INBOX', {
-            path: 'INBOX',
-            delimiter: '/',
-            specialUse: '\\Inbox',
-            subscribed: true,
-            listed: true
-        }]]),
+        folders: new Map([
+            [
+                'INBOX',
+                {
+                    path: 'INBOX',
+                    delimiter: '/',
+                    specialUse: '\\Inbox',
+                    subscribed: true,
+                    listed: true
+                }
+            ]
+        ]),
         run: async () => [],
         exec: async () => ({
             next: () => {},
@@ -2598,7 +2575,9 @@ module.exports['Commands: select handles VANISHED untagged'] = async test => {
             };
         },
         emit: () => {},
-        untaggedVanished: async () => { vanishedCalled = true; }
+        untaggedVanished: async () => {
+            vanishedCalled = true;
+        }
     });
 
     await selectCommand(connection, 'INBOX', { changedSince: '100', uidValidity: BigInt(123) });
@@ -2623,7 +2602,9 @@ module.exports['Commands: select handles FETCH untagged'] = async test => {
             };
         },
         emit: () => {},
-        untaggedFetch: async () => { fetchCalled = true; }
+        untaggedFetch: async () => {
+            fetchCalled = true;
+        }
     });
 
     await selectCommand(connection, 'INBOX', { changedSince: '100', uidValidity: BigInt(123) });
@@ -2668,13 +2649,7 @@ module.exports['Commands: status basic'] = async test => {
             execCalled = true;
             if (opts && opts.untagged && opts.untagged.STATUS) {
                 await opts.untagged.STATUS({
-                    attributes: [
-                        { value: 'INBOX' },
-                        [
-                            { value: 'MESSAGES' }, { value: '100' },
-                            { value: 'UNSEEN' }, { value: '10' }
-                        ]
-                    ]
+                    attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '100' }, { value: 'UNSEEN' }, { value: '10' }]]
                 });
             }
             return { next: () => {} };
@@ -2733,11 +2708,16 @@ module.exports['Commands: status with all standard query attributes'] = async te
                     attributes: [
                         { value: 'INBOX' },
                         [
-                            { value: 'MESSAGES' }, { value: '100' },
-                            { value: 'RECENT' }, { value: '5' },
-                            { value: 'UIDNEXT' }, { value: '1000' },
-                            { value: 'UIDVALIDITY' }, { value: '12345' },
-                            { value: 'UNSEEN' }, { value: '10' }
+                            { value: 'MESSAGES' },
+                            { value: '100' },
+                            { value: 'RECENT' },
+                            { value: '5' },
+                            { value: 'UIDNEXT' },
+                            { value: '1000' },
+                            { value: 'UIDVALIDITY' },
+                            { value: '12345' },
+                            { value: 'UNSEEN' },
+                            { value: '10' }
                         ]
                     ]
                 });
@@ -2778,12 +2758,7 @@ module.exports['Commands: status with HIGHESTMODSEQ and CONDSTORE'] = async test
             queryAttrs = attrs;
             if (opts && opts.untagged && opts.untagged.STATUS) {
                 await opts.untagged.STATUS({
-                    attributes: [
-                        { value: 'INBOX' },
-                        [
-                            { value: 'HIGHESTMODSEQ' }, { value: '9876543210' }
-                        ]
-                    ]
+                    attributes: [{ value: 'INBOX' }, [{ value: 'HIGHESTMODSEQ' }, { value: '9876543210' }]]
                 });
             }
             return { next: () => {} };
@@ -2799,14 +2774,10 @@ module.exports['Commands: status with HIGHESTMODSEQ and CONDSTORE'] = async test
 };
 
 module.exports['Commands: status ignores HIGHESTMODSEQ without CONDSTORE'] = async test => {
-    let queryAttrs = null;
     const connection = createMockConnection({
         state: 2,
         capabilities: new Map(), // No CONDSTORE
-        exec: async (cmd, attrs) => {
-            queryAttrs = attrs;
-            return { next: () => {} };
-        }
+        exec: async () => ({ next: () => {} })
     });
 
     const result = await statusCommand(connection, 'INBOX', { highestModseq: true });
@@ -2823,18 +2794,12 @@ module.exports['Commands: status updates current mailbox when SELECTED'] = async
         exec: async (cmd, attrs, opts) => {
             if (opts && opts.untagged && opts.untagged.STATUS) {
                 await opts.untagged.STATUS({
-                    attributes: [
-                        { value: 'INBOX' },
-                        [
-                            { value: 'MESSAGES' }, { value: '100' },
-                            { value: 'UIDNEXT' }, { value: '1000' }
-                        ]
-                    ]
+                    attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '100' }, { value: 'UIDNEXT' }, { value: '1000' }]]
                 });
             }
             return { next: () => {} };
         },
-        emit: (event) => {
+        emit: event => {
             if (event === 'exists') existsEmitted = true;
         }
     });
@@ -2856,15 +2821,12 @@ module.exports['Commands: status does not emit exists when count unchanged'] = a
         exec: async (cmd, attrs, opts) => {
             if (opts && opts.untagged && opts.untagged.STATUS) {
                 await opts.untagged.STATUS({
-                    attributes: [
-                        { value: 'INBOX' },
-                        [{ value: 'MESSAGES' }, { value: '100' }]
-                    ]
+                    attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '100' }]]
                 });
             }
             return { next: () => {} };
         },
-        emit: (event) => {
+        emit: event => {
             if (event === 'exists') existsEmitted = true;
         }
     });
@@ -2940,10 +2902,14 @@ module.exports['Commands: status handles invalid entry values'] = async test => 
                     attributes: [
                         { value: 'INBOX' },
                         [
-                            { value: 'MESSAGES' }, { value: 'not-a-number' },
-                            { value: 'UNSEEN' }, { value: '10' },
-                            null, { value: '5' }, // Invalid key
-                            { value: 'RECENT' }, null // Invalid value
+                            { value: 'MESSAGES' },
+                            { value: 'not-a-number' },
+                            { value: 'UNSEEN' },
+                            { value: '10' },
+                            null,
+                            { value: '5' }, // Invalid key
+                            { value: 'RECENT' },
+                            null // Invalid value
                         ]
                     ]
                 });
@@ -2989,10 +2955,7 @@ module.exports['Commands: status works from SELECTED state'] = async test => {
             execCalled = true;
             if (opts && opts.untagged && opts.untagged.STATUS) {
                 await opts.untagged.STATUS({
-                    attributes: [
-                        { value: 'INBOX' },
-                        [{ value: 'MESSAGES' }, { value: '50' }]
-                    ]
+                    attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '50' }]]
                 });
             }
             return { next: () => {} };
@@ -3013,10 +2976,7 @@ module.exports['Commands: status updates HIGHESTMODSEQ for current mailbox'] = a
         exec: async (cmd, attrs, opts) => {
             if (opts && opts.untagged && opts.untagged.STATUS) {
                 await opts.untagged.STATUS({
-                    attributes: [
-                        { value: 'INBOX' },
-                        [{ value: 'HIGHESTMODSEQ' }, { value: '200' }]
-                    ]
+                    attributes: [{ value: 'INBOX' }, [{ value: 'HIGHESTMODSEQ' }, { value: '200' }]]
                 });
             }
             return { next: () => {} };
@@ -3039,7 +2999,7 @@ module.exports['Commands: append basic'] = async test => {
     const connection = createMockConnection({
         state: 2, // AUTHENTICATED
         mailbox: { path: 'OtherFolder' }, // Different folder to avoid EXISTS handling
-        exec: async (cmd) => {
+        exec: async cmd => {
             if (cmd === 'APPEND') {
                 appendCalled = true;
             }
@@ -3196,13 +3156,15 @@ module.exports['Commands: append with APPENDUID response'] = async test => {
         exec: async () => ({
             next: () => {},
             response: {
-                attributes: [{
-                    section: [
-                        { value: 'APPENDUID' },
-                        { value: '12345' }, // uidValidity
-                        { value: '100' }    // uid
-                    ]
-                }]
+                attributes: [
+                    {
+                        section: [
+                            { value: 'APPENDUID' },
+                            { value: '12345' }, // uidValidity
+                            { value: '100' } // uid
+                        ]
+                    }
+                ]
             }
         })
     });
@@ -3228,7 +3190,7 @@ module.exports['Commands: append to current mailbox triggers EXISTS'] = async te
                 response: { attributes: [] }
             };
         },
-        emit: (event) => {
+        emit: event => {
             if (event === 'exists') existsEmitted = true;
         },
         search: async () => [100] // Return UID
@@ -3449,12 +3411,11 @@ module.exports['Commands: idle skips when not selected'] = async test => {
 
 module.exports['Commands: idle falls back to NOOP without IDLE capability'] = async test => {
     let noopCalled = false;
-    let resolved = false;
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map(), // No IDLE
         currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
-        exec: async (cmd) => {
+        exec: async cmd => {
             if (cmd === 'NOOP') {
                 noopCalled = true;
                 // Break out of the loop by calling preCheck
@@ -3495,7 +3456,7 @@ module.exports['Commands: idle preCheck breaks IDLE'] = async test => {
             }
             return { next: () => {} };
         },
-        write: (data) => {
+        write: data => {
             if (data === 'DONE') {
                 doneSent = true;
             }
@@ -3568,7 +3529,7 @@ module.exports['Commands: idle NOOP fallback uses STATUS when configured'] = asy
         capabilities: new Map(),
         currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
         missingIdleCommand: 'STATUS',
-        exec: async (cmd) => {
+        exec: async cmd => {
             if (cmd === 'STATUS') {
                 statusCalled = true;
                 if (connection.preCheck) {
@@ -3591,7 +3552,7 @@ module.exports['Commands: idle NOOP fallback uses SELECT when configured'] = asy
         capabilities: new Map(),
         currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
         missingIdleCommand: 'SELECT',
-        exec: async (cmd) => {
+        exec: async cmd => {
             if (cmd === 'SELECT') {
                 selectCalled = true;
                 if (connection.preCheck) {
@@ -3661,7 +3622,9 @@ module.exports['Commands: idle NOOP fallback handles error'] = async test => {
             throw new Error('NOOP failed');
         },
         log: {
-            warn: () => { errorLogged = true; },
+            warn: () => {
+                errorLogged = true;
+            },
             debug: () => {},
             trace: () => {}
         }

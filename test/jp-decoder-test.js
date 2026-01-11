@@ -1,17 +1,16 @@
 'use strict';
 
 const { JPDecoder } = require('../lib/jp-decoder');
-const { PassThrough } = require('stream');
+const { PassThrough, Transform } = require('stream');
 
 // Helper to collect stream output
-const collectStream = stream => {
-    return new Promise((resolve, reject) => {
+const collectStream = stream =>
+    new Promise((resolve, reject) => {
         const chunks = [];
         stream.on('data', chunk => chunks.push(chunk));
         stream.on('end', () => resolve(Buffer.concat(chunks)));
         stream.on('error', reject);
     });
-};
 
 // ============================================
 // Constructor tests
@@ -27,7 +26,7 @@ module.exports['JPDecoder: constructor sets charset'] = test => {
 
 module.exports['JPDecoder: is a Transform stream'] = test => {
     let decoder = new JPDecoder('iso-2022-jp');
-    test.ok(decoder instanceof require('stream').Transform);
+    test.ok(decoder instanceof Transform);
     test.ok(typeof decoder.pipe === 'function');
     test.ok(typeof decoder.write === 'function');
     test.done();
@@ -90,11 +89,18 @@ module.exports['JPDecoder: _flush converts ISO-2022-JP to Unicode'] = async test
     // ISO-2022-JP encoded Japanese text for "nihongo" (Japanese)
     // ESC $ B sequence switches to JIS X 0208, ESC ( B switches back to ASCII
     let iso2022jp = Buffer.from([
-        0x1b, 0x24, 0x42, // ESC $ B - switch to JIS X 0208
-        0x46, 0x7c, // ni
-        0x4b, 0x5c, // hon
-        0x38, 0x6c, // go
-        0x1b, 0x28, 0x42 // ESC ( B - switch back to ASCII
+        0x1b,
+        0x24,
+        0x42, // ESC $ B - switch to JIS X 0208
+        0x46,
+        0x7c, // ni
+        0x4b,
+        0x5c, // hon
+        0x38,
+        0x6c, // go
+        0x1b,
+        0x28,
+        0x42 // ESC ( B - switch back to ASCII
     ]);
 
     decoder.write(iso2022jp);

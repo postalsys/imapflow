@@ -150,11 +150,7 @@ module.exports['Tools: comparePaths with null/undefined'] = test => {
 // ============================================
 
 module.exports['Tools: updateCapabilities with valid list'] = test => {
-    let list = [
-        { value: 'IMAP4rev1' },
-        { value: 'IDLE' },
-        { value: 'NAMESPACE' }
-    ];
+    let list = [{ value: 'IMAP4rev1' }, { value: 'IDLE' }, { value: 'NAMESPACE' }];
     let result = tools.updateCapabilities(list);
     test.ok(result instanceof Map);
     test.equal(result.get('IMAP4rev1'), true);
@@ -164,9 +160,7 @@ module.exports['Tools: updateCapabilities with valid list'] = test => {
 };
 
 module.exports['Tools: updateCapabilities with APPENDLIMIT'] = test => {
-    let list = [
-        { value: 'APPENDLIMIT=52428800' }
-    ];
+    let list = [{ value: 'APPENDLIMIT=52428800' }];
     let result = tools.updateCapabilities(list);
     test.equal(result.get('APPENDLIMIT'), 52428800);
     test.done();
@@ -180,11 +174,7 @@ module.exports['Tools: updateCapabilities with empty/null list'] = test => {
 };
 
 module.exports['Tools: updateCapabilities skips non-string values'] = test => {
-    let list = [
-        { value: 'IDLE' },
-        { value: 123 },
-        { value: null }
-    ];
+    let list = [{ value: 'IDLE' }, { value: 123 }, { value: null }];
     let result = tools.updateCapabilities(list);
     test.equal(result.get('IDLE'), true);
     test.equal(result.size, 1);
@@ -197,9 +187,11 @@ module.exports['Tools: updateCapabilities skips non-string values'] = test => {
 
 module.exports['Tools: getStatusCode with valid response'] = test => {
     let response = {
-        attributes: [{
-            section: [{ value: 'TRYCREATE' }]
-        }]
+        attributes: [
+            {
+                section: [{ value: 'TRYCREATE' }]
+            }
+        ]
     };
     test.equal(tools.getStatusCode(response), 'TRYCREATE');
     test.done();
@@ -583,9 +575,7 @@ module.exports['Tools: getFolderTree with nested folders'] = test => {
 };
 
 module.exports['Tools: getFolderTree with Noselect flag'] = test => {
-    let folders = [
-        { name: 'Archive', path: 'Archive', flags: new Set(['\\Noselect']), parent: [] }
-    ];
+    let folders = [{ name: 'Archive', path: 'Archive', flags: new Set(['\\Noselect']), parent: [] }];
     let tree = tools.getFolderTree(folders);
 
     test.equal(tree.folders[0].disabled, true);
@@ -593,9 +583,7 @@ module.exports['Tools: getFolderTree with Noselect flag'] = test => {
 };
 
 module.exports['Tools: getFolderTree with specialUse'] = test => {
-    let folders = [
-        { name: 'Sent', path: 'Sent', flags: new Set(), parent: [], specialUse: '\\Sent' }
-    ];
+    let folders = [{ name: 'Sent', path: 'Sent', flags: new Set(), parent: [], specialUse: '\\Sent' }];
     let tree = tools.getFolderTree(folders);
 
     test.equal(tree.folders[0].specialUse, '\\Sent');
@@ -603,9 +591,7 @@ module.exports['Tools: getFolderTree with specialUse'] = test => {
 };
 
 module.exports['Tools: getFolderTree with delimiter'] = test => {
-    let folders = [
-        { name: 'Folder', path: 'Folder', flags: new Set(), parent: [], delimiter: '/' }
-    ];
+    let folders = [{ name: 'Folder', path: 'Folder', flags: new Set(), parent: [], delimiter: '/' }];
     let tree = tools.getFolderTree(folders);
 
     test.equal(tree.folders[0].delimiter, '/');
@@ -673,10 +659,7 @@ module.exports['Tools: parseEnvelope with minimal envelope'] = test => {
 };
 
 module.exports['Tools: parseEnvelope with invalid date'] = test => {
-    let entry = [
-        { value: 'invalid-date' },
-        null, null, null, null, null, null, null, null, null
-    ];
+    let entry = [{ value: 'invalid-date' }, null, null, null, null, null, null, null, null, null];
 
     let result = tools.parseEnvelope(entry);
     test.equal(result.date, 'invalid-date');
@@ -688,12 +671,7 @@ module.exports['Tools: parseEnvelope with invalid date'] = test => {
 // ============================================
 
 module.exports['Tools: getStructuredParams with simple params'] = test => {
-    let arr = [
-        { value: 'charset' },
-        { value: 'utf-8' },
-        { value: 'name' },
-        { value: 'file.txt' }
-    ];
+    let arr = [{ value: 'charset' }, { value: 'utf-8' }, { value: 'name' }, { value: 'file.txt' }];
 
     let result = tools.getStructuredParams(arr);
     test.equal(result.charset, 'utf-8');
@@ -709,14 +687,7 @@ module.exports['Tools: getStructuredParams with null'] = test => {
 
 module.exports['Tools: getStructuredParams with continuation'] = test => {
     // RFC 2231 continuation
-    let arr = [
-        { value: 'filename*0' },
-        { value: 'very' },
-        { value: 'filename*1' },
-        { value: 'long' },
-        { value: 'filename*2' },
-        { value: 'name.txt' }
-    ];
+    let arr = [{ value: 'filename*0' }, { value: 'very' }, { value: 'filename*1' }, { value: 'long' }, { value: 'filename*2' }, { value: 'name.txt' }];
 
     let result = tools.getStructuredParams(arr);
     test.equal(result.filename, 'verylongname.txt');
@@ -748,29 +719,11 @@ module.exports['Tools: parseBodystructure with simple text'] = test => {
 };
 
 module.exports['Tools: parseBodystructure with multipart'] = test => {
-    let textPart = [
-        { value: 'TEXT' },
-        { value: 'PLAIN' },
-        null, null, null,
-        { value: '7BIT' },
-        { value: '100' },
-        { value: '5' }
-    ];
+    let textPart = [{ value: 'TEXT' }, { value: 'PLAIN' }, null, null, null, { value: '7BIT' }, { value: '100' }, { value: '5' }];
 
-    let htmlPart = [
-        { value: 'TEXT' },
-        { value: 'HTML' },
-        null, null, null,
-        { value: 'QUOTED-PRINTABLE' },
-        { value: '200' },
-        { value: '10' }
-    ];
+    let htmlPart = [{ value: 'TEXT' }, { value: 'HTML' }, null, null, null, { value: 'QUOTED-PRINTABLE' }, { value: '200' }, { value: '10' }];
 
-    let entry = [
-        textPart,
-        htmlPart,
-        { value: 'ALTERNATIVE' }
-    ];
+    let entry = [textPart, htmlPart, { value: 'ALTERNATIVE' }];
 
     let result = tools.parseBodystructure(entry);
     test.equal(result.type, 'multipart/alternative');
