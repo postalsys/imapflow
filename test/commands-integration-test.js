@@ -4742,3 +4742,549 @@ module.exports['Commands: quota calculates percentage correctly'] = async test =
     test.equal(result.message.status, '33%'); // Rounded
     test.done();
 };
+
+// ============================================
+// AUTHENTICATE Command Tests
+// ============================================
+
+const authenticateCommand = require('../lib/commands/authenticate');
+
+module.exports['Commands: authenticate skips when already authenticated'] = async test => {
+    const connection = createMockConnection({
+        state: 2 // AUTHENTICATED
+    });
+
+    const result = await authenticateCommand(connection, 'user', { password: 'pass' });
+    test.equal(result, undefined);
+    test.done();
+};
+
+module.exports['Commands: authenticate with OAUTHBEARER'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1, // NOT_AUTHENTICATED
+        capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+        servername: 'imap.example.com',
+        authCapabilities: new Map(),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    const result = await authenticateCommand(connection, 'user@example.com', { accessToken: 'token123' });
+    test.equal(result, 'user@example.com');
+    test.equal(execArgs.cmd, 'AUTHENTICATE');
+    test.equal(execArgs.args[0].value, 'OAUTHBEARER');
+    test.ok(connection.authCapabilities.has('AUTH=OAUTHBEARER'));
+    test.done();
+};
+
+module.exports['Commands: authenticate with XOAUTH2'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=XOAUTH2', true]]),
+        servername: 'imap.example.com',
+        authCapabilities: new Map(),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    const result = await authenticateCommand(connection, 'user@example.com', { accessToken: 'token123' });
+    test.equal(result, 'user@example.com');
+    test.equal(execArgs.args[0].value, 'XOAUTH2');
+    test.ok(connection.authCapabilities.has('AUTH=XOAUTH2'));
+    test.done();
+};
+
+module.exports['Commands: authenticate with XOAUTH (legacy)'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=XOAUTH', true]]),
+        servername: 'imap.example.com',
+        authCapabilities: new Map(),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    const result = await authenticateCommand(connection, 'user@example.com', { accessToken: 'token123' });
+    test.equal(result, 'user@example.com');
+    test.equal(execArgs.args[0].value, 'XOAUTH2');
+    test.done();
+};
+
+module.exports['Commands: authenticate OAuth handles error response'] = async test => {
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+        servername: 'imap.example.com',
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            // Simulate server sending error in plus tag
+            if (opts && opts.onPlusTag) {
+                const errorJson = Buffer.from(JSON.stringify({ status: '401', error: 'invalid_token' })).toString('base64');
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: errorJson }]
+                });
+            }
+            const err = new Error('Authentication failed');
+            err.response = { attributes: [] };
+            throw err;
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    try {
+        await authenticateCommand(connection, 'user@example.com', { accessToken: 'bad_token' });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.authenticationFailed);
+        test.ok(err.oauthError);
+        test.equal(err.oauthError.status, '401');
+    }
+    test.done();
+};
+
+module.exports['Commands: authenticate OAuth handles malformed error response'] = async test => {
+    let debugLogged = false;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+        servername: 'imap.example.com',
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.onPlusTag) {
+                // Malformed base64/JSON
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: 'not-valid-base64!' }]
+                });
+            }
+            const err = new Error('Authentication failed');
+            err.response = { attributes: [] };
+            throw err;
+        },
+        write: () => {},
+        log: {
+            debug: () => {
+                debugLogged = true;
+            },
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    try {
+        await authenticateCommand(connection, 'user@example.com', { accessToken: 'token' });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.authenticationFailed);
+        test.ok(debugLogged); // Should log the parse error
+        test.equal(err.oauthError, undefined); // No oauthError since parse failed
+    }
+    test.done();
+};
+
+module.exports['Commands: authenticate with PLAIN'] = async test => {
+    let execArgs = null;
+    let writtenData = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=PLAIN', true]]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag({});
+            }
+            return { next: () => {} };
+        },
+        write: data => {
+            writtenData = data;
+        },
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await authenticateCommand(connection, 'testuser', { password: 'testpass' });
+    test.equal(result, 'testuser');
+    test.equal(execArgs.cmd, 'AUTHENTICATE');
+    test.equal(execArgs.args[0].value, 'PLAIN');
+    // Verify PLAIN format: \x00username\x00password
+    const decoded = Buffer.from(writtenData, 'base64').toString();
+    test.equal(decoded, '\x00testuser\x00testpass');
+    test.ok(connection.authCapabilities.has('AUTH=PLAIN'));
+    test.done();
+};
+
+module.exports['Commands: authenticate with PLAIN and authzid'] = async test => {
+    let writtenData = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=PLAIN', true]]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag({});
+            }
+            return { next: () => {} };
+        },
+        write: data => {
+            writtenData = data;
+        },
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await authenticateCommand(connection, 'admin', {
+        password: 'adminpass',
+        authzid: 'impersonated_user'
+    });
+    test.equal(result, 'impersonated_user'); // Returns authzid when provided
+    // Verify PLAIN format with authzid: authzid\x00username\x00password
+    const decoded = Buffer.from(writtenData, 'base64').toString();
+    test.equal(decoded, 'impersonated_user\x00admin\x00adminpass');
+    test.done();
+};
+
+module.exports['Commands: authenticate with PLAIN forced via loginMethod'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([
+            ['AUTH=LOGIN', true],
+            ['AUTH=PLAIN', true]
+        ]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag({});
+            }
+            return { next: () => {} };
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    await authenticateCommand(connection, 'user', { password: 'pass', loginMethod: 'AUTH=PLAIN' });
+    test.equal(execArgs.args[0].value, 'PLAIN');
+    test.done();
+};
+
+module.exports['Commands: authenticate with LOGIN'] = async test => {
+    let execArgs = null;
+    let writeCount = 0;
+    let writtenValues = [];
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=LOGIN', true]]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.onPlusTag) {
+                // Simulate server prompts
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: Buffer.from('Username:').toString('base64') }]
+                });
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: Buffer.from('Password:').toString('base64') }]
+                });
+            }
+            return { next: () => {} };
+        },
+        write: data => {
+            writeCount++;
+            writtenValues.push(Buffer.from(data, 'base64').toString());
+        },
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    const result = await authenticateCommand(connection, 'loginuser', { password: 'loginpass' });
+    test.equal(result, 'loginuser');
+    test.equal(execArgs.args[0].value, 'LOGIN');
+    test.equal(writeCount, 2);
+    test.equal(writtenValues[0], 'loginuser');
+    test.equal(writtenValues[1], 'loginpass');
+    test.ok(connection.authCapabilities.has('AUTH=LOGIN'));
+    test.done();
+};
+
+module.exports['Commands: authenticate with LOGIN handles user name prompt'] = async test => {
+    let writtenValues = [];
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=LOGIN', true]]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.onPlusTag) {
+                // Some servers use "User Name" instead of "Username"
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: Buffer.from('User Name:').toString('base64') }]
+                });
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: Buffer.from('Password').toString('base64') }]
+                });
+            }
+            return { next: () => {} };
+        },
+        write: data => {
+            writtenValues.push(Buffer.from(data, 'base64').toString());
+        },
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    await authenticateCommand(connection, 'testuser', { password: 'testpass' });
+    test.equal(writtenValues[0], 'testuser');
+    test.equal(writtenValues[1], 'testpass');
+    test.done();
+};
+
+module.exports['Commands: authenticate with LOGIN throws on unknown question'] = async test => {
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=LOGIN', true]]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: Buffer.from('Unknown Question:').toString('base64') }]
+                });
+            }
+            return { next: () => {} };
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    try {
+        await authenticateCommand(connection, 'user', { password: 'pass' });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.message.includes('Unknown LOGIN question'));
+    }
+    test.done();
+};
+
+module.exports['Commands: authenticate with LOGIN forced via loginMethod'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([
+            ['AUTH=PLAIN', true],
+            ['AUTH=LOGIN', true]
+        ]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: Buffer.from('Username:').toString('base64') }]
+                });
+                await opts.onPlusTag({
+                    attributes: [{ type: 'TEXT', value: Buffer.from('Password:').toString('base64') }]
+                });
+            }
+            return { next: () => {} };
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    await authenticateCommand(connection, 'user', { password: 'pass', loginMethod: 'AUTH=LOGIN' });
+    test.equal(execArgs.args[0].value, 'LOGIN');
+    test.done();
+};
+
+module.exports['Commands: authenticate PLAIN handles error'] = async test => {
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=PLAIN', true]]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag({});
+            }
+            const err = new Error('Authentication failed');
+            err.response = {
+                tag: 'A1',
+                command: 'NO',
+                attributes: [
+                    {
+                        type: 'ATOM',
+                        value: '',
+                        section: [{ type: 'ATOM', value: 'AUTHENTICATIONFAILED' }]
+                    }
+                ]
+            };
+            throw err;
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    try {
+        await authenticateCommand(connection, 'user', { password: 'wrongpass' });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.authenticationFailed);
+        test.equal(err.serverResponseCode, 'AUTHENTICATIONFAILED');
+    }
+    test.done();
+};
+
+module.exports['Commands: authenticate LOGIN handles error'] = async test => {
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=LOGIN', true]]),
+        authCapabilities: new Map(),
+        exec: async () => {
+            const err = new Error('Login failed');
+            err.response = { attributes: [] };
+            throw err;
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    try {
+        await authenticateCommand(connection, 'user', { password: 'pass' });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.authenticationFailed);
+    }
+    test.done();
+};
+
+module.exports['Commands: authenticate throws unsupported mechanism'] = async test => {
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map() // No auth capabilities
+    });
+
+    try {
+        await authenticateCommand(connection, 'user', { password: 'pass' });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.message.includes('Unsupported authentication mechanism'));
+    }
+    test.done();
+};
+
+module.exports['Commands: authenticate throws unsupported for accessToken without OAuth capability'] = async test => {
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=PLAIN', true]]) // No OAuth capability
+    });
+
+    try {
+        await authenticateCommand(connection, 'user', { accessToken: 'token123' });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.message.includes('Unsupported authentication mechanism'));
+    }
+    test.done();
+};
+
+module.exports['Commands: authenticate prefers PLAIN over LOGIN by default'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([
+            ['AUTH=LOGIN', true],
+            ['AUTH=PLAIN', true]
+        ]),
+        authCapabilities: new Map(),
+        exec: async (cmd, args, opts) => {
+            execArgs = { cmd, args };
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag({});
+            }
+            return { next: () => {} };
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    await authenticateCommand(connection, 'user', { password: 'pass' });
+    test.equal(execArgs.args[0].value, 'PLAIN'); // PLAIN should be preferred
+    test.done();
+};
+
+module.exports['Commands: authenticate prefers OAuth when accessToken provided'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([
+            ['AUTH=PLAIN', true],
+            ['AUTH=OAUTHBEARER', true]
+        ]),
+        servername: 'imap.example.com',
+        authCapabilities: new Map(),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        },
+        write: () => {},
+        log: {
+            debug: () => {},
+            warn: () => {},
+            trace: () => {}
+        }
+    });
+
+    await authenticateCommand(connection, 'user', { accessToken: 'token', password: 'pass' });
+    test.equal(execArgs.args[0].value, 'OAUTHBEARER'); // OAuth preferred when token provided
+    test.done();
+};
