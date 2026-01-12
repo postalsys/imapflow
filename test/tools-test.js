@@ -387,6 +387,12 @@ module.exports['Tools: formatDateTime with string'] = test => {
     test.done();
 };
 
+module.exports['Tools: formatDateTime with invalid date string'] = test => {
+    let result = tools.formatDateTime('invalid-date-string');
+    test.equal(result, undefined);
+    test.done();
+};
+
 // ============================================
 // formatFlag tests
 // ============================================
@@ -666,6 +672,52 @@ module.exports['Tools: parseEnvelope with invalid date'] = test => {
     test.done();
 };
 
+module.exports['Tools: parseEnvelope with Buffer value'] = test => {
+    let entry = [
+        { value: Buffer.from('Mon, 15 Jun 2023 10:00:00 +0000') }, // date as Buffer
+        { value: Buffer.from('Buffer Subject') }, // subject as Buffer
+        [[{ value: Buffer.from('Sender Name') }, null, { value: Buffer.from('sender') }, { value: Buffer.from('example.com') }]], // from with Buffers
+        [], // sender
+        [], // reply-to
+        [], // to
+        [], // cc
+        [], // bcc
+        null, // in-reply-to
+        { value: Buffer.from('<msg-id@example.com>') } // message-id as Buffer
+    ];
+
+    let result = tools.parseEnvelope(entry);
+    test.equal(result.subject, 'Buffer Subject');
+    test.equal(result.from[0].address, 'sender@example.com');
+    test.equal(result.messageId, '<msg-id@example.com>');
+    test.done();
+};
+
+module.exports['Tools: parseEnvelope with empty address parts'] = test => {
+    // When both local part and domain are null/empty, address should be empty string
+    let entry = [
+        null, // date
+        null, // subject
+        [[{ value: 'Group Name' }, null, null, null]], // from with no email parts (group syntax)
+        [], // sender
+        [], // reply-to
+        [], // to
+        [], // cc
+        [], // bcc
+        null, // in-reply-to
+        null // message-id
+    ];
+
+    let result = tools.parseEnvelope(entry);
+    // Address '@' should be converted to empty string and filtered out if no name
+    test.ok(result.from);
+    // The entry has a name but no valid address, should still be included with empty address
+    test.equal(result.from.length, 1);
+    test.equal(result.from[0].name, 'Group Name');
+    test.equal(result.from[0].address, '');
+    test.done();
+};
+
 // ============================================
 // getStructuredParams tests
 // ============================================
@@ -748,6 +800,158 @@ module.exports['Tools: parseBodystructure with attachment'] = test => {
     let result = tools.parseBodystructure(entry);
     test.equal(result.type, 'application/pdf');
     test.equal(result.parameters.name, 'document.pdf');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure with md5'] = test => {
+    // Non-text type with extension data including md5
+    let entry = [
+        { value: 'APPLICATION' },
+        { value: 'OCTET-STREAM' },
+        null, // params
+        null, // id
+        null, // description
+        { value: 'BASE64' }, // encoding
+        { value: '1000' }, // size
+        { value: 'd41d8cd98f00b204e9800998ecf8427e' }, // md5
+        null, // disposition
+        null // language (to ensure we have enough elements)
+    ];
+
+    let result = tools.parseBodystructure(entry);
+    test.equal(result.type, 'application/octet-stream');
+    test.equal(result.md5, 'd41d8cd98f00b204e9800998ecf8427e');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure with language'] = test => {
+    // Non-text type with language extension
+    let entry = [
+        { value: 'APPLICATION' },
+        { value: 'PDF' },
+        null, // params
+        null, // id
+        null, // description
+        { value: 'BASE64' }, // encoding
+        { value: '5000' }, // size
+        null, // md5
+        null, // disposition
+        [{ value: 'EN' }, { value: 'DE' }], // language (array of values)
+        null // location (to ensure enough elements)
+    ];
+
+    let result = tools.parseBodystructure(entry);
+    test.equal(result.type, 'application/pdf');
+    test.ok(Array.isArray(result.language));
+    test.deepEqual(result.language, ['en', 'de']);
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure with location'] = test => {
+    // Non-text type with location extension
+    let entry = [
+        { value: 'IMAGE' },
+        { value: 'PNG' },
+        null, // params
+        null, // id
+        null, // description
+        { value: 'BASE64' }, // encoding
+        { value: '10000' }, // size
+        null, // md5
+        null, // disposition
+        null, // language
+        { value: 'http://example.com/image.png' }, // location
+        null // extra element to ensure we have enough
+    ];
+
+    let result = tools.parseBodystructure(entry);
+    test.equal(result.type, 'image/png');
+    test.equal(result.location, 'http://example.com/image.png');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure with all extension fields'] = test => {
+    // Non-text type with all extension fields
+    let entry = [
+        { value: 'APPLICATION' },
+        { value: 'ZIP' },
+        [{ value: 'NAME' }, { value: 'archive.zip' }], // params
+        { value: '<id123@example.com>' }, // id
+        { value: 'A zip archive' }, // description
+        { value: 'BASE64' }, // encoding
+        { value: '50000' }, // size
+        { value: 'abc123def456' }, // md5
+        [{ value: 'ATTACHMENT' }, [{ value: 'FILENAME' }, { value: 'archive.zip' }]], // disposition with params
+        [{ value: 'EN' }], // language
+        { value: 'http://example.com/archive.zip' }, // location
+        null // extra element
+    ];
+
+    let result = tools.parseBodystructure(entry);
+    test.equal(result.type, 'application/zip');
+    test.equal(result.parameters.name, 'archive.zip');
+    test.equal(result.id, '<id123@example.com>');
+    test.equal(result.description, 'A zip archive');
+    test.equal(result.encoding, 'base64');
+    test.equal(result.size, 50000);
+    test.equal(result.md5, 'abc123def456');
+    test.equal(result.disposition, 'attachment');
+    test.equal(result.dispositionParameters.filename, 'archive.zip');
+    test.deepEqual(result.language, ['en']);
+    test.equal(result.location, 'http://example.com/archive.zip');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure with message/rfc822'] = test => {
+    // message/rfc822 has special handling with envelope and nested bodystructure
+    let nestedBody = [
+        { value: 'TEXT' },
+        { value: 'PLAIN' },
+        [{ value: 'CHARSET' }, { value: 'UTF-8' }],
+        null,
+        null,
+        { value: '7BIT' },
+        { value: '500' },
+        { value: '20' } // line count for text
+    ];
+
+    let envelope = [
+        { value: 'Mon, 15 Jun 2023 10:00:00 +0000' }, // date
+        { value: 'Nested Subject' }, // subject
+        [[null, null, { value: 'sender' }, { value: 'example.com' }]], // from
+        [],
+        [],
+        [],
+        [],
+        [], // sender, reply-to, to, cc, bcc
+        null, // in-reply-to
+        { value: '<nested@example.com>' } // message-id
+    ];
+
+    let entry = [
+        { value: 'MESSAGE' },
+        { value: 'RFC822' },
+        null, // params
+        null, // id
+        null, // description
+        { value: '7BIT' }, // encoding
+        { value: '10000' }, // size
+        envelope, // envelope
+        nestedBody, // nested bodystructure
+        { value: '100' }, // line count
+        null, // md5
+        null // disposition
+    ];
+
+    let result = tools.parseBodystructure(entry);
+    test.equal(result.type, 'message/rfc822');
+    test.equal(result.size, 10000);
+    test.equal(result.lineCount, 100);
+    test.ok(result.envelope);
+    test.equal(result.envelope.subject, 'Nested Subject');
+    test.ok(result.childNodes);
+    test.equal(result.childNodes.length, 1);
+    test.equal(result.childNodes[0].type, 'text/plain');
     test.done();
 };
 
