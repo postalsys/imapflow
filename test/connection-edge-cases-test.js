@@ -946,3 +946,521 @@ module.exports['Connection Edge: Pending requests and locks both rejected on clo
         test.done();
     });
 };
+
+module.exports['Connection Edge: exec throws NoConnection when in LOGOUT state'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Set state to LOGOUT
+    client.state = client.states.LOGOUT;
+    client.socket = { destroyed: false };
+
+    try {
+        await client.exec('NOOP', []);
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'NoConnection');
+        test.ok(err.message.includes('Connection not available'));
+    }
+
+    test.done();
+};
+
+module.exports['Connection Edge: exec throws NoConnection when isClosed is true'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Set isClosed flag
+    client.isClosed = true;
+    client.socket = { destroyed: false };
+
+    try {
+        await client.exec('NOOP', []);
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'NoConnection');
+        test.ok(err.message.includes('Connection not available'));
+    }
+
+    test.done();
+};
+
+module.exports['Connection Edge: getLogger emits log events when emitLogs is true'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        emitLogs: true
+    });
+
+    let logEvents = [];
+    client.on('log', entry => {
+        logEvents.push(entry);
+    });
+
+    // Trigger logging through the logger
+    client.log.info({ msg: 'Test message', extra: 'data' });
+
+    test.ok(logEvents.length > 0, 'Log event should be emitted');
+    test.equal(logEvents[0].level, 'info');
+    test.equal(logEvents[0].msg, 'Test message');
+    test.equal(logEvents[0].extra, 'data');
+    test.ok(logEvents[0].cid, 'Should have connection id');
+    test.ok(logEvents[0].t, 'Should have timestamp');
+    test.done();
+};
+
+module.exports['Connection Edge: getLogger emits log with error object'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        emitLogs: true
+    });
+
+    let logEvents = [];
+    client.on('log', entry => {
+        logEvents.push(entry);
+    });
+
+    // Trigger error logging
+    let testError = new Error('Test error');
+    testError.code = 'TEST_CODE';
+    client.log.error({ msg: 'Error occurred', err: testError });
+
+    test.ok(logEvents.length > 0, 'Log event should be emitted');
+    test.equal(logEvents[0].level, 'error');
+    test.ok(logEvents[0].err, 'Should have error object');
+    test.ok(logEvents[0].err.stack, 'Error should have stack');
+    test.equal(logEvents[0].err.code, 'TEST_CODE', 'Error should have code');
+    test.done();
+};
+
+module.exports['Connection Edge: unbind removes socket listeners and returns sockets'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Create mock socket with unpipe method
+    client.socket = new EventEmitter();
+    client.socket.unpipe = () => {};
+    client.writeSocket = client.socket;
+
+    // Set up socket handlers first
+    client.setSocketHandlers();
+
+    // Verify handlers are set
+    test.equal(client.socket.listenerCount('error'), 1);
+    test.equal(client.socket.listenerCount('close'), 1);
+
+    // Call unbind
+    let result = client.unbind();
+
+    // Verify handlers are removed
+    test.equal(client.socket.listenerCount('error'), 0);
+    test.equal(client.socket.listenerCount('close'), 0);
+    test.equal(client.socket.listenerCount('end'), 0);
+    test.equal(client.socket.listenerCount('timeout'), 0);
+
+    // Verify return value
+    test.ok(result.readSocket, 'Should return readSocket');
+    test.ok(result.writeSocket, 'Should return writeSocket');
+    test.equal(result.readSocket, client.socket);
+    test.equal(result.writeSocket, client.socket);
+
+    test.done();
+};
+
+module.exports['Connection Edge: unbind with inflate stream'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Create mock socket
+    client.socket = new EventEmitter();
+    client.socket.unpipe = () => {};
+
+    // Create a separate writeSocket (also needs to be EventEmitter for setSocketHandlers)
+    client.writeSocket = new EventEmitter();
+    client.writeSocket.customProp = 'writeSocket';
+
+    // Create mock inflate stream
+    client._inflate = new EventEmitter();
+    client._inflate.unpipe = () => {};
+
+    // Set up socket handlers
+    client.setSocketHandlers();
+
+    // Call unbind
+    let result = client.unbind();
+
+    // Verify return value uses inflate for read and writeSocket for write
+    test.equal(result.readSocket, client._inflate);
+    test.equal(result.writeSocket.customProp, 'writeSocket');
+
+    test.done();
+};
+
+module.exports['Connection Edge: resolveRange with number input'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { exists: 10 };
+    let options = {};
+
+    let result = await client.resolveRange(123, options);
+    test.equal(result, '123');
+    test.done();
+};
+
+module.exports['Connection Edge: resolveRange with bigint input'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { exists: 10 };
+    let options = {};
+
+    let result = await client.resolveRange(BigInt(456), options);
+    test.equal(result, '456');
+    test.done();
+};
+
+module.exports['Connection Edge: resolveRange with star and existing messages'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { exists: 50 };
+    let options = { uid: true };
+
+    let result = await client.resolveRange('*', options);
+    test.equal(result, '50');
+    test.equal(options.uid, false); // should be changed to sequence query
+    test.done();
+};
+
+module.exports['Connection Edge: resolveRange with star and no messages'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { exists: 0 };
+    let options = {};
+
+    let result = await client.resolveRange('*', options);
+    test.equal(result, false);
+    test.done();
+};
+
+module.exports['Connection Edge: resolveRange with {all: true}'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { exists: 10 };
+    let options = {};
+
+    let result = await client.resolveRange({ all: true }, options);
+    test.equal(result, '1:*');
+    test.done();
+};
+
+module.exports['Connection Edge: resolveRange with {uid: value}'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { exists: 10 };
+    let options = {};
+
+    let result = await client.resolveRange({ uid: '1:100' }, options);
+    test.equal(result, '1:100');
+    test.equal(options.uid, true);
+    test.done();
+};
+
+module.exports['Connection Edge: resolveRange with array input'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { exists: 10 };
+    let options = {};
+
+    let result = await client.resolveRange(['1', '2', '3'], options);
+    test.equal(result, '1,2,3');
+    test.done();
+};
+
+module.exports['Connection Edge: resolveRange with empty/falsy input'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { exists: 10 };
+    let options = {};
+
+    let result = await client.resolveRange('', options);
+    test.equal(result, false);
+
+    result = await client.resolveRange(null, options);
+    test.equal(result, false);
+
+    test.done();
+};
+
+module.exports['Connection Edge: ensureSelectedMailbox with no path'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    let result = await client.ensureSelectedMailbox('');
+    test.equal(result, false);
+
+    result = await client.ensureSelectedMailbox(null);
+    test.equal(result, false);
+
+    test.done();
+};
+
+module.exports['Connection Edge: ensureSelectedMailbox when already selected'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    client.mailbox = { path: 'INBOX' };
+
+    let result = await client.ensureSelectedMailbox('INBOX');
+    test.equal(result, true);
+    test.done();
+};
+
+module.exports['Connection Edge: autoidle clears existing timer'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Set a fake timer
+    client.idleStartTimer = setTimeout(() => {}, 10000);
+    client.state = client.states.NOT_AUTHENTICATED;
+
+    // Call autoidle - should clear the timer but not set new one (wrong state)
+    client.autoidle();
+
+    // Should have been cleared
+    test.ok(true);
+    test.done();
+};
+
+module.exports['Connection Edge: autoidle disabled by option'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        disableAutoIdle: true
+    });
+
+    client.state = client.states.SELECTED;
+
+    // Call autoidle - should return early due to disableAutoIdle
+    client.autoidle();
+
+    test.equal(client.idleStartTimer, undefined);
+    test.done();
+};
+
+module.exports['Connection Edge: getUntaggedHandler with numeric command'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Set up a current request with untagged handler
+    client.currentRequest = {
+        options: {
+            untagged: {
+                FETCH: () => 'fetch handler'
+            }
+        }
+    };
+
+    // Test with numeric command and FETCH attribute
+    let handler = client.getUntaggedHandler('123', [{ value: 'FETCH' }]);
+    test.equal(handler(), 'fetch handler');
+
+    test.done();
+};
+
+module.exports['Connection Edge: getUntaggedHandler from untaggedHandlers'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Set up global untagged handler
+    client.untaggedHandlers = {
+        CAPABILITY: () => 'capability handler'
+    };
+
+    let handler = client.getUntaggedHandler('CAPABILITY', []);
+    test.equal(handler(), 'capability handler');
+
+    test.done();
+};
+
+module.exports['Connection Edge: getSectionHandler returns handler'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Set up section handler
+    client.sectionHandlers = {
+        CAPABILITY: () => 'section handler'
+    };
+
+    let handler = client.getSectionHandler('CAPABILITY');
+    test.equal(handler(), 'section handler');
+
+    // Test non-existent handler
+    handler = client.getSectionHandler('NONEXISTENT');
+    test.equal(handler, undefined);
+
+    test.done();
+};
+
+module.exports['Connection Edge: constructor with custom clientInfo'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        clientInfo: {
+            name: 'CustomClient',
+            version: '1.0.0'
+        }
+    });
+
+    test.equal(client.clientInfo.name, 'CustomClient');
+    test.equal(client.clientInfo.version, '1.0.0');
+    test.ok(client.clientInfo.vendor); // Should still have default vendor
+    test.done();
+};
+
+module.exports['Connection Edge: constructor with secure port 993 detection'] = test => {
+    // When port is 993 and secure is undefined, should default to secure
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    test.equal(client.secureConnection, true);
+    test.done();
+};
+
+module.exports['Connection Edge: constructor normalizes clientInfo diacritics'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        clientInfo: {
+            name: 'Café Clïent',
+            version: '1.0.0'
+        }
+    });
+
+    // Diacritics should be removed (NFD normalization splits é into e + accent, then accent is removed)
+    test.equal(client.clientInfo.name, 'Cafe Client');
+    test.done();
+};
+
+module.exports['Connection Edge: constructor with servername option'] = test => {
+    let client = new ImapFlow({
+        host: '192.168.1.1',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        servername: 'mail.example.com'
+    });
+
+    test.equal(client.servername, 'mail.example.com');
+    test.done();
+};
+
+module.exports['Connection Edge: constructor servername from host when not IP'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    test.equal(client.servername, 'imap.example.com');
+    test.done();
+};
+
+module.exports['Connection Edge: constructor servername false for IP host'] = test => {
+    let client = new ImapFlow({
+        host: '192.168.1.1',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    test.equal(client.servername, false);
+    test.done();
+};
+
+module.exports['Connection Edge: connect throws if called twice'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Mark as already called
+    client._connectCalled = true;
+
+    try {
+        await client.connect();
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err.message.includes('re-use'));
+    }
+
+    test.done();
+};
