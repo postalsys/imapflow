@@ -5,6 +5,8 @@
  */
 
 const net = require('net');
+const zlib = require('zlib');
+const { PassThrough } = require('stream');
 const { ImapFlow } = require('../lib/imap-flow');
 
 // Helper to get listener counts for key objects
@@ -348,6 +350,318 @@ exports['Memory Leak Tests'] = {
         test.done();
     }
 };
+
+exports['Compression Stream Tests'] = {
+    'should clean up compression streams on close'(test) {
+        const client = new ImapFlow({
+            host: '127.0.0.1',
+            port: 1,
+            secure: false,
+            logger: false
+        });
+
+        // Simulate compression being enabled by manually setting up streams
+        client._deflate = zlib.createDeflateRaw();
+        client._inflate = zlib.createInflateRaw();
+
+        // Add error handlers like compress() does
+        client._deflate.on('error', () => {});
+        client._inflate.on('error', () => {});
+
+        // Create writeSocket like compress() does
+        const writeSocket = new PassThrough();
+        writeSocket.on('readable', () => {});
+        writeSocket.on('error', () => {});
+        client.writeSocket = writeSocket;
+
+        // Verify streams exist
+        test.ok(client._deflate, 'deflate should exist');
+        test.ok(client._inflate, 'inflate should exist');
+        test.ok(client.writeSocket, 'writeSocket should exist');
+
+        // Close the client
+        client.close();
+
+        // Verify compression streams are cleaned up
+        test.equal(client._deflate, null, 'deflate should be null after close');
+        test.equal(client._inflate, null, 'inflate should be null after close');
+        test.equal(client.writeSocket, null, 'writeSocket should be null after close');
+        test.ok(client.isClosed, 'client should be closed');
+
+        test.done();
+    },
+
+    'should not leak compression stream listeners over multiple cycles'(test) {
+        // Create multiple deflate/inflate streams to verify they don't accumulate
+        const streams = [];
+
+        for (let i = 0; i < 10; i++) {
+            const client = new ImapFlow({
+                host: '127.0.0.1',
+                port: 1,
+                secure: false,
+                logger: false
+            });
+
+            // Simulate compression setup
+            client._deflate = zlib.createDeflateRaw();
+            client._inflate = zlib.createInflateRaw();
+            client._deflate.on('error', () => {});
+            client._inflate.on('error', () => {});
+
+            streams.push({
+                deflate: client._deflate,
+                inflate: client._inflate
+            });
+
+            // Close immediately
+            client.close();
+
+            // Verify cleanup
+            test.equal(client._deflate, null, `cycle ${i + 1}: deflate should be null`);
+            test.equal(client._inflate, null, `cycle ${i + 1}: inflate should be null`);
+        }
+
+        // Verify all streams are destroyed
+        for (let i = 0; i < streams.length; i++) {
+            test.ok(streams[i].deflate.destroyed, `cycle ${i + 1}: deflate should be destroyed`);
+            test.ok(streams[i].inflate.destroyed, `cycle ${i + 1}: inflate should be destroyed`);
+        }
+
+        test.done();
+    },
+
+    'should handle compression stream errors without leaking'(test) {
+        const client = new ImapFlow({
+            host: '127.0.0.1',
+            port: 1,
+            secure: false,
+            logger: false
+        });
+
+        // Setup compression streams with error handlers
+        client._deflate = zlib.createDeflateRaw();
+        client._inflate = zlib.createInflateRaw();
+
+        // Add error handlers (like compress() does)
+        client._deflate.on('error', () => {});
+        client._inflate.on('error', () => {});
+
+        // Verify initial listener counts
+        test.equal(client._deflate.listenerCount('error'), 1, 'deflate should have 1 error listener');
+        test.equal(client._inflate.listenerCount('error'), 1, 'inflate should have 1 error listener');
+
+        // Close and verify cleanup
+        client.close();
+
+        test.equal(client._deflate, null, 'deflate should be null');
+        test.equal(client._inflate, null, 'inflate should be null');
+
+        test.done();
+    }
+};
+
+exports['Fetch Stream Tests'] = {
+    'should clean up internal fetch state on close'(test) {
+        const client = new ImapFlow({
+            host: '127.0.0.1',
+            port: 1,
+            secure: false,
+            logger: false
+        });
+
+        // Simulate some internal state that would exist during fetch
+        client.requestTagMap.set('A001', { tag: 'A001', command: 'FETCH' });
+        client.requestTagMap.set('A002', { tag: 'A002', command: 'FETCH' });
+
+        test.equal(client.requestTagMap.size, 2, 'should have 2 pending requests');
+
+        // Close the client
+        client.close();
+
+        // Verify request map is cleared
+        test.equal(client.requestTagMap.size, 0, 'requestTagMap should be cleared after close');
+        test.ok(client.isClosed, 'client should be closed');
+
+        test.done();
+    },
+
+    'should clean up mailbox state on close'(test) {
+        const client = new ImapFlow({
+            host: '127.0.0.1',
+            port: 1,
+            secure: false,
+            logger: false
+        });
+
+        // Simulate mailbox state
+        client.folders.set('INBOX', { path: 'INBOX', exists: 100 });
+        client.folders.set('Sent', { path: 'Sent', exists: 50 });
+        client.folders.set('Drafts', { path: 'Drafts', exists: 10 });
+
+        test.equal(client.folders.size, 3, 'should have 3 folders cached');
+
+        // Close the client
+        client.close();
+
+        // Verify folders are cleared
+        test.equal(client.folders.size, 0, 'folders should be cleared after close');
+
+        test.done();
+    },
+
+    async 'should clean up after fetch with mock server'(test) {
+        const server = createMockServerWithFetch();
+
+        server.listen(0, '127.0.0.1', async () => {
+            const port = server.address().port;
+
+            const client = new ImapFlow({
+                host: '127.0.0.1',
+                port,
+                secure: false,
+                logger: false,
+                auth: {
+                    user: 'test',
+                    pass: 'test'
+                }
+            });
+
+            try {
+                await client.connect();
+
+                // Select INBOX
+                await client.mailboxOpen('INBOX');
+
+                // Verify we're in selected state
+                test.ok(client.mailbox, 'mailbox should be selected');
+
+                await client.logout();
+
+                // Wait for cleanup
+                await new Promise(r => setTimeout(r, 100));
+
+                // Verify cleanup
+                const report = getListenerReport(client);
+                test.equal(report.streamer.error, 0, 'streamer error listeners should be 0');
+                test.equal(report.streamer.readable, 0, 'streamer readable listeners should be 0');
+                test.ok(client.isClosed, 'client should be closed');
+            } catch (err) {
+                test.ok(false, 'should not throw: ' + err.message);
+            } finally {
+                server.close();
+                test.done();
+            }
+        });
+    },
+
+    async 'should not leak listeners during multiple mailbox operations'(test) {
+        const server = createMockServerWithFetch();
+
+        server.listen(0, '127.0.0.1', async () => {
+            const port = server.address().port;
+
+            const client = new ImapFlow({
+                host: '127.0.0.1',
+                port,
+                secure: false,
+                logger: false,
+                auth: {
+                    user: 'test',
+                    pass: 'test'
+                }
+            });
+
+            try {
+                await client.connect();
+
+                // Perform multiple mailbox operations
+                for (let i = 0; i < 5; i++) {
+                    await client.mailboxOpen('INBOX');
+                    await client.mailboxClose();
+                }
+
+                await client.logout();
+
+                // Wait for cleanup
+                await new Promise(r => setTimeout(r, 100));
+
+                // Verify no listener accumulation
+                const report = getListenerReport(client);
+                test.equal(report.streamer.error, 0, 'streamer error listeners should be 0');
+                test.equal(report.streamer.readable, 0, 'streamer readable listeners should be 0');
+            } catch (err) {
+                test.ok(false, 'should not throw: ' + err.message);
+            } finally {
+                server.close();
+                test.done();
+            }
+        });
+    }
+};
+
+// Create a mock server that supports SELECT/FETCH operations
+function createMockServerWithFetch() {
+    const server = net.createServer(socket => {
+        socket.write('* OK Mock IMAP Server ready\r\n');
+
+        socket.on('data', data => {
+            const lines = data
+                .toString()
+                .split('\r\n')
+                .filter(l => l.trim());
+
+            for (const line of lines) {
+                const parts = line.split(' ');
+                const tag = parts[0];
+                const command = parts[1] ? parts[1].toUpperCase() : '';
+
+                if (command === 'CAPABILITY') {
+                    socket.write('* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n');
+                    socket.write(`${tag} OK CAPABILITY completed\r\n`);
+                } else if (command === 'LOGIN') {
+                    socket.write(`${tag} OK LOGIN completed\r\n`);
+                } else if (command === 'LOGOUT') {
+                    socket.write('* BYE Server logging out\r\n');
+                    socket.write(`${tag} OK LOGOUT completed\r\n`);
+                    socket.end();
+                } else if (command === 'NAMESPACE') {
+                    socket.write('* NAMESPACE (("" "/")) NIL NIL\r\n');
+                    socket.write(`${tag} OK NAMESPACE completed\r\n`);
+                } else if (command === 'COMPRESS') {
+                    socket.write(`${tag} NO COMPRESS not supported\r\n`);
+                } else if (command === 'ENABLE') {
+                    socket.write(`${tag} OK ENABLE completed\r\n`);
+                } else if (command === 'ID') {
+                    socket.write('* ID NIL\r\n');
+                    socket.write(`${tag} OK ID completed\r\n`);
+                } else if (command === 'SELECT' || command === 'EXAMINE') {
+                    socket.write('* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)\r\n');
+                    socket.write('* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Flags permitted\r\n');
+                    socket.write('* 10 EXISTS\r\n');
+                    socket.write('* 0 RECENT\r\n');
+                    socket.write('* OK [UIDVALIDITY 1234567890] UIDs valid\r\n');
+                    socket.write('* OK [UIDNEXT 11] Predicted next UID\r\n');
+                    socket.write(`${tag} OK [READ-WRITE] SELECT completed\r\n`);
+                } else if (command === 'CLOSE') {
+                    socket.write(`${tag} OK CLOSE completed\r\n`);
+                } else if (command === 'FETCH') {
+                    // Simple fetch response
+                    socket.write('* 1 FETCH (UID 1 FLAGS (\\Seen))\r\n');
+                    socket.write(`${tag} OK FETCH completed\r\n`);
+                } else if (command === 'NOOP') {
+                    socket.write(`${tag} OK NOOP completed\r\n`);
+                } else if (tag && command) {
+                    socket.write(`${tag} OK Command completed\r\n`);
+                }
+            }
+        });
+
+        socket.on('error', () => {});
+    });
+
+    return server;
+}
 
 // Note: helpers (getListenerReport, measureMemory, createMockServer) are available
 // within this module for testing purposes
