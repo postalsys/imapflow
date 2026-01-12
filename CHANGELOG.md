@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.6](https://github.com/postalsys/imapflow/compare/v1.2.5...v1.2.6) (2026-01-12)
+
+
+### Bug Fixes
+
+* prevent memory leaks in socket and event handling ([2dfa6f3](https://github.com/postalsys/imapflow/commit/2dfa6f3d77ccdf31244752d669ab694f1c157b4c))
+* restore isClosed check and error logging in initialPREAUTH ([ae2ebcf](https://github.com/postalsys/imapflow/commit/ae2ebcff5a65aa870b1af70726f7c5c6ac54395e))
+
 ## [1.2.5](https://github.com/postalsys/imapflow/compare/v1.2.4...v1.2.5) (2026-01-11)
 
 
