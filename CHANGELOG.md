@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.7](https://github.com/postalsys/imapflow/compare/v1.2.6...v1.2.7) (2026-01-26)
+
+
+### Bug Fixes
+
+* add _destroy() methods to Transform streams for proper cleanup ([ed78912](https://github.com/postalsys/imapflow/commit/ed78912143d3613a7687a2bae880edd9051355cc))
+
 ## [1.2.6](https://github.com/postalsys/imapflow/compare/v1.2.5...v1.2.6) (2026-01-12)
 
 
