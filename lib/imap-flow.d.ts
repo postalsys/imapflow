@@ -728,6 +728,17 @@ export class ImapFlow extends EventEmitter {
     /** Search messages from the currently opened mailbox */
     search(query: SearchObject, options?: { uid?: boolean }): Promise<number[] | false>;
 
+    /**
+     * Search and sort messages from the currently opened mailbox.
+     * Uses the SORT extension (RFC 5256) if available.
+     * @param sortCriteria Sort criteria array, e.g., ['REVERSE', 'DATE'] or [{reverse: true}, 'date'].
+     *   Valid sort keys: ARRIVAL, CC, DATE, FROM, SIZE, SUBJECT, TO.
+     * @param query Query to filter the messages
+     * @param options Options object
+     * @returns An array of sorted sequence or UID numbers, or false if SORT is not supported
+     */
+    sort(sortCriteria: (string | { reverse?: boolean; key?: string })[], query: SearchObject, options?: { uid?: boolean }): Promise<number[] | false>;
+
     /** Fetch messages from the currently opened mailbox */
     fetch(range: SequenceString | number[] | SearchObject, query: FetchQueryObject, options?: FetchOptions): AsyncIterableIterator<FetchMessageObject>;
 

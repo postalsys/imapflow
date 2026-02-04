@@ -26,6 +26,7 @@ module.exports['Commands: Method availability'] = test => {
     test.equal(typeof client.mailboxOpen, 'function');
     test.equal(typeof client.mailboxClose, 'function');
     test.equal(typeof client.search, 'function');
+    test.equal(typeof client.sort, 'function');
     test.equal(typeof client.fetch, 'function');
     test.done();
 };
