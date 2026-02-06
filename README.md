@@ -7,7 +7,7 @@ ImapFlow is a modern and easy-to-use IMAP client library for Node.js.
 
 The focus for ImapFlow is to provide easy to use API over IMAP. Using ImapFlow does not expect knowledge about specific IMAP details. A general understanding is good enough.
 
-IMAP extensions are handled in the background, so, for example, you can always request `labels` value from a {@link FetchQueryObject|fetch()} call, but if the IMAP server does not support `X-GM-EXT-1` extension, then `labels` value is not included in the response.
+IMAP extensions are handled in the background, so, for example, you can always request `labels` value from a `fetch()` call, but if the IMAP server does not support `X-GM-EXT-1` extension, then `labels` value is not included in the response.
 
 ## Source
 
@@ -100,10 +100,10 @@ await client.connect();
 
 ## Documentation
 
-[API reference](https://imapflow.com/module-imapflow-ImapFlow.html).
+[API reference](https://imapflow.com/docs/api/imapflow-client).
 
 ## License
 
-&copy; 2020-2024 Postal Systems OÜ
+&copy; 2020-2025 Postal Systems OÜ
 
 Licensed under **MIT-license**
