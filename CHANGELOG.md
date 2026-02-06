@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.9](https://github.com/postalsys/imapflow/compare/v1.2.8...v1.2.9) (2026-02-06)
+
+
+### Bug Fixes
+
+* trigger build ([fd7a4c2](https://github.com/postalsys/imapflow/commit/fd7a4c2012d0b7742c45a2aced2d05da8401aa9a))
+
 ## [1.2.8](https://github.com/postalsys/imapflow/compare/v1.2.7...v1.2.8) (2026-01-28)
 
 
