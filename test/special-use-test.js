@@ -47,3 +47,35 @@ module.exports['Special Use: Junk folder names'] = test => {
     test.ok(junkNames.includes('junk'));
     test.done();
 };
+
+// ============================================
+// specialUse() function branch tests
+// ============================================
+
+module.exports['Special Use: specialUse returns extension flag when extension enabled and flag found'] = test => {
+    const result = specialUse.specialUse(true, { flags: new Set(['\\Sent']), name: 'Foo' });
+    test.equal(result.flag, '\\Sent');
+    test.equal(result.source, 'extension');
+    test.done();
+};
+
+module.exports['Special Use: specialUse falls back to name when extension enabled but no flag'] = test => {
+    const result = specialUse.specialUse(true, { flags: new Set(), name: 'Sent' });
+    test.equal(result.flag, '\\Sent');
+    test.equal(result.source, 'name');
+    test.done();
+};
+
+module.exports['Special Use: specialUse matches by name when extension disabled'] = test => {
+    const result = specialUse.specialUse(false, { flags: new Set(), name: 'Drafts' });
+    test.equal(result.flag, '\\Drafts');
+    test.equal(result.source, 'name');
+    test.done();
+};
+
+module.exports['Special Use: specialUse returns null flag when no match'] = test => {
+    const result = specialUse.specialUse(false, { flags: new Set(), name: 'CustomFolder' });
+    test.equal(result.flag, null);
+    test.equal(result.source, undefined);
+    test.done();
+};

@@ -3858,6 +3858,39 @@ module.exports['Commands: list sort fallback path comparison'] = async test => {
     test.done();
 };
 
+module.exports['Commands: list STATUS handles unknown key in response'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['SPECIAL-USE', true],
+            ['LIST-STATUS', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged) {
+                if (opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'TestFolder' }]
+                    });
+                }
+                if (opts.untagged.STATUS) {
+                    await opts.untagged.STATUS({
+                        attributes: [{ value: 'TestFolder' }, [{ value: 'XUNKNOWN' }, { value: '999' }, { value: 'MESSAGES' }, { value: '10' }]]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', { statusQuery: { messages: true } });
+    const folder = result.find(e => e.path === 'TestFolder');
+    test.ok(folder);
+    test.ok(folder.status);
+    test.equal(folder.status.messages, 10);
+    test.equal(folder.status.XUNKNOWN, undefined); // Unknown keys silently ignored
+    test.done();
+};
+
 // ============================================
 // SELECT Command Tests
 // ============================================
