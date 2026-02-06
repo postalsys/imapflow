@@ -761,6 +761,12 @@ export class ImapFlow extends EventEmitter {
     /** Opens a mailbox if not already open and returns a lock */
     getMailboxLock(path: string | string[], options?: MailboxOpenOptions): Promise<MailboxLockObject>;
 
+    /** Returns byte counters for the current connection, optionally resets them */
+    stats(reset?: boolean): { sent: number; received: number };
+
+    /** Detaches sockets from the IMAP pipeline, returns read and write sockets */
+    unbind(): { readSocket: any; writeSocket: any };
+
     /** Connection close event */
     on(event: 'close', listener: () => void): this;
 
