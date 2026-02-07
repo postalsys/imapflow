@@ -77,9 +77,8 @@ Full documentation is available at **[imapflow.com](https://imapflow.com/docs/)*
 - [Mailbox Management](https://imapflow.com/docs/guides/mailbox-management) -- creating, renaming, and deleting mailboxes
 - [API Reference](https://imapflow.com/docs/api/imapflow-client) -- complete method and event documentation
 
-## EmailEngine
-
-If you are looking for a complete email integration solution, ImapFlow was built for [EmailEngine](https://emailengine.app/) -- a self-hosted email gateway that provides REST API access to IMAP and SMTP accounts.
+> [!NOTE]
+> If you are looking for a complete email integration solution, ImapFlow was built for [EmailEngine](https://emailengine.app/) -- a self-hosted email gateway that provides REST API access to IMAP and SMTP accounts.
 
 ## License
 
