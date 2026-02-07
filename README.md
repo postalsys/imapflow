@@ -1,109 +1,88 @@
 # ImapFlow
 
-ImapFlow is a modern and easy-to-use IMAP client library for Node.js.
+Modern and easy-to-use IMAP client library for Node.js.
 
-> [!NOTE]
-> Managing an IMAP connection is cool, but if you are only looking for an easy way to integrate email accounts, then ImapFlow was built for [EmailEngine Email API](https://emailengine.app/). It's a self-hosted software that converts all IMAP accounts to easy-to-use REST interfaces.
+[![npm](https://img.shields.io/npm/v/imapflow)](https://www.npmjs.com/package/imapflow)
+[![license](https://img.shields.io/npm/l/imapflow)](https://github.com/postalsys/imapflow/blob/master/LICENSE)
 
-The focus for ImapFlow is to provide easy to use API over IMAP. Using ImapFlow does not expect knowledge about specific IMAP details. A general understanding is good enough.
+ImapFlow provides a clean, promise-based API over IMAP so you don't need in-depth knowledge of the IMAP protocol. IMAP extensions are handled transparently in the background -- for example, you can always request `labels` in a `fetch()` call, but the library only includes them in the response if the server supports the `X-GM-EXT-1` extension.
 
-IMAP extensions are handled in the background, so, for example, you can always request `labels` value from a `fetch()` call, but if the IMAP server does not support `X-GM-EXT-1` extension, then `labels` value is not included in the response.
+## Features
 
-## Source
+- **Async/await API** -- all methods return Promises
+- **Automatic IMAP extension handling** -- CONDSTORE, QRESYNC, IDLE, COMPRESS, and [more](https://imapflow.com/docs/)
+- **Message streaming** -- async iterators for efficient processing
+- **Mailbox locking** -- built-in locking mechanism for safe concurrent access
+- **TypeScript support** -- type definitions included
+- **Proxy support** -- SOCKS and HTTP CONNECT proxies
+- **Gmail support** -- labels, raw search via X-GM-EXT-1
 
-Source code is available from [Github](https://github.com/postalsys/imapflow).
+## Installation
 
-## Usage
-
-First install the module from npm:
-
-```
+```bash
 npm install imapflow
 ```
 
-next import the ImapFlow class into your script:
+## Quick Example
 
 ```js
 const { ImapFlow } = require('imapflow');
-```
 
-### Promises
-
-All ImapFlow methods use Promises, so you need to wait using `await` or wait for the `then()` method to fire until you get the response.
-
-```js
-const { ImapFlow } = require('imapflow');
 const client = new ImapFlow({
-    host: 'ethereal.email',
+    host: 'imap.example.com',
     port: 993,
     secure: true,
     auth: {
-        user: 'garland.mcclure71@ethereal.email',
-        pass: 'mW6e4wWWnEd3H4hT5B'
+        user: 'user@example.com',
+        pass: 'password'
     }
 });
 
 const main = async () => {
-    // Wait until client connects and authorizes
     await client.connect();
 
-    // Select and lock a mailbox. Throws if mailbox does not exist
     let lock = await client.getMailboxLock('INBOX');
     try {
-        // fetch latest message source
-        // client.mailbox includes information about currently selected mailbox
-        // "exists" value is also the largest sequence number available in the mailbox
+        // fetch latest message
         let message = await client.fetchOne(client.mailbox.exists, { source: true });
         console.log(message.source.toString());
 
         // list subjects for all messages
-        // uid value is always included in FETCH response, envelope strings are in unicode.
         for await (let message of client.fetch('1:*', { envelope: true })) {
             console.log(`${message.uid}: ${message.envelope.subject}`);
         }
     } finally {
-        // Make sure lock is released, otherwise next `getMailboxLock()` never returns
+        // always release the lock
         lock.release();
     }
 
-    // log out and close connection
     await client.logout();
 };
 
-main().catch(err => console.error(err));
+main().catch(console.error);
 ```
 
-### Admin Impersonation / Delegation (SASL PLAIN with authzid)
-
-ImapFlow supports admin impersonation for mail systems like Zimbra that allow administrators to access user mailboxes. This is done using the SASL PLAIN mechanism with an authorization identity (`authzid`).
-
-```js
-const { ImapFlow } = require('imapflow');
-const client = new ImapFlow({
-    host: 'mail.example.com',
-    port: 993,
-    secure: true,
-    auth: {
-        user: 'admin@example.com', // Admin credentials (authentication identity)
-        pass: 'adminpassword',
-        authzid: 'user@example.com', // User to impersonate (authorization identity)
-        loginMethod: 'AUTH=PLAIN' // Must use PLAIN mechanism for authzid
-    }
-});
-
-// Connection will authenticate as admin but authorize as the specified user
-await client.connect();
-// Now operating on user@example.com's mailbox as admin
-```
-
-**Note:** The `authzid` parameter only works with the `AUTH=PLAIN` mechanism. The server must support admin delegation/impersonation for this to work.
+See the [Quick Start guide](https://imapflow.com/docs/getting-started/quick-start) for more examples, including Gmail, Outlook, and Yahoo configuration.
 
 ## Documentation
 
-[API reference](https://imapflow.com/docs/api/imapflow-client).
+Full documentation is available at **[imapflow.com](https://imapflow.com/docs/)**.
+
+- [Installation](https://imapflow.com/docs/getting-started/installation) -- requirements and setup
+- [Quick Start](https://imapflow.com/docs/getting-started/quick-start) -- your first ImapFlow application
+- [Basic Usage](https://imapflow.com/docs/guides/basic-usage) -- core concepts and patterns
+- [Configuration](https://imapflow.com/docs/guides/configuration) -- connection options and settings
+- [Fetching Messages](https://imapflow.com/docs/guides/fetching-messages) -- reading email data
+- [Searching](https://imapflow.com/docs/guides/searching) -- finding messages with search queries
+- [Mailbox Management](https://imapflow.com/docs/guides/mailbox-management) -- creating, renaming, and deleting mailboxes
+- [API Reference](https://imapflow.com/docs/api/imapflow-client) -- complete method and event documentation
+
+## EmailEngine
+
+If you are looking for a complete email integration solution, ImapFlow was built for [EmailEngine](https://emailengine.app/) -- a self-hosted email gateway that provides REST API access to IMAP and SMTP accounts.
 
 ## License
 
-&copy; 2020-2025 Postal Systems OÜ
+Copyright (c) 2020-2025 Postal Systems OU
 
-Licensed under **MIT-license**
+Licensed under the MIT license.
