@@ -1,38 +1,40 @@
 'use strict';
 
-const { FlatCompat } = require('@eslint/eslintrc');
 const js = require('@eslint/js');
-
-const compat = new FlatCompat({
-    baseDirectory: __dirname,
-    recommendedConfig: js.configs.recommended
-});
+const globals = require('globals');
+const prettierConfig = require('eslint-config-prettier/flat');
+const nodemailerConfig = require('eslint-config-nodemailer');
 
 module.exports = [
     {
         ignores: ['node_modules/**', 'examples/**', 'docs/**']
     },
-    ...compat.extends('nodemailer', 'prettier'),
+    js.configs.recommended,
     {
         languageOptions: {
-            ecmaVersion: 2020,
+            ecmaVersion: 2022,
             sourceType: 'script',
-            globals: {
-                BigInt: 'readonly'
-            },
-            parser: require('@babel/eslint-parser'),
             parserOptions: {
-                requireConfigFile: false
+                ecmaFeatures: {
+                    globalReturn: true
+                }
+            },
+            globals: {
+                ...globals.node,
+                ...globals.es2021,
+                it: 'readonly',
+                describe: 'readonly',
+                beforeEach: 'readonly',
+                afterEach: 'readonly'
             }
         },
-        plugins: {
-            '@babel': require('@babel/eslint-plugin')
-        },
         rules: {
+            ...nodemailerConfig.rules,
             'no-await-in-loop': 0,
             'require-atomic-updates': 0
         }
     },
+    prettierConfig,
     {
         files: ['eslint.config.js', '.prettierrc.js', '.ncurc.js'],
         rules: {
