@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.10](https://github.com/postalsys/imapflow/compare/v1.2.9...v1.2.10) (2026-02-19)
+
+
+### Bug Fixes
+
+* add null guards in compress() to prevent crash on TLS teardown ([84cd3ff](https://github.com/postalsys/imapflow/commit/84cd3ff8815d8ba37a37c1e7a09c244e80b61948))
+
 ## [1.2.9](https://github.com/postalsys/imapflow/compare/v1.2.8...v1.2.9) (2026-02-06)
 
 
