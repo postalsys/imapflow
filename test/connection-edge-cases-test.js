@@ -1464,3 +1464,108 @@ module.exports['Connection Edge: connect throws if called twice'] = async test =
 
     test.done();
 };
+
+// Helper to create a mock client with compression enabled
+async function setupCompressedClient() {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    let mockSocket = new EventEmitter();
+    mockSocket.pipe = dest => dest;
+    mockSocket.unpipe = () => {};
+    mockSocket.destroy = () => {};
+    mockSocket.destroyed = false;
+    client.socket = mockSocket;
+    client.streamer = new EventEmitter();
+
+    client.run = async command => {
+        if (command === 'COMPRESS') {
+            return true;
+        }
+    };
+
+    await client.compress();
+    return { client, mockSocket };
+}
+
+module.exports['Connection Edge: compress writeSocket error forwarded to socket when live'] = async test => {
+    let { client, mockSocket } = await setupCompressedClient();
+
+    let errorReceived = false;
+    mockSocket.on('error', err => {
+        errorReceived = true;
+        test.equal(err.message, 'writeSocket error');
+    });
+
+    client.writeSocket.emit('error', new Error('writeSocket error'));
+
+    test.ok(errorReceived, 'Error should be forwarded to socket');
+    test.done();
+};
+
+module.exports['Connection Edge: compress _deflate error forwarded to socket when live'] = async test => {
+    let { client, mockSocket } = await setupCompressedClient();
+
+    let errorReceived = false;
+    mockSocket.on('error', err => {
+        errorReceived = true;
+        test.equal(err.message, 'deflate error');
+    });
+
+    client._deflate.emit('error', new Error('deflate error'));
+
+    test.ok(errorReceived, 'Error should be forwarded to socket');
+    test.done();
+};
+
+module.exports['Connection Edge: compress readable after close does not crash'] = async test => {
+    let { client } = await setupCompressedClient();
+
+    // Save reference before close() nulls it
+    let writeSocket = client.writeSocket;
+
+    client.close();
+
+    // Emit readable on the saved reference after close has nulled this.writeSocket
+    // This should not throw (guards at lines 1048 and 1021)
+    test.doesNotThrow(() => {
+        writeSocket.emit('readable');
+    });
+
+    test.done();
+};
+
+module.exports['Connection Edge: compress writeSocket error after close does not crash'] = async test => {
+    let { client } = await setupCompressedClient();
+
+    let writeSocket = client.writeSocket;
+
+    client.close();
+
+    // Emit error on saved writeSocket after close has nulled this.socket
+    // This should not throw (guard at lines 1053-1055)
+    test.doesNotThrow(() => {
+        writeSocket.emit('error', new Error('late writeSocket error'));
+    });
+
+    test.done();
+};
+
+module.exports['Connection Edge: compress _deflate error after close does not crash'] = async test => {
+    let { client } = await setupCompressedClient();
+
+    let deflate = client._deflate;
+
+    client.close();
+
+    // Emit error on saved _deflate after close has nulled this.socket
+    // This should not throw (guard at lines 1060-1062)
+    test.doesNotThrow(() => {
+        deflate.emit('error', new Error('late deflate error'));
+    });
+
+    test.done();
+};
