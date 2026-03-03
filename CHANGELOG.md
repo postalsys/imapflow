@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.11](https://github.com/postalsys/imapflow/compare/v1.2.10...v1.2.11) (2026-03-03)
+
+
+### Bug Fixes
+
+* release backpressure in fetch() generator on early break/throw ([d42a377](https://github.com/postalsys/imapflow/commit/d42a377f8102f44fc76d8fa9a268bbf2526a7fa8)), closes [#338](https://github.com/postalsys/imapflow/issues/338)
+
 ## [1.2.10](https://github.com/postalsys/imapflow/compare/v1.2.9...v1.2.10) (2026-02-19)
 
 
