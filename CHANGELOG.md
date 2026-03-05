@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.12](https://github.com/postalsys/imapflow/compare/v1.2.11...v1.2.12) (2026-03-05)
+
+
+### Bug Fixes
+
+* prevent unhandled NoConnection rejection in IDLE recovery ([e177372](https://github.com/postalsys/imapflow/commit/e17737296b6b2de9ba25392b79542cf6d7d45826))
+
 ## [1.2.11](https://github.com/postalsys/imapflow/compare/v1.2.10...v1.2.11) (2026-03-03)
 
 
