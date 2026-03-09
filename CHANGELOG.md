@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.13](https://github.com/postalsys/imapflow/compare/v1.2.12...v1.2.13) (2026-03-09)
+
+
+### Bug Fixes
+
+* prevent unhandled promise rejections on close() race conditions ([fcff6be](https://github.com/postalsys/imapflow/commit/fcff6bee42914afdce6ba183b2222dcf080a6725))
+
 ## [1.2.12](https://github.com/postalsys/imapflow/compare/v1.2.11...v1.2.12) (2026-03-05)
 
 
