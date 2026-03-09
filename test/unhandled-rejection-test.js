@@ -314,10 +314,10 @@ exports['Unhandled Rejection Prevention'] = {
                     test.ok(false, 'connect() should have rejected');
                     server.close(() => test.done());
                 },
-                () => {
+                err => {
                     setTimeout(() => {
                         detector.check();
-                        test.ok(true, 'connect() rejected as expected');
+                        test.ok(err && err.code, 'connect() should reject with an error code');
                         server.close(() => test.done());
                     }, 100);
                 }
