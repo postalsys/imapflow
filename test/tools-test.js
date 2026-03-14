@@ -284,11 +284,11 @@ module.exports['Tools: getColorFlags with valid color'] = test => {
 };
 
 module.exports['Tools: getColorFlags with red (index 0)'] = test => {
-    // 'red' is index 0, which is falsy in JS - removes \\Flagged
+    // 'red' is index 0 — should add \\Flagged and remove all MailFlagBit flags
     let result = tools.getColorFlags('red');
     test.ok(Array.isArray(result.add));
     test.ok(Array.isArray(result.remove));
-    test.ok(result.remove.includes('\\Flagged'));
+    test.ok(result.add.includes('\\Flagged'));
     test.done();
 };
 
@@ -1082,8 +1082,8 @@ module.exports['Tools: getColorFlags returns non-null for all valid colors'] = t
 
 module.exports['Tools: getColorFlags red has Flagged but no MailFlagBit set'] = test => {
     let result = tools.getColorFlags('red');
-    // red = index 0, all bits 0, so colorCode is 0 (falsy)
-    test.ok(result.remove.includes('\\Flagged'));
+    // red = index 0, all bits 0 — adds \\Flagged, removes all MailFlagBit flags
+    test.ok(result.add.includes('\\Flagged'));
     test.ok(result.remove.includes('$MailFlagBit0'));
     test.ok(result.remove.includes('$MailFlagBit1'));
     test.ok(result.remove.includes('$MailFlagBit2'));
