@@ -990,3 +990,136 @@ module.exports['Tools: AuthenticationFailure error class'] = test => {
     test.equal(error.message, 'Auth failed');
     test.done();
 };
+
+// ============================================
+// enhanceCommandError tests
+// ============================================
+
+module.exports['Tools: enhanceCommandError sets serverResponseCode'] = async test => {
+    let err = new Error('Command failed');
+    err.response = {
+        tag: '*',
+        command: 'NO',
+        attributes: [
+            {
+                type: 'SECTION',
+                section: [{ type: 'ATOM', value: 'NONEXISTENT' }]
+            },
+            { type: 'ATOM', value: 'Mailbox' },
+            { type: 'ATOM', value: 'not' },
+            { type: 'ATOM', value: 'found' }
+        ]
+    };
+    let result = await tools.enhanceCommandError(err);
+    test.equal(result.serverResponseCode, 'NONEXISTENT');
+    test.equal(typeof result.response, 'string');
+    test.done();
+};
+
+module.exports['Tools: enhanceCommandError with no status code'] = async test => {
+    let err = new Error('Command failed');
+    err.response = { tag: '*', command: 'NO' };
+    let result = await tools.enhanceCommandError(err);
+    test.ok(!result.serverResponseCode);
+    test.done();
+};
+
+module.exports['Tools: enhanceCommandError with null response'] = async test => {
+    let err = new Error('Command failed');
+    err.response = null;
+    let result = await tools.enhanceCommandError(err);
+    test.equal(result.response, false);
+    test.done();
+};
+
+// ============================================
+// getDecoder additional tests
+// ============================================
+
+module.exports['Tools: getDecoder with eucjp charset'] = test => {
+    let decoder = tools.getDecoder('eucjp');
+    test.ok(decoder);
+    test.equal(decoder.constructor.name, 'JPDecoder');
+    test.done();
+};
+
+module.exports['Tools: getDecoder with jis charset'] = test => {
+    let decoder = tools.getDecoder('jis');
+    test.ok(decoder);
+    test.equal(decoder.constructor.name, 'JPDecoder');
+    test.done();
+};
+
+module.exports['Tools: getDecoder with windows-1252 returns iconv stream'] = test => {
+    let decoder = tools.getDecoder('windows-1252');
+    test.ok(decoder);
+    test.notEqual(decoder.constructor.name, 'JPDecoder');
+    test.ok(typeof decoder.write === 'function');
+    test.done();
+};
+
+module.exports['Tools: getDecoder with no arg defaults to ascii'] = test => {
+    let decoder = tools.getDecoder();
+    test.ok(decoder);
+    test.ok(typeof decoder.write === 'function');
+    test.done();
+};
+
+// ============================================
+// getColorFlags tests
+// ============================================
+
+module.exports['Tools: getColorFlags returns non-null for all valid colors'] = test => {
+    let colors = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'grey'];
+    for (let color of colors) {
+        let result = tools.getColorFlags(color);
+        test.ok(result, `getColorFlags('${color}') should not be null`);
+        test.ok(Array.isArray(result.add), `${color} should have add array`);
+        test.ok(Array.isArray(result.remove), `${color} should have remove array`);
+    }
+    test.done();
+};
+
+module.exports['Tools: getColorFlags red has Flagged but no MailFlagBit set'] = test => {
+    let result = tools.getColorFlags('red');
+    // red = index 0, all bits 0, so colorCode is 0 (falsy)
+    test.ok(result.remove.includes('\\Flagged'));
+    test.ok(result.remove.includes('$MailFlagBit0'));
+    test.ok(result.remove.includes('$MailFlagBit1'));
+    test.ok(result.remove.includes('$MailFlagBit2'));
+    test.done();
+};
+
+module.exports['Tools: getColorFlags orange has MailFlagBit0 set'] = test => {
+    let result = tools.getColorFlags('orange');
+    // orange = index 1, bit 0 set
+    test.ok(result.add.includes('\\Flagged'));
+    test.ok(result.add.includes('$MailFlagBit0'));
+    test.ok(result.remove.includes('$MailFlagBit1'));
+    test.ok(result.remove.includes('$MailFlagBit2'));
+    test.done();
+};
+
+module.exports['Tools: getColorFlags yellow has MailFlagBit1 set'] = test => {
+    let result = tools.getColorFlags('yellow');
+    // yellow = index 2, bit 1 set
+    test.ok(result.add.includes('\\Flagged'));
+    test.ok(result.add.includes('$MailFlagBit1'));
+    test.ok(result.remove.includes('$MailFlagBit0'));
+    test.ok(result.remove.includes('$MailFlagBit2'));
+    test.done();
+};
+
+module.exports['Tools: getColorFlags returns null for invalid color'] = test => {
+    test.equal(tools.getColorFlags('invalid'), null);
+    test.equal(tools.getColorFlags('pink'), null);
+    test.done();
+};
+
+module.exports['Tools: getColorFlags with null returns result not null'] = test => {
+    // null input: colorCode becomes null, which is not < 0, so it falls through
+    let result = tools.getColorFlags(null);
+    test.ok(result);
+    test.ok(result.remove.includes('\\Flagged'));
+    test.done();
+};

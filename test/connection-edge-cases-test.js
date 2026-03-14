@@ -1569,3 +1569,97 @@ module.exports['Connection Edge: compress _deflate error after close does not cr
 
     test.done();
 };
+
+// ============================================
+// Mailbox Lock Tests
+// ============================================
+
+module.exports['Connection Edge: getMailboxLock queues lock in locks array'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // getMailboxLock should push to locks array then reject (no connection)
+    try {
+        await client.getMailboxLock('INBOX');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err);
+        test.equal(err.code, 'NoConnection');
+    }
+
+    test.done();
+};
+
+module.exports['Connection Edge: lockCounter increments with each getMailboxLock call'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    let initial = client.lockCounter;
+    let p1 = client.getMailboxLock('INBOX').catch(() => {});
+    let p2 = client.getMailboxLock('Sent').catch(() => {});
+
+    test.equal(client.lockCounter, initial + 2);
+
+    await Promise.all([p1, p2]);
+    test.done();
+};
+
+module.exports['Connection Edge: lock rejected when connection not usable'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // usable is false by default, no socket
+    try {
+        await client.getMailboxLock('INBOX');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.ok(err);
+        test.equal(err.code, 'NoConnection');
+        test.ok(err.message.includes('not available'));
+    }
+    test.done();
+};
+
+module.exports['Connection Edge: processLocks with empty locks array completes'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // processLocks with no pending locks should complete without error
+    await client.processLocks();
+    test.equal(client.processingLock, false);
+    test.done();
+};
+
+module.exports['Connection Edge: multiple locks rejected when no connection'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Queue multiple locks, all should reject
+    let errors = [];
+    let p1 = client.getMailboxLock('INBOX').catch(err => errors.push(err));
+    let p2 = client.getMailboxLock('Sent').catch(err => errors.push(err));
+    let p3 = client.getMailboxLock('Drafts').catch(err => errors.push(err));
+
+    await Promise.all([p1, p2, p3]);
+
+    test.equal(errors.length, 3);
+    for (let err of errors) {
+        test.equal(err.code, 'NoConnection');
+    }
+    test.done();
+};

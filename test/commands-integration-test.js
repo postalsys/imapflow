@@ -8247,3 +8247,64 @@ module.exports['Commands: enable updates connection.enabled'] = async test => {
     test.ok(!connection.enabled.has('EXISTING')); // Old value should be gone
     test.done();
 };
+
+// ============================================
+// Download / DownloadMany Tests
+// ============================================
+
+const { ImapFlow } = require('../lib/imap-flow');
+
+module.exports['Commands: download returns empty when no mailbox selected'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+    // mailbox is not set by default
+    let result = await client.download('1', '1.2');
+    test.deepEqual(result, {});
+    test.done();
+};
+
+module.exports['Commands: downloadMany returns empty when no mailbox selected'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+    let result = await client.downloadMany('1', ['2', '3']);
+    test.deepEqual(result, {});
+    test.done();
+};
+
+module.exports['Commands: download with fetchOne returning null'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+    // Set mailbox so download doesn't return {} early
+    client.mailbox = { path: 'INBOX' };
+    // Mock fetchOne to return null (message not found)
+    client.fetchOne = async () => null;
+
+    // part '1' triggers the bodyStructure check path
+    let result = await client.download('1', '1');
+    test.equal(result.response, false);
+    test.equal(result.chunk, false);
+    test.done();
+};
+
+module.exports['Commands: downloadMany with fetchOne returning null'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+    client.mailbox = { path: 'INBOX' };
+    client.fetchOne = async () => null;
+
+    let result = await client.downloadMany('1', ['2', '3']);
+    test.equal(result.response, false);
+    test.done();
+};
