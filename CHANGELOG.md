@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.14](https://github.com/postalsys/imapflow/compare/v1.2.13...v1.2.14) (2026-03-15)
+
+
+### Bug Fixes
+
+* correct getColorFlags treating red (index 0) as falsy and use nullish coalescing in resolveCharset ([268629c](https://github.com/postalsys/imapflow/commit/268629cf799027bf802c0231675cdc2c94a227d4))
+* use nullish coalescing in getFlagColor, match euc-jp in getDecoder, and handle BigInt(0) in uidValidity checks ([713e100](https://github.com/postalsys/imapflow/commit/713e100093edff21df020942a2c17e7b9939b42b))
+
 ## [1.2.13](https://github.com/postalsys/imapflow/compare/v1.2.12...v1.2.13) (2026-03-09)
 
 
