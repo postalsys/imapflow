@@ -189,3 +189,80 @@ module.exports['LF-only line terminator'] = test => {
         1
     );
 };
+
+module.exports['Many chunks trigger event loop yield'] = test => {
+    runStreamTest(
+        test,
+        cmd => {
+            // Just verify each command is valid
+            test.ok(cmd.payload.toString().startsWith('A'), 'command should start with tag');
+        },
+        async stream => {
+            for (let i = 0; i < 15; i++) {
+                stream.write(Buffer.from(`A CMD${i}\r\n`));
+            }
+            stream.end();
+        },
+        15
+    );
+};
+
+module.exports['Destroy with queued items does not hang'] = test => {
+    const stream = new ImapStream({ cid: 'test' });
+    let errorEmitted = false;
+
+    stream.on('error', () => {
+        errorEmitted = true;
+    });
+
+    // Write multiple chunks rapidly then destroy
+    stream.write(Buffer.from('A CMD1\r\n'));
+    stream.write(Buffer.from('B CMD2\r\n'));
+    stream.destroy();
+
+    // Errors from destroy are emitted synchronously or on next tick
+    setImmediate(() => {
+        test.ok(!errorEmitted, 'should not emit error on destroy');
+        test.done();
+    });
+};
+
+module.exports['logRaw option triggers trace logging'] = test => {
+    let traceCalled = false;
+    let traceData = null;
+
+    const stream = new ImapStream({
+        cid: 'test',
+        logRaw: true
+    });
+
+    // Override the log object to capture trace calls
+    stream.log = {
+        trace: data => {
+            traceCalled = true;
+            traceData = data;
+        },
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: () => {}
+    };
+
+    // Also need to handle readable events
+    stream.on('readable', () => {
+        let cmd;
+        while ((cmd = stream.read()) !== null) {
+            cmd.next();
+        }
+    });
+
+    stream.on('end', () => {
+        test.ok(traceCalled, 'trace should have been called');
+        test.ok(traceData, 'trace data should exist');
+        test.equal(traceData.src, 's', 'source should be s');
+        test.ok(traceData.data, 'should have base64 data');
+        test.done();
+    });
+
+    stream.end(Buffer.from('A CMD\r\n'));
+};

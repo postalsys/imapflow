@@ -441,3 +441,69 @@ module.exports['IMAP Compiler: LITERAL byte length'] = test =>
             '* CMD "(* 10B literal *)" "Vana kere"'
         )
     );
+
+module.exports['IMAP Compiler: MongoDB binary object is unwrapped'] = test =>
+    asyncWrapper(test, async test => {
+        // Create a non-Buffer object with a .buffer property (simulates MongoDB Binary)
+        const mongoBinary = { buffer: Buffer.from('test data') };
+        const compiled = (
+            await compiler({
+                tag: '*',
+                command: 'CMD',
+                attributes: [mongoBinary]
+            })
+        ).toString();
+        // The buffer content should appear in the output (unwrapped from the MongoDB binary wrapper)
+        test.ok(compiled.includes('test data'), 'should contain the buffer content after unwrapping');
+        test.ok(compiled.includes('CMD'), 'should contain command');
+    });
+
+module.exports['IMAP Compiler: long string truncated in logging mode'] = test =>
+    asyncWrapper(test, async test => {
+        const longString = 'x'.repeat(150);
+        const compiled = (
+            await compiler(
+                {
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [longString]
+                },
+                { asArray: false, isLogging: true }
+            )
+        ).toString();
+        test.ok(compiled.includes('150B string'), 'should show byte count instead of content');
+        test.ok(!compiled.includes('x'.repeat(150)), 'should not contain the full string');
+    });
+
+module.exports['IMAP Compiler: literal truncated in logging mode'] = test =>
+    asyncWrapper(test, async test => {
+        const compiled = (
+            await compiler(
+                {
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [{ type: 'LITERAL', value: Buffer.alloc(200) }]
+                },
+                { asArray: false, isLogging: true }
+            )
+        ).toString();
+        test.ok(compiled.includes('200B literal'), 'should show byte count for literal');
+    });
+
+module.exports['IMAP Compiler: partial range in SECTION'] = test =>
+    asyncWrapper(test, async test => {
+        const compiled = (
+            await compiler({
+                tag: '*',
+                command: 'CMD',
+                attributes: [
+                    {
+                        type: 'SECTION',
+                        section: [{ type: 'ATOM', value: 'BODY' }],
+                        partial: [0, 50]
+                    }
+                ]
+            })
+        ).toString();
+        test.ok(compiled.includes('<0.50>'), 'should contain partial range <0.50>');
+    });

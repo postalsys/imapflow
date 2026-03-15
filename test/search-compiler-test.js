@@ -861,3 +861,77 @@ module.exports['Search Compiler: OR combined with other criteria'] = test => {
     test.ok(hasAttr(compiled, 'OR'));
     test.done();
 };
+
+// ============================================
+// OR tree structure tests
+// ============================================
+
+module.exports['Search Compiler: OR with 3 conditions builds binary tree'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, {
+        or: [{ from: 'alice' }, { to: 'bob' }, { subject: 'test' }]
+    });
+
+    test.ok(hasAttr(compiled, 'OR'), 'should contain OR atom');
+    test.ok(hasAttr(compiled, 'alice'), 'should contain alice');
+    test.ok(hasAttr(compiled, 'bob'), 'should contain bob');
+    test.ok(hasAttr(compiled, 'test'), 'should contain test');
+    test.ok(hasAttr(compiled, 'FROM'), 'should contain FROM');
+    test.ok(hasAttr(compiled, 'TO'), 'should contain TO');
+    test.ok(hasAttr(compiled, 'SUBJECT'), 'should contain SUBJECT');
+    test.done();
+};
+
+module.exports['Search Compiler: OR with 5 conditions produces 4 OR atoms'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, {
+        or: [{ from: 'a' }, { from: 'b' }, { from: 'c' }, { from: 'd' }, { from: 'e' }]
+    });
+
+    // 5 conditions need 4 OR atoms in a binary tree structure
+    let orCount = compiled.filter(a => a.value === 'OR').length;
+    test.equal(orCount, 4, 'should have exactly 4 OR atoms for 5 conditions');
+    test.ok(hasAttr(compiled, 'a'), 'should contain a');
+    test.ok(hasAttr(compiled, 'b'), 'should contain b');
+    test.ok(hasAttr(compiled, 'c'), 'should contain c');
+    test.ok(hasAttr(compiled, 'd'), 'should contain d');
+    test.ok(hasAttr(compiled, 'e'), 'should contain e');
+    test.done();
+};
+
+// ============================================
+// Unicode CHARSET in HEADER searches
+// ============================================
+
+module.exports['Search Compiler: Unicode header search without UTF8=ACCEPT adds CHARSET'] = test => {
+    let connection = createMockConnection({
+        enabled: new Set()
+    });
+    let compiled = searchCompiler(connection, {
+        header: { subject: 'caf\u00e9' }
+    });
+
+    test.ok(hasAttr(compiled, 'CHARSET'), 'should have CHARSET prefix');
+    test.ok(hasAttr(compiled, 'UTF-8'), 'should have UTF-8 value');
+    // CHARSET and UTF-8 should be the first two entries
+    test.equal(compiled[0].value, 'CHARSET', 'CHARSET should be first');
+    test.equal(compiled[1].value, 'UTF-8', 'UTF-8 should be second');
+    test.ok(hasAttr(compiled, 'HEADER'), 'should contain HEADER');
+    test.ok(hasAttr(compiled, 'caf\u00e9'), 'should contain the unicode value');
+    test.done();
+};
+
+module.exports['Search Compiler: Unicode header search with UTF8=ACCEPT skips CHARSET'] = test => {
+    let connection = createMockConnection({
+        enabled: new Set(['UTF8=ACCEPT'])
+    });
+    let compiled = searchCompiler(connection, {
+        header: { subject: 'caf\u00e9' }
+    });
+
+    test.ok(!hasAttr(compiled, 'CHARSET'), 'should NOT have CHARSET prefix');
+    test.ok(!hasAttr(compiled, 'UTF-8'), 'should NOT have UTF-8 value');
+    test.ok(hasAttr(compiled, 'HEADER'), 'should contain HEADER');
+    test.ok(hasAttr(compiled, 'caf\u00e9'), 'should contain the unicode value');
+    test.done();
+};

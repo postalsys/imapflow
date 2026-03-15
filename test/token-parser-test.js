@@ -262,3 +262,113 @@ module.exports['Token Parser: atom value produces ATOM attribute'] = test =>
         test.equal(attrs[0].type, 'ATOM', 'type should be ATOM');
         test.equal(attrs[0].value, 'INBOX', 'value should be INBOX');
     });
+
+/**
+ * E29: Range separator ':' after a character that is not a digit or '*'.
+ * Input "1,:5" starts as ATOM "1", ',' triggers SEQUENCE reclassification and
+ * appends ',' (value becomes "1,"). Then ':' fires E29 because last char ','
+ * is not a digit or '*'.
+ */
+module.exports['Token Parser: E29: range separator after non-digit/non-star throws ParserError29'] = test =>
+    asyncWrapper(test, async test => {
+        let err;
+        try {
+            await parser('* FETCH 1,:5');
+        } catch (e) {
+            err = e;
+        }
+        if (!err) throw new Error('Expected parser to throw but it did not');
+        test.ok(err, 'expected an error to be thrown');
+        test.equal(err.code, 'ParserError29');
+    });
+
+/**
+ * E30: Wildcard '*' when last char is not ',' or ':'.
+ * Input "1:2*" enters SEQUENCE after "1:" and appends "2" (value "1:2").
+ * Then '*' fires E30 because last char '2' is not ',' or ':'.
+ */
+module.exports['Token Parser: E30: wildcard after digit throws ParserError30'] = test =>
+    asyncWrapper(test, async test => {
+        let err;
+        try {
+            await parser('* FETCH 1:2*');
+        } catch (e) {
+            err = e;
+        }
+        if (!err) throw new Error('Expected parser to throw but it did not');
+        test.ok(err, 'expected an error to be thrown');
+        test.equal(err.code, 'ParserError30');
+    });
+
+/**
+ * E31: Separator ',' after a character that is not a digit or '*'.
+ * Input "1:,5" enters SEQUENCE after "1" and appends ':' (value "1:").
+ * Then ',' fires E31 because last char ':' is not a digit or '*'.
+ */
+module.exports['Token Parser: E31: comma after colon throws ParserError31'] = test =>
+    asyncWrapper(test, async test => {
+        let err;
+        try {
+            await parser('* FETCH 1:,5');
+        } catch (e) {
+            err = e;
+        }
+        if (!err) throw new Error('Expected parser to throw but it did not');
+        test.ok(err, 'expected an error to be thrown');
+        test.equal(err.code, 'ParserError31');
+    });
+
+/**
+ * E32: Separator ',' after bare '*' (not in a range).
+ * Input "*,5" starts SEQUENCE with value "*". Then ',' passes E31
+ * (last char '*' satisfies the check) but fires E32 because last char
+ * is '*' and the char before it (at(-2)) is not ':'.
+ */
+module.exports['Token Parser: E32: comma after bare star throws ParserError32'] = test =>
+    asyncWrapper(test, async test => {
+        let err;
+        try {
+            await parser('* FETCH *,5');
+        } catch (e) {
+            err = e;
+        }
+        if (!err) throw new Error('Expected parser to throw but it did not');
+        test.ok(err, 'expected an error to be thrown');
+        test.equal(err.code, 'ParserError32');
+    });
+
+/**
+ * E33: Non-digit, non-special character in sequence position.
+ * Input "1:a" enters SEQUENCE after "1" and appends ':' (value "1:").
+ * Then 'a' is not a digit, not ':', not '*', not ',' so E33 fires.
+ */
+module.exports['Token Parser: E33: non-digit non-special char in sequence throws ParserError33'] = test =>
+    asyncWrapper(test, async test => {
+        let err;
+        try {
+            await parser('* FETCH 1:a');
+        } catch (e) {
+            err = e;
+        }
+        if (!err) throw new Error('Expected parser to throw but it did not');
+        test.ok(err, 'expected an error to be thrown');
+        test.equal(err.code, 'ParserError33');
+    });
+
+/**
+ * E34: Digit immediately after '*'.
+ * Input "*1" starts SEQUENCE with value "*". Then '1' is a digit but
+ * last char is '*', so E34 fires (digits cannot follow '*').
+ */
+module.exports['Token Parser: E34: digit after star throws ParserError34'] = test =>
+    asyncWrapper(test, async test => {
+        let err;
+        try {
+            await parser('* FETCH *1');
+        } catch (e) {
+            err = e;
+        }
+        if (!err) throw new Error('Expected parser to throw but it did not');
+        test.ok(err, 'expected an error to be thrown');
+        test.equal(err.code, 'ParserError34');
+    });
