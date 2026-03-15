@@ -141,3 +141,13 @@ module.exports['CopyUID Parser: large uidValidity is stored as BigInt'] = test =
     test.equal(map.uidValidity, BigInt('999999999999'));
     test.done();
 };
+
+module.exports['CopyUID Parser: uidValidity zero is stored as BigInt(0)'] = test => {
+    let map = {};
+    parseCopyUid(makeResponse([{ value: 'COPYUID' }, { value: '0' }, { value: '1' }, { value: '100' }]), map);
+
+    test.strictEqual(map.uidValidity, BigInt(0));
+    test.ok(map.uidMap instanceof Map);
+    test.equal(map.uidMap.get(1), 100);
+    test.done();
+};

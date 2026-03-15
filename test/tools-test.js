@@ -270,6 +270,13 @@ module.exports['Tools: getFlagColor with color bits'] = test => {
     test.done();
 };
 
+module.exports['Tools: getFlagColor with all bits set (index 7) defaults to red'] = test => {
+    // bit0=1, bit1=2, bit2=4 => color=7, FLAG_COLORS[7] is undefined => defaults to 'red'
+    let flags = new Set(['\\Flagged', '$MailFlagBit0', '$MailFlagBit1', '$MailFlagBit2']);
+    test.equal(tools.getFlagColor(flags), 'red');
+    test.done();
+};
+
 // ============================================
 // getColorFlags tests
 // ============================================
@@ -1038,6 +1045,13 @@ module.exports['Tools: enhanceCommandError with null response'] = async test => 
 
 module.exports['Tools: getDecoder with eucjp charset'] = test => {
     let decoder = tools.getDecoder('eucjp');
+    test.ok(decoder);
+    test.equal(decoder.constructor.name, 'JPDecoder');
+    test.done();
+};
+
+module.exports['Tools: getDecoder with euc-jp (hyphenated) returns JPDecoder'] = test => {
+    let decoder = tools.getDecoder('euc-jp');
     test.ok(decoder);
     test.equal(decoder.constructor.name, 'JPDecoder');
     test.done();
