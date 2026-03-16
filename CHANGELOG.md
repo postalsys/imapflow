@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.15](https://github.com/postalsys/imapflow/compare/v1.2.14...v1.2.15) (2026-03-16)
+
+
+### Bug Fixes
+
+* replace setImmediate with synchronous rejection in close() ([8807221](https://github.com/postalsys/imapflow/commit/8807221b2b3bae55848129b6a4b8d08880ae5de8))
+
 ## [1.2.14](https://github.com/postalsys/imapflow/compare/v1.2.13...v1.2.14) (2026-03-15)
 
 
