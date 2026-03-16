@@ -863,7 +863,7 @@ module.exports['Connection Edge: Close with empty locks array'] = test => {
     test.done();
 };
 
-module.exports['Connection Edge: Lock rejection is deferred via setImmediate'] = test => {
+module.exports['Connection Edge: Lock rejection happens synchronously during close'] = test => {
     let client = new ImapFlow({
         host: 'imap.example.com',
         port: 993,
@@ -871,7 +871,6 @@ module.exports['Connection Edge: Lock rejection is deferred via setImmediate'] =
     });
 
     let rejectionTime = null;
-    let closeTime = null;
 
     client.locks = [
         {
@@ -888,16 +887,10 @@ module.exports['Connection Edge: Lock rejection is deferred via setImmediate'] =
     client.usable = true;
 
     client.close();
-    closeTime = Date.now();
 
-    // Rejection should not have happened yet (synchronously)
-    test.equal(rejectionTime, null, 'Rejection should be deferred');
-
-    setImmediate(() => {
-        test.ok(rejectionTime !== null, 'Rejection should happen after setImmediate');
-        test.ok(rejectionTime >= closeTime, 'Rejection should happen after close()');
-        test.done();
-    });
+    // Rejection should have happened synchronously during close()
+    test.ok(rejectionTime !== null, 'Rejection should happen synchronously during close()');
+    test.done();
 };
 
 module.exports['Connection Edge: Pending requests and locks both rejected on close'] = test => {
@@ -940,11 +933,10 @@ module.exports['Connection Edge: Pending requests and locks both rejected on clo
 
     client.close();
 
-    setImmediate(() => {
-        test.ok(requestRejected, 'Pending request should be rejected');
-        test.ok(lockRejected, 'Pending lock should be rejected');
-        test.done();
-    });
+    // Rejections happen synchronously during close()
+    test.ok(requestRejected, 'Pending request should be rejected');
+    test.ok(lockRejected, 'Pending lock should be rejected');
+    test.done();
 };
 
 module.exports['Connection Edge: exec throws NoConnection when in LOGOUT state'] = async test => {
