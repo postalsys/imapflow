@@ -15,9 +15,19 @@ let createMockConnection = (options = {}) => ({
     mailbox: options.mailbox || createMockMailbox()
 });
 
-// Helper to find attribute by value
-let findAttr = (attrs, value) => attrs.find(a => a.value === value);
-let hasAttr = (attrs, value) => attrs.some(a => a.value === value);
+// Helper to find attribute by value (recurses into sub-arrays for parenthesized groups)
+let findAttr = (attrs, value) => {
+    for (let a of attrs) {
+        if (Array.isArray(a)) {
+            let found = findAttr(a, value);
+            if (found) return found;
+        } else if (a.value === value) {
+            return a;
+        }
+    }
+    return undefined;
+};
+let hasAttr = (attrs, value) => !!findAttr(attrs, value);
 
 // ============================================
 // Basic functionality tests
@@ -659,6 +669,10 @@ module.exports['Search Compiler: NOT with nested conditions'] = test => {
     test.ok(hasAttr(compiled, 'NOT'));
     test.ok(hasAttr(compiled, 'SEEN'));
     test.ok(hasAttr(compiled, 'FROM'));
+    // Compound NOT conditions should be wrapped in a sub-array (parenthesized)
+    // so the server treats them as a single search-key
+    test.equal(compiled[0].value, 'NOT');
+    test.ok(Array.isArray(compiled[1]), 'compound NOT should be parenthesized');
     test.done();
 };
 
@@ -896,6 +910,70 @@ module.exports['Search Compiler: OR with 5 conditions produces 4 OR atoms'] = te
     test.ok(hasAttr(compiled, 'c'), 'should contain c');
     test.ok(hasAttr(compiled, 'd'), 'should contain d');
     test.ok(hasAttr(compiled, 'e'), 'should contain e');
+    test.done();
+};
+
+module.exports['Search Compiler: OR with compound conditions wraps in parentheses'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, {
+        or: [
+            { to: 'a@example.com', from: 'b@example.com' },
+            { to: 'c@example.com', from: 'd@example.com' }
+        ]
+    });
+
+    // OR should be present
+    test.equal(compiled[0].value, 'OR');
+    // Each compound condition should be a sub-array (parenthesized)
+    test.ok(Array.isArray(compiled[1]), 'first compound operand should be parenthesized');
+    test.ok(Array.isArray(compiled[2]), 'second compound operand should be parenthesized');
+    // Check contents of parenthesized groups
+    test.ok(hasAttr(compiled[1], 'TO'), 'first group should have TO');
+    test.ok(hasAttr(compiled[1], 'FROM'), 'first group should have FROM');
+    test.ok(hasAttr(compiled[2], 'TO'), 'second group should have TO');
+    test.ok(hasAttr(compiled[2], 'FROM'), 'second group should have FROM');
+    test.done();
+};
+
+module.exports['Search Compiler: OR with single-key conditions stays flat'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, {
+        or: [{ from: 'a@example.com' }, { from: 'b@example.com' }]
+    });
+
+    // Single-key conditions should not be wrapped in sub-arrays
+    test.equal(compiled[0].value, 'OR');
+    test.ok(!Array.isArray(compiled[1]), 'single-key operand should not be parenthesized');
+    test.equal(compiled[1].value, 'FROM');
+    test.done();
+};
+
+module.exports['Search Compiler: OR with 5 compound conditions from issue #106'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, {
+        or: [
+            { to: 'myemail@domain.com', from: '@anotherdomain.com' },
+            { to: 'myemail@domain.com', from: '@aseconddomain.com' },
+            { to: 'myemail@domain.com', from: '@athirddomain.fr' },
+            { to: 'anotheremail@domain.com', from: '@anotherdomain.fr' },
+            { to: 'anotheremail@domain.com', from: '@aseconddomain.com' }
+        ]
+    });
+
+    // 5 conditions need 4 OR atoms
+    let orCount = compiled.filter(a => a.value === 'OR').length;
+    test.equal(orCount, 4, 'should have exactly 4 OR atoms for 5 conditions');
+
+    // All compound conditions should be parenthesized (sub-arrays)
+    let subArrays = compiled.filter(a => Array.isArray(a));
+    test.equal(subArrays.length, 5, 'should have 5 parenthesized groups');
+
+    // Each group should contain both TO and FROM
+    subArrays.forEach((group, i) => {
+        test.ok(hasAttr(group, 'TO'), 'group ' + i + ' should have TO');
+        test.ok(hasAttr(group, 'FROM'), 'group ' + i + ' should have FROM');
+    });
+
     test.done();
 };
 
