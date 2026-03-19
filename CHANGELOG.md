@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.16](https://github.com/postalsys/imapflow/compare/v1.2.15...v1.2.16) (2026-03-19)
+
+
+### Bug Fixes
+
+* parenthesize compound OR/NOT search conditions (RFC 3501) ([347f668](https://github.com/postalsys/imapflow/commit/347f66827ea089acab88aa78485752d84b7b7f3d)), closes [#106](https://github.com/postalsys/imapflow/issues/106)
+
 ## [1.2.15](https://github.com/postalsys/imapflow/compare/v1.2.14...v1.2.15) (2026-03-16)
 
 
