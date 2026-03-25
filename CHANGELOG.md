@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.17](https://github.com/postalsys/imapflow/compare/v1.2.16...v1.2.17) (2026-03-25)
+
+
+### Bug Fixes
+
+* Bumped deps ([e3c75ab](https://github.com/postalsys/imapflow/commit/e3c75ab018b2e4a5f71c4c611ef795ea63539676))
+
 ## [1.2.16](https://github.com/postalsys/imapflow/compare/v1.2.15...v1.2.16) (2026-03-19)
 
 
