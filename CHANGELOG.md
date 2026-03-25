@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.18](https://github.com/postalsys/imapflow/compare/v1.2.17...v1.2.18) (2026-03-25)
+
+
+### Bug Fixes
+
+* use consistent keys for requestTagMap deletion during connection close ([92e1885](https://github.com/postalsys/imapflow/commit/92e188507c0376577f1680f42df747e2cc4b677a))
+
 ## [1.2.17](https://github.com/postalsys/imapflow/compare/v1.2.16...v1.2.17) (2026-03-25)
 
 
