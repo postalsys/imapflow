@@ -606,6 +606,25 @@ export interface ResponseEvent {
     code?: string;
 }
 
+/** Result object returned by ESEARCH (RFC 4731) when returnOptions is specified */
+export interface ESearchResult {
+    /** Total number of matching messages */
+    count?: number;
+    /** Lowest matching UID */
+    min?: number;
+    /** Highest matching UID */
+    max?: number;
+    /** All matching UIDs as compact sequence-set string (e.g. "1,5:10,20") */
+    all?: string;
+    /** Paged subset (RFC 9394 PARTIAL) */
+    partial?: {
+        /** The requested range, e.g. "1:100" */
+        range: string;
+        /** Matching UIDs in that range as compact sequence-set */
+        messages: string;
+    };
+}
+
 export class AuthenticationFailure extends Error {
     authenticationFailed: true;
     serverResponseCode?: string;
@@ -725,8 +744,13 @@ export class ImapFlow extends EventEmitter {
     /** Moves messages from current mailbox to destination mailbox */
     messageMove(range: SequenceString | number[] | SearchObject, destination: string, options?: { uid?: boolean }): Promise<CopyResponseObject | false>;
 
-    /** Search messages from the currently opened mailbox */
+    /** Search messages from the currently opened mailbox — returns number[] (backward-compatible) */
     search(query: SearchObject, options?: { uid?: boolean }): Promise<number[] | false>;
+    /** Search messages with ESEARCH RETURN options — returns ESearchResult */
+    search(query: SearchObject, options: {
+        uid?: boolean;
+        returnOptions: Array<'MIN' | 'MAX' | 'COUNT' | 'ALL' | { partial: string }>;
+    }): Promise<ESearchResult | false>;
 
     /** Fetch messages from the currently opened mailbox */
     fetch(range: SequenceString | number[] | SearchObject, query: FetchQueryObject, options?: FetchOptions): AsyncIterableIterator<FetchMessageObject>;
