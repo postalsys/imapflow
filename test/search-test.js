@@ -58,8 +58,22 @@ module.exports['ESEARCH: parseEsearchResponse ALL keeps compact string'] = test 
     test.done();
 };
 
-module.exports['ESEARCH: parseEsearchResponse PARTIAL'] = test => {
-    // PARTIAL value arrives as a nested list: (rangeAtom seqSetAtom)
+module.exports['ESEARCH: parseEsearchResponse PARTIAL (Array form)'] = test => {
+    // Parser represents parenthesized groups as plain Arrays
+    const attrs = [
+        { type: 'ATOM', value: 'PARTIAL' },
+        [
+            { type: 'ATOM', value: '1:100' },
+            { type: 'ATOM', value: '1001,1003:1010,1015' }
+        ]
+    ];
+    const result = parseEsearchResponse(attrs);
+    test.deepEqual(result.partial, { range: '1:100', messages: '1001,1003:1010,1015' });
+    test.done();
+};
+
+module.exports['ESEARCH: parseEsearchResponse PARTIAL (LIST object form)'] = test => {
+    // Also handle {type: 'LIST', attributes: [...]} form for robustness
     const attrs = [
         { type: 'ATOM', value: 'PARTIAL' },
         {
@@ -80,13 +94,10 @@ module.exports['ESEARCH: parseEsearchResponse COUNT + PARTIAL combined'] = test 
         { type: 'ATOM', value: 'COUNT' },
         { type: 'ATOM', value: '34201' },
         { type: 'ATOM', value: 'PARTIAL' },
-        {
-            type: 'LIST',
-            attributes: [
-                { type: 'ATOM', value: '1:100' },
-                { type: 'ATOM', value: '2001,2003:2020' }
-            ]
-        }
+        [
+            { type: 'ATOM', value: '1:100' },
+            { type: 'ATOM', value: '2001,2003:2020' }
+        ]
     ];
     const result = parseEsearchResponse(attrs);
     test.equal(result.count, 34201);
@@ -194,7 +205,7 @@ module.exports['imap-flow: search() derives ESearchResult when server has no ESE
     // Simulate a selected mailbox and no ESEARCH capability
     client.mailbox = { path: 'INBOX' };
     client.state = client.states.SELECTED;
-    client.capabilities = new Map();  // no ESEARCH
+    client.capabilities = new Map(); // no ESEARCH
 
     // Stub run() to return a sorted number[]
     client.run = async () => [10, 20, 30, 40, 50];
@@ -213,8 +224,10 @@ module.exports['imap-flow: search() derives ESearchResult when server has no ESE
 
 module.exports['imap-flow: search() fallback with empty result set'] = test => {
     const client = new ImapFlow({
-        host: 'imap.example.com', port: 993,
-        auth: { user: 'test', pass: 'test' }, logger: false
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        logger: false
     });
     client.mailbox = { path: 'INBOX' };
     client.state = client.states.SELECTED;
