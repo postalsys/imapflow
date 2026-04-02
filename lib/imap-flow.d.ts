@@ -750,7 +750,7 @@ export class ImapFlow extends EventEmitter {
     search(query: SearchObject, options: {
         uid?: boolean;
         returnOptions: Array<'MIN' | 'MAX' | 'COUNT' | 'ALL' | { partial: string }>;
-    }): Promise<ESearchResult | false>;
+    }): Promise<ESearchResult | number[] | false>;
 
     /** Fetch messages from the currently opened mailbox */
     fetch(range: SequenceString | number[] | SearchObject, query: FetchQueryObject, options?: FetchOptions): AsyncIterableIterator<FetchMessageObject>;

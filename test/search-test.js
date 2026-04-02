@@ -121,7 +121,7 @@ module.exports['ESEARCH: emits RETURN clause when returnOptions present and serv
         test.ok(capturedAttributes.includes('"RETURN"'), 'should include RETURN atom');
         test.ok(capturedAttributes.includes('"COUNT"'), 'should include COUNT in return list');
         test.done();
-    });
+    }).catch(err => test.done(err));
 };
 
 module.exports['ESEARCH: RETURN clause includes PARTIAL range atom'] = test => {
@@ -135,7 +135,7 @@ module.exports['ESEARCH: RETURN clause includes PARTIAL range atom'] = test => {
         test.ok(capturedAttributes.includes('"PARTIAL"'), 'should include PARTIAL atom');
         test.ok(capturedAttributes.includes('"1:100"'), 'should include range string');
         test.done();
-    });
+    }).catch(err => test.done(err));
 };
 
 module.exports['ESEARCH: no RETURN clause when server lacks ESEARCH capability'] = test => {
@@ -157,7 +157,7 @@ module.exports['ESEARCH: no RETURN clause when server lacks ESEARCH capability']
         test.ok(Array.isArray(result), 'should return number[] when ESEARCH unavailable');
         test.deepEqual(result, [1, 2, 3]);
         test.done();
-    });
+    }).catch(err => test.done(err));
 };
 
 module.exports['ESEARCH: parseEsearchResponse ignores unknown keywords'] = test => {
@@ -190,7 +190,7 @@ module.exports['ESEARCH: backward compat — no returnOptions returns number[]']
         test.ok(Array.isArray(result));
         test.deepEqual(result, [10, 20]);
         test.done();
-    });
+    }).catch(err => test.done(err));
 };
 
 // ── imap-flow.js public API fallback test ─────────────────────────────────
@@ -219,7 +219,7 @@ module.exports['imap-flow: search() derives ESearchResult when server has no ESE
         // packMessageRange([10,20,30,40,50]) → "10,20,30,40,50" (non-contiguous)
         test.ok(typeof result.all === 'string' && result.all.length > 0, 'all should be non-empty compact string');
         test.done();
-    });
+    }).catch(err => test.done(err));
 };
 
 module.exports['imap-flow: search() fallback with empty result set'] = test => {
@@ -237,5 +237,5 @@ module.exports['imap-flow: search() fallback with empty result set'] = test => {
         test.equal(result.count, 0);
         test.equal(result.all, undefined, 'all should be absent for empty result');
         test.done();
-    });
+    }).catch(err => test.done(err));
 };
