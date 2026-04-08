@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/postalsys/imapflow/compare/v1.2.18...v1.3.0) (2026-04-08)
+
+
+### Features
+
+* add ESEARCH (RFC 4731) and PARTIAL (RFC 9394) support ([#347](https://github.com/postalsys/imapflow/issues/347)) ([c9b608b](https://github.com/postalsys/imapflow/commit/c9b608bb049b5b17f274f97f0f8dbbc3b18a80f7))
+
+
+### Bug Fixes
+
+* Bumped deps ([b584d2b](https://github.com/postalsys/imapflow/commit/b584d2b336e1229a676277209c1942176186ce94))
+* correct ESEARCH search() return type and prevent async test hangs ([f2e6e92](https://github.com/postalsys/imapflow/commit/f2e6e922acafffc125f16a4eb128a52c01313a45))
+* handle plain Array form for PARTIAL in ESEARCH parser ([8b74c25](https://github.com/postalsys/imapflow/commit/8b74c2569675ea7d3f2cea6a3fcd717a8c6b025e))
+
 ## [1.2.18](https://github.com/postalsys/imapflow/compare/v1.2.17...v1.2.18) (2026-03-25)
 
 
