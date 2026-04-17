@@ -60,6 +60,12 @@ export interface ImapFlowOptions {
     greetingTimeout?: number;
     /** How long to wait for socket inactivity before timing out the connection. Defaults to 5 minutes */
     socketTimeout?: number;
+    /**
+     * Threshold in milliseconds for warning that a mailbox lock has been held
+     * for a long time (diagnostic for forgotten release() calls). Defaults to
+     * 30 minutes. Set to 0 or false to disable.
+     */
+    maxLockHoldTime?: number | false;
     /** If true, uses TLS. If false, uses cleartext. If not set, upgrades to TLS if available */
     doSTARTTLS?: boolean;
     /** Custom instance ID string for logs */
@@ -549,6 +555,21 @@ export interface MailboxOpenOptions {
     description?: string;
 }
 
+export interface MailboxLockOptions extends MailboxOpenOptions {
+    /**
+     * Optional timeout in milliseconds to wait for the lock to be granted.
+     * If the lock cannot be acquired within this time, the promise rejects
+     * with an error whose `code` is `'LockTimeout'`. Defaults to no timeout.
+     */
+    acquireTimeout?: number;
+    /**
+     * Per-call override for the threshold after which a held lock triggers
+     * a warning log entry. Overrides the ImapFlow constructor option of the
+     * same name. Set to 0 or false to disable for this lock only.
+     */
+    maxLockHoldTime?: number | false;
+}
+
 export interface ExpungeEvent {
     /** Mailbox path */
     path: string;
@@ -783,7 +804,7 @@ export class ImapFlow extends EventEmitter {
     }>;
 
     /** Opens a mailbox if not already open and returns a lock */
-    getMailboxLock(path: string | string[], options?: MailboxOpenOptions): Promise<MailboxLockObject>;
+    getMailboxLock(path: string | string[], options?: MailboxLockOptions): Promise<MailboxLockObject>;
 
     /** Returns byte counters for the current connection, optionally resets them */
     stats(reset?: boolean): { sent: number; received: number };
