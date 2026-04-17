@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/postalsys/imapflow/compare/v1.3.1...v1.3.2) (2026-04-17)
+
+
+### Bug Fixes
+
+* Bumped deps ([7b45f61](https://github.com/postalsys/imapflow/commit/7b45f6173b8e942d477612ade86296bac2bcaa79))
+* harden mailbox-lock and error-propagation paths ([7b87d96](https://github.com/postalsys/imapflow/commit/7b87d96f280fa79b3e34b223ba3aa708f2e9bac1))
+
 ## [1.3.1](https://github.com/postalsys/imapflow/compare/v1.3.0...v1.3.1) (2026-04-08)
 
 
