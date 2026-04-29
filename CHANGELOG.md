@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/postalsys/imapflow/compare/v1.3.2...v1.3.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* handle NIL delimiter in NAMESPACE response (RFC 2342) ([#351](https://github.com/postalsys/imapflow/issues/351)) ([10bda2a](https://github.com/postalsys/imapflow/commit/10bda2a1d398dc7bc6ea0ede50b1ae48e4b28cf7))
+
 ## [1.3.2](https://github.com/postalsys/imapflow/compare/v1.3.1...v1.3.2) (2026-04-17)
 
 
