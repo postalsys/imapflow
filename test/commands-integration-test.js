@@ -6458,19 +6458,8 @@ module.exports['Commands: namespace handles NIL namespaces'] = async test => {
 };
 
 module.exports['Commands: namespace handles NIL delimiter (RFC 2342)'] = async test => {
-    // RFC 2342 §5 explicitly allows the delimiter component of a namespace
-    // entry to be NIL ("a NIL hierarchy delimiter means that no hierarchy
-    // exists"). Servers in the wild do return this shape — for example a
-    // personal section like (("" "/")("#hidden" NIL)). The original
-    // getNamsepaceInfo() filter assumed entry[1] is always an object with
-    // a string `.value`, which crashed with
-    //   TypeError: Cannot read properties of null (reading 'value')
-    // when entry[1] was the literal `null` produced by the parser for NIL.
-    // The crash escaped the untagged handler, leaving
-    // connection.namespaces.personal undefined, which then crashed at
-    // `if (!connection.namespaces.personal[0]) ...` and corrupted
-    // request/response routing for subsequent commands (LIST/SELECT replies
-    // could no longer be matched to a pending promise → silent hang).
+    // RFC 2342 §5: NIL delimiter means the namespace has no hierarchy.
+    // The token parser emits a literal `null` for NIL.
 
     const connection = createMockConnection({
         state: 2,
@@ -6479,7 +6468,6 @@ module.exports['Commands: namespace handles NIL delimiter (RFC 2342)'] = async t
             if (opts && opts.untagged && opts.untagged.NAMESPACE) {
                 await opts.untagged.NAMESPACE({
                     attributes: [
-                        // personal: one normal entry + one NIL-delimiter entry
                         [
                             [{ value: '' }, { value: '/' }],
                             [{ value: '#hidden' }, null]
@@ -6495,9 +6483,8 @@ module.exports['Commands: namespace handles NIL delimiter (RFC 2342)'] = async t
 
     const result = await namespaceCommand(connection);
 
-    // Bail out cleanly if the handler crashed (the bug we're testing). Without
-    // this guard, the assertions below would dereference undefined and fatal
-    // the whole nodeunit suite.
+    // Guard against handler crash so a regression surfaces as a failed
+    // assertion rather than fatal-halting the whole nodeunit suite.
     if (result && result.error) {
         test.ok(false, 'namespace command returned error sentinel — likely crashed on NIL delimiter');
         test.done();
@@ -6514,14 +6501,11 @@ module.exports['Commands: namespace handles NIL delimiter (RFC 2342)'] = async t
     test.equal(connection.namespaces.personal[0].prefix, '');
     test.equal(connection.namespaces.personal[0].delimiter, '/');
 
-    // NIL-delimiter entry preserved with delimiter:null rather than dropped
-    // silently or crashing the parser.
+    // NIL-delimiter entry preserved with delimiter:null rather than dropped silently.
     test.equal(connection.namespaces.personal[1].prefix, '#hidden');
     test.equal(connection.namespaces.personal[1].delimiter, null);
 
-    // Default namespace pointer should still resolve to the first personal
-    // entry (which has a real delimiter), unchanged from pre-bug behavior
-    // for normal servers.
+    // Default namespace pointer resolves to the first valid personal entry.
     test.equal(connection.namespace.prefix, '');
     test.equal(connection.namespace.delimiter, '/');
 
@@ -6529,10 +6513,8 @@ module.exports['Commands: namespace handles NIL delimiter (RFC 2342)'] = async t
 };
 
 module.exports['Commands: namespace handles NIL delimiter as only personal entry'] = async test => {
-    // Edge case: server returns ONLY a NIL-delimiter entry in the personal
-    // section (no normal entry alongside). The default-namespace fallback
-    // at the bottom of the NAMESPACE handler should still produce a usable
-    // connection.namespace and not throw.
+    // Edge case: only a NIL-delimiter entry in the personal section.
+    // connection.namespace must still be set and usable downstream.
 
     const connection = createMockConnection({
         state: 2,
@@ -6540,11 +6522,7 @@ module.exports['Commands: namespace handles NIL delimiter as only personal entry
         exec: async (cmd, args, opts) => {
             if (opts && opts.untagged && opts.untagged.NAMESPACE) {
                 await opts.untagged.NAMESPACE({
-                    attributes: [
-                        [[{ value: '#hidden' }, null]],
-                        null,
-                        null
-                    ]
+                    attributes: [[[{ value: '#hidden' }, null]], null, null]
                 });
             }
             return { next: () => {} };
@@ -6568,9 +6546,92 @@ module.exports['Commands: namespace handles NIL delimiter as only personal entry
     test.equal(connection.namespaces.personal[0].prefix, '#hidden');
     test.equal(connection.namespaces.personal[0].delimiter, null);
 
-    // connection.namespace should be set and usable downstream.
     test.ok(connection.namespace);
-    test.equal(typeof connection.namespace.prefix, 'string');
+    test.equal(connection.namespace.prefix, '#hidden');
+    test.equal(connection.namespace.delimiter, null);
+
+    test.done();
+};
+
+module.exports['Commands: namespace handles NIL delimiter in other and shared sections'] = async test => {
+    // NIL delimiter is also valid in the `other` and `shared` sections,
+    // not just `personal`.
+
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                await opts.untagged.NAMESPACE({
+                    attributes: [[[{ value: '' }, { value: '/' }]], [[{ value: 'Other Users/' }, null]], [[{ value: 'Public/' }, null]]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+
+    if (result && result.error) {
+        test.ok(false, 'namespace command returned error sentinel — likely crashed on NIL delimiter');
+        test.done();
+        return;
+    }
+
+    test.ok(Array.isArray(connection.namespaces.other), 'other should be an array');
+    test.equal(connection.namespaces.other.length, 1);
+    test.equal(connection.namespaces.other[0].prefix, 'Other Users/');
+    test.equal(connection.namespaces.other[0].delimiter, null);
+
+    test.ok(Array.isArray(connection.namespaces.shared), 'shared should be an array');
+    test.equal(connection.namespaces.shared.length, 1);
+    test.equal(connection.namespaces.shared[0].prefix, 'Public/');
+    test.equal(connection.namespaces.shared[0].delimiter, null);
+
+    test.done();
+};
+
+module.exports['Commands: namespace skips malformed entries without crashing'] = async test => {
+    // The filter must reject entries that don't match either the
+    // (string-prefix, string-delimiter) or (string-prefix, NIL) shape,
+    // so a single broken entry from a buggy server doesn't poison
+    // the whole namespace list or crash the handler.
+
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['NAMESPACE', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                await opts.untagged.NAMESPACE({
+                    attributes: [
+                        [
+                            [{ value: '' }, { value: '/' }], // valid
+                            [{ value: '#hidden' }, null], // valid (NIL delimiter)
+                            [{ value: 'broken' }], // too short — rejected
+                            [null, { value: '/' }], // null prefix — rejected
+                            [{ value: 123 }, { value: '/' }] // non-string prefix — rejected
+                        ],
+                        null,
+                        null
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+
+    if (result && result.error) {
+        test.ok(false, 'namespace command returned error sentinel — likely crashed on malformed entry');
+        test.done();
+        return;
+    }
+
+    test.equal(connection.namespaces.personal.length, 2, 'only the two well-formed entries should be kept');
+    test.equal(connection.namespaces.personal[0].prefix, '');
+    test.equal(connection.namespaces.personal[1].prefix, '#hidden');
+    test.equal(connection.namespaces.personal[1].delimiter, null);
 
     test.done();
 };
