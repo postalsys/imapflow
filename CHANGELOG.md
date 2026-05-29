@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.4](https://github.com/postalsys/imapflow/compare/v1.3.3...v1.3.4) (2026-05-29)
+
+
+### Bug Fixes
+
+* bumped deps ([593b805](https://github.com/postalsys/imapflow/commit/593b805ed88d62bf7200a1a2ef081ce49f9162c0))
+* handle THREADID NIL in FETCH response ([#353](https://github.com/postalsys/imapflow/issues/353)) ([40318d6](https://github.com/postalsys/imapflow/commit/40318d69b866989d6e84f1d0652d118920a3162e))
+
 ## [1.3.3](https://github.com/postalsys/imapflow/compare/v1.3.2...v1.3.3) (2026-04-29)
 
 
