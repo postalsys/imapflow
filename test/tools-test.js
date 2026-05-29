@@ -1,6 +1,7 @@
 'use strict';
 
 const tools = require('../lib/tools');
+const { parser } = require('../lib/handler/imap-handler');
 
 // Mock connection for testing
 let createMockConnection = (options = {}) => ({
@@ -1135,5 +1136,31 @@ module.exports['Tools: getColorFlags with null returns result not null'] = test 
     let result = tools.getColorFlags(null);
     test.ok(result);
     test.ok(result.remove.includes('\\Flagged'));
+    test.done();
+};
+
+// ============================================
+// formatMessageResponse: OBJECTID NIL handling (RFC 8474)
+// ============================================
+
+module.exports['Tools: formatMessageResponse handles THREADID NIL'] = async test => {
+    // RFC 8474 allows `THREADID NIL` when the server has no thread relation to
+    // report (e.g. Strato). The NIL token is parsed as null and must not crash.
+    let untagged = await parser('* 1 FETCH (UID 1 EMAILID (E1) THREADID NIL FLAGS (\\Seen) MODSEQ (4312))');
+    let result = await tools.formatMessageResponse(untagged, {});
+    test.equal(result.seq, 1);
+    test.equal(result.uid, 1);
+    test.equal(result.emailId, 'E1');
+    test.equal(result.threadId, undefined);
+    test.ok(result.flags.has('\\Seen'));
+    test.equal(result.modseq, 4312n);
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse handles normal THREADID'] = async test => {
+    let untagged = await parser('* 2 FETCH (THREADID (T9999) EMAILID (E2))');
+    let result = await tools.formatMessageResponse(untagged, {});
+    test.equal(result.threadId, 'T9999');
+    test.equal(result.emailId, 'E2');
     test.done();
 };
