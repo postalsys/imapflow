@@ -1,0 +1,12 @@
+name: "ImapFlow CodeQL config"
+
+# Exclude code that is not part of the published library runtime from analysis.
+# These paths generate only false-positive noise:
+#   - test fixtures intentionally feed malformed/hostile input and exercise
+#     edge cases that are not representative of production usage
+#   - the example scripts hardcode demo credentials and connection details for
+#     local experimentation and are not maintained as production code
+paths-ignore:
+    - test
+    - '**/test/**'
+    - examples
