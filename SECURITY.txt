@@ -1,0 +1,27 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Contact: https://github.com/postalsys/imapflow/security/advisories/new
+Contact: mailto:andris@postalsys.com
+Expires: 2027-06-01T00:00:00.000Z
+Encryption: https://keys.openpgp.org/vks/v1/by-fingerprint/5D952A46E1D8C931F6364E01DC6C83F4D584D364
+Preferred-Languages: en, et
+Canonical: https://github.com/postalsys/imapflow/blob/master/SECURITY.txt
+Policy: https://github.com/postalsys/imapflow/blob/master/SECURITY.md
+-----BEGIN PGP SIGNATURE-----
+
+iQJiBAEBCABMFiEEXZUqRuHYyTH2Nk4B3GyD9NWE02QFAmodTFwbFIAAAAAABAAO
+bWFudTIsMi41KzEuMTIsMCwzEhxhbmRyaXNAcmVpbm1hbi5ldQAKCRDcbIP01YTT
+ZGcgD/42Wdd07wEclXDm/lM0Ax+aX9sPjwV33DAICqhDoILf8yG4yPkCRuuTCayw
+QLTB1pCi+tk8xVs9TH88bDwinfGVqzbmUyHSa2h32TDx/0/b+rg2LO2Ru8JtJkX8
+CMY8/UhkouaQnHKDjkbLniF8HpQsBzOiPzvkfX91BY4HBwzE8aCC8MXC0zyjBkQX
+dqVJ/fYMQKPkblKemnrMB/XM1jui2M7vgzpqilLcZqYv5oNFQhgpd+JOEVKMDUZv
+0WaLrFWRegFvFApS/cIvzu5RLIhDWuL0ao577Cpdj1QE7nznfbBqBfGEzZotOShs
+CdzdGloSt9C1gVLWItsncXByXVuNrF8l67hoOAnRwO4c8PKg3b4CvzBelmDiCWrS
+73LGWmFwp1luyLrfZREUYsF5hqHCr6ULmDEAVp0MRtzxL56YjiS20d1sa9v96P4O
+KFCvOT5LbCK/KqAFzhRzRXd3sawt5SXcR2FGgjFrRYNriyHNSk0k1h5IYv1kNoPb
+VN+DxsOhORd2EsqqOBqHoEES472OOsmLTYa0A5z+zyA0IcaY5hXsMDrX9OMIUHUW
+4JAOviDYyejefVJd8SsLrAmQ82p1jPY0LnuIyLz/sXDoe7QduNZIFKoUYw3KVybM
+y0X7yP92/buzcZY41FOQT8dBFGDzboWQo+RPEh16qXEV75ss2A==
+=Wlrz
+-----END PGP SIGNATURE-----
