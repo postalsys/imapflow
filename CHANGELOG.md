@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.5](https://github.com/postalsys/imapflow/compare/v1.3.4...v1.3.5) (2026-06-01)
+
+
+### Bug Fixes
+
+* correct flag removal, literal parsing, path normalization, and harden the parser ([d15c053](https://github.com/postalsys/imapflow/commit/d15c0536f4b7db2ebca5e258fc885da0d194b5fd))
+* prevent host process crash from socket errors after unbind() when COMPRESS=DEFLATE is active ([e30fca1](https://github.com/postalsys/imapflow/commit/e30fca1a42a4d2ab6f7a6a766effafe3df6b1aff))
+
 ## [1.3.4](https://github.com/postalsys/imapflow/compare/v1.3.3...v1.3.4) (2026-05-29)
 
 
