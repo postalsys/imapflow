@@ -266,3 +266,71 @@ module.exports['logRaw option triggers trace logging'] = test => {
 
     stream.end(Buffer.from('A CMD\r\n'));
 };
+
+module.exports['Adjacent literals with marker at line start'] = test => {
+    // After the first literal's data (12345) is consumed, parsing resumes at the very start of
+    // a line that is itself a literal marker ({3}). The marker begins at byte 0 of the resumed
+    // line, which the backward scan must still recognize. Previously the loop bound skipped
+    // index 0, so the second literal was silently dropped.
+    runStreamTest(
+        test,
+        cmd => {
+            test.equal(cmd.literals.length, 2, 'both adjacent literals must be extracted');
+            test.equal(cmd.literals[0].toString(), '12345', 'first literal content');
+            test.equal(cmd.literals[1].toString(), 'ABC', 'second literal content');
+        },
+        async stream => {
+            stream.end(Buffer.from('A LOGIN {5}\r\n12345{3}\r\nABC\r\n'));
+        },
+        1
+    );
+};
+
+module.exports['Line length cap rejects oversized line'] = test => {
+    // A server that never sends a line terminator must not grow the line buffer without bound.
+    const stream = new ImapStream({ cid: 'test', maxLineLength: 16 });
+    let errored = false;
+
+    stream.on('error', err => {
+        errored = true;
+        test.equal(err.code, 'LineTooLarge', 'error code should be LineTooLarge');
+        test.equal(err.maxSize, 16, 'error should report the configured cap');
+        stream.destroy();
+        test.done();
+    });
+
+    stream.on('end', () => {
+        if (!errored) {
+            test.ok(false, 'expected a LineTooLarge error');
+            test.done();
+        }
+    });
+
+    // 24 bytes, no LF, written across chunks -> exceeds the 16 byte cap.
+    stream.write(Buffer.from('AAAAAAAA'));
+    stream.write(Buffer.from('BBBBBBBB'));
+    stream.write(Buffer.from('CCCCCCCC'));
+};
+
+module.exports['Line length cap allows line within limit'] = test => {
+    // A normal line under the configured cap must still parse cleanly.
+    const stream = new ImapStream({ cid: 'test', maxLineLength: 32 });
+    let payloads = [];
+
+    stream.on('readable', () => {
+        let cmd;
+        while ((cmd = stream.read()) !== null) {
+            payloads.push(cmd.payload.toString());
+            cmd.next();
+        }
+    });
+
+    stream.on('error', err => test.ifError(err));
+
+    stream.on('end', () => {
+        test.deepEqual(payloads, ['A NOOP'], 'line under the cap should parse');
+        test.done();
+    });
+
+    stream.end(Buffer.from('A NOOP\r\n'));
+};

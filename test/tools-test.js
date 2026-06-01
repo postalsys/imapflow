@@ -2,6 +2,8 @@
 
 const tools = require('../lib/tools');
 const { parser } = require('../lib/handler/imap-handler');
+const crypto = require('crypto');
+const iconv = require('iconv-lite');
 
 // Mock connection for testing
 let createMockConnection = (options = {}) => ({
@@ -1162,5 +1164,45 @@ module.exports['Tools: formatMessageResponse handles normal THREADID'] = async t
     let result = await tools.formatMessageResponse(untagged, {});
     test.equal(result.threadId, 'T9999');
     test.equal(result.emailId, 'E2');
+    test.done();
+};
+
+// ============================================
+// formatMessageResponse: non-ASCII mailbox path normalization for stable id
+// ============================================
+
+module.exports['Tools: formatMessageResponse normalizes non-ASCII mailbox path for id'] = async test => {
+    // No EMAILID, so the message id falls back to an md5 over [path, uidValidity, uid].
+    // The mailbox path is non-ASCII and must be modified-UTF-7 normalized before hashing.
+    // (A previous bogus regex /[0x80-0xff]/ never matched non-ASCII, skipping normalization.)
+    let untagged = await parser('* 1 FETCH (UID 5 FLAGS (\\Seen))');
+    let mailbox = { path: '日本語', uidValidity: 123n };
+    let result = await tools.formatMessageResponse(untagged, mailbox);
+
+    let encodedPath = iconv.encode('日本語', 'utf-7-imap').toString();
+    let expectedId = crypto.createHash('md5').update([encodedPath, '123', '5'].join(':')).digest('hex');
+    let rawId = crypto.createHash('md5').update(['日本語', '123', '5'].join(':')).digest('hex');
+
+    test.equal(result.id, expectedId, 'id must hash the UTF-7 normalized path');
+    test.notEqual(result.id, rawId, 'id must not hash the raw non-ASCII path');
+    test.done();
+};
+
+// ============================================
+// packMessageRange
+// ============================================
+
+module.exports['Tools: packMessageRange packs contiguous and gapped ranges'] = test => {
+    test.equal(tools.packMessageRange([1, 2, 3, 5, 7, 8]), '1:3,5,7:8');
+    test.equal(tools.packMessageRange(7), '7');
+    test.equal(tools.packMessageRange([]), '');
+    test.done();
+};
+
+module.exports['Tools: packMessageRange dedupes duplicate values'] = test => {
+    // Duplicates must not produce overlapping/non-canonical tokens like "1,1:3".
+    test.equal(tools.packMessageRange([1, 1, 2, 3]), '1:3');
+    test.equal(tools.packMessageRange([3, 1, 2, 2, 5]), '1:3,5');
+    test.equal(tools.packMessageRange([5, 5, 5]), '5');
     test.done();
 };

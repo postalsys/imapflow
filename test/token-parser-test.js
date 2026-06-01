@@ -372,3 +372,21 @@ module.exports['Token Parser: E34: digit after star throws ParserError34'] = tes
         test.ok(err, 'expected an error to be thrown');
         test.equal(err.code, 'ParserError34');
     });
+
+module.exports['Token Parser: REFERRAL response code is parsed as an IMAP URL atom'] = test =>
+    asyncWrapper(test, async test => {
+        let r = await parser('* OK [REFERRAL imap://user@host/INBOX] please use another server');
+        let section = r.attributes[0].section;
+        test.equal(section[0].value, 'REFERRAL');
+        test.equal(section[1].value, 'imap://user@host/INBOX');
+    });
+
+module.exports['Token Parser: malformed REFERRAL with no closing bracket consumes the rest'] = test =>
+    asyncWrapper(test, async test => {
+        // Missing ']' previously produced a negative-index substring (garbage). The whole
+        // remaining string should be captured as the URL instead, without throwing.
+        let r = await parser('* OK [REFERRAL imap://user@host/INBOX');
+        let section = r.attributes[0].section;
+        test.equal(section[0].value, 'REFERRAL');
+        test.equal(section[1].value, 'imap://user@host/INBOX');
+    });

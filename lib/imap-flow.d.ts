@@ -61,6 +61,12 @@ export interface ImapFlowOptions {
     /** How long to wait for socket inactivity before timing out the connection. Defaults to 5 minutes */
     socketTimeout?: number;
     /**
+     * Maximum allowed length in bytes of a single response line (a response without a literal).
+     * Guards against a malicious or broken server that never sends a line terminator. Defaults to
+     * 1GB.
+     */
+    maxLineLength?: number;
+    /**
      * Threshold in milliseconds for warning that a mailbox lock has been held
      * for a long time (diagnostic for forgotten release() calls). Defaults to
      * 30 minutes. Set to 0 or false to disable.

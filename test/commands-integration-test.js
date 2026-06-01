@@ -582,6 +582,51 @@ module.exports['Commands: store remove flags'] = async test => {
     test.done();
 };
 
+module.exports['Commands: store remove keeps a flag not in permanentFlags'] = async test => {
+    // Mailbox permits only \Seen (no \*), so \Custom is not a permanent flag. Removal must still be
+    // sent: a flag does not need to be permitted to be removed. Regression guard — the check used
+    // to test the rewritten wire-form operation instead of options.operation and dropped the flag.
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { permanentFlags: new Set(['\\Seen']) },
+        exec: async (cmd, attrs) => {
+            execArgs = { cmd, attrs };
+            return { next: () => {} };
+        }
+    });
+
+    const result = await storeCommand(connection, '1:10', ['\\Custom'], { operation: 'remove' });
+    test.equal(result, true);
+    test.ok(execArgs, 'a STORE command should be issued');
+    test.equal(execArgs.attrs[1].value, '-FLAGS');
+    test.deepEqual(
+        execArgs.attrs[2].map(flag => flag.value),
+        ['\\Custom'],
+        'the removed flag must be present in the command'
+    );
+    test.done();
+};
+
+module.exports['Commands: store add drops a flag not in permanentFlags'] = async test => {
+    // Control for the regression above: the permanentFlags guard must still apply to non-remove
+    // operations. Adding a flag the mailbox does not permit yields no command and a false result.
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { permanentFlags: new Set(['\\Seen']) },
+        exec: async () => {
+            execCalled = true;
+            return { next: () => {} };
+        }
+    });
+
+    const result = await storeCommand(connection, '1:10', ['\\Custom'], { operation: 'add' });
+    test.equal(result, false, 'adding a non-permitted flag should fail');
+    test.equal(execCalled, false, 'no STORE command should be issued');
+    test.done();
+};
+
 module.exports['Commands: store set flags'] = async test => {
     let execArgs = null;
     const connection = createMockConnection({
