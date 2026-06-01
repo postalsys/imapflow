@@ -1067,6 +1067,8 @@ module.exports['Connection Edge: unbind removes socket listeners and returns soc
     test.ok(result.writeSocket, 'Should return writeSocket');
     test.equal(result.readSocket, client.socket);
     test.equal(result.writeSocket, client.socket);
+    // Non-compression path: the raw socket is the same object as read/write.
+    test.equal(result.socket, client.socket);
 
     test.done();
 };
@@ -1099,6 +1101,72 @@ module.exports['Connection Edge: unbind with inflate stream'] = test => {
     // Verify return value uses inflate for read and writeSocket for write
     test.equal(result.readSocket, client._inflate);
     test.equal(result.writeSocket.customProp, 'writeSocket');
+
+    test.done();
+};
+
+module.exports['Connection Edge: unbind survives post-handoff socket error (compression)'] = test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+
+    // Mock the compression topology: raw socket plus a separate PassThrough-like
+    // writeSocket, an inflate read stream and a deflate stream. The writeSocket
+    // and deflate error forwarders re-emit onto the raw socket, exactly like compress().
+    client.socket = new EventEmitter();
+    client.socket.unpipe = () => {};
+
+    client.writeSocket = new EventEmitter();
+    client.writeSocket.on('error', err => {
+        if (client.socket) {
+            client.socket.emit('error', err);
+        }
+    });
+
+    client._inflate = new EventEmitter();
+    client._inflate.unpipe = () => {};
+
+    client._deflate = new EventEmitter();
+    client._deflate.on('error', err => {
+        if (client.socket) {
+            client.socket.emit('error', err);
+        }
+    });
+
+    client.setSocketHandlers();
+
+    let result = client.unbind();
+
+    // Explicit contract: raw socket is now exposed alongside read/write sockets.
+    test.equal(result.socket, client.socket, 'Should expose the raw socket');
+    test.equal(result.readSocket, client._inflate);
+    test.equal(result.writeSocket, client.writeSocket);
+
+    // ImapFlow's own _socketError must be detached from writeSocket; only the
+    // forwarder closure remains.
+    test.equal(client.writeSocket.listenerCount('error'), 1);
+
+    // Emitting 'error' on a listener-less EventEmitter throws synchronously, so
+    // each of these would crash the host before the fix. After unbind() the
+    // benign listener on the orphaned raw socket must swallow them all.
+    test.doesNotThrow(() => {
+        client.socket.emit('error', Object.assign(new Error('upstream reset'), { code: 'ECONNRESET' }));
+    }, 'Direct socket error after unbind must not throw');
+
+    test.doesNotThrow(() => {
+        client.writeSocket.emit('error', new Error('write failure'));
+    }, 'writeSocket error forwarded to the raw socket must not throw');
+
+    test.doesNotThrow(() => {
+        client._deflate.emit('error', new Error('deflate failure'));
+    }, 'deflate error forwarded to the raw socket must not throw');
+
+    // close() must remain safe to call after unbind().
+    test.doesNotThrow(() => {
+        client.close();
+    }, 'close() after unbind must not throw');
 
     test.done();
 };
