@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.6](https://github.com/postalsys/imapflow/compare/v1.3.5...v1.3.6) (2026-06-05)
+
+
+### Bug Fixes
+
+* harden STARTTLS upgrade, literal bounds, and connection error paths ([35eca81](https://github.com/postalsys/imapflow/commit/35eca81075401e89f0b3aca84e26c41710a62c28))
+
 ## [1.3.5](https://github.com/postalsys/imapflow/compare/v1.3.4...v1.3.5) (2026-06-01)
 
 
