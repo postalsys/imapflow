@@ -131,6 +131,64 @@ module.exports['LiteralTooLarge error'] = test => {
     stream.write(Buffer.from('A APPEND {1073741825}\r\n'));
 };
 
+module.exports['LiteralTooLarge error honors configured maxLiteralSize'] = test => {
+    const cap = 1024; // 1KB cap
+    const stream = new ImapStream({ cid: 'test', maxLiteralSize: cap });
+
+    stream.on('error', err => {
+        test.equal(err.code, 'LiteralTooLarge', 'error code should be LiteralTooLarge');
+        test.equal(err.maxSize, cap, 'maxSize should reflect the configured cap');
+        test.equal(err.literalSize, 2048, 'literalSize should be the offending value');
+        stream.destroy();
+        test.done();
+    });
+
+    stream.write(Buffer.from('A APPEND {2048}\r\n'));
+};
+
+module.exports['maxLiteralSize: 0 is honored (not swallowed into the default)'] = test => {
+    // Regression: `this.options.maxLiteralSize || MAX_LITERAL_SIZE` turned an explicit 0 into
+    // the 1GB default. An explicit 0 must mean "reject any non-empty literal".
+    test.expect(2);
+
+    const stream = new ImapStream({ cid: 'test', maxLiteralSize: 0 });
+    test.equal(stream.maxLiteralSize, 0, 'an explicit 0 cap is preserved, not replaced by the default');
+
+    stream.on('error', err => {
+        test.equal(err.code, 'LiteralTooLarge', 'a 1-byte literal exceeds the 0 cap');
+        stream.destroy();
+        test.done();
+    });
+
+    stream.write(Buffer.from('A APPEND {1}\r\n'));
+};
+
+module.exports['Literal within configured maxLiteralSize parses cleanly'] = test => {
+    // Require both literal assertions to actually run: 'end' fires even if the parser never
+    // emits the command, so without expect() a dropped-literal regression would pass green.
+    test.expect(2);
+
+    const stream = new ImapStream({ cid: 'test', maxLiteralSize: 1024 });
+    const literal = Buffer.alloc(512, 0x61); // 512 * 'a'
+
+    stream.on('readable', () => {
+        let cmd;
+        while ((cmd = stream.read()) !== null) {
+            test.equal(cmd.literals.length, 1, 'should have one literal');
+            test.equal(cmd.literals[0].length, 512, 'literal length should be 512');
+            cmd.next();
+        }
+    });
+
+    stream.on('error', err => test.ifError(err));
+
+    stream.on('end', () => test.done());
+
+    stream.write(Buffer.from('A APPEND {512}\r\n'));
+    stream.write(literal);
+    stream.end(Buffer.from('\r\n'));
+};
+
 module.exports['Incomplete line continued in next chunk'] = test => {
     runStreamTest(
         test,

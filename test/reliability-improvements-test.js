@@ -368,3 +368,91 @@ module.exports['Reliability: decoder emit(error) does not crash when user has no
 
     test.done();
 };
+
+// ============================================================================
+// Throttle back-off timer is tracked and abortable on close()
+// ============================================================================
+
+// Feed a single throttling BAD response into reader() once, then null.
+const stubThrottleResponse = (client, backoffMs) => {
+    let request = { tag: 'A001', command: 'FETCH', resolve: () => {}, reject: () => {} };
+    client.requestTagMap = new Map([['A001', request]]);
+
+    let done = false;
+    client.streamer.read = () => {
+        if (done) {
+            return null;
+        }
+        done = true;
+        return {
+            payload: Buffer.from(`A001 BAD Request is throttled. Suggested Backoff Time: ${backoffMs} milliseconds`),
+            literals: [],
+            next: () => {}
+        };
+    };
+
+    return request;
+};
+
+module.exports['Reliability: throttle back-off aborts promptly on close()'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        logger: false
+    });
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.writeSocket = client.socket;
+
+    let rejected = null;
+    let request = stubThrottleResponse(client, 300000); // 5 min back-off
+    request.reject = err => {
+        rejected = err;
+    };
+
+    let start = Date.now();
+    let readerDone = client.reader().catch(() => {});
+
+    // Let reader() reach the (tracked) back-off wait.
+    await new Promise(r => setTimeout(r, 50));
+    test.ok(client._throttleTimer, 'back-off timer is tracked while waiting');
+
+    client.close();
+    await new Promise(r => setImmediate(r));
+
+    test.ok(rejected, 'request rejected promptly after close()');
+    test.equal(rejected.code, 'NoConnection', 'rejected with connection error, not ETHROTTLE');
+    test.equal(client._throttleTimer, null, 'throttle timer cleared on close()');
+    test.ok(Date.now() - start < 5000, 'settled well under the 5-minute cap');
+
+    await readerDone;
+    test.done();
+};
+
+module.exports['Reliability: throttle back-off still rejects ETHROTTLE on normal expiry'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        logger: false
+    });
+
+    let rejected = null;
+    let request = stubThrottleResponse(client, 50); // 50ms back-off
+    request.reject = err => {
+        rejected = err;
+    };
+
+    let readerDone = client.reader().catch(() => {});
+
+    await new Promise(r => setTimeout(r, 250));
+
+    test.ok(rejected, 'request rejected after the back-off elapses');
+    test.equal(rejected.code, 'ETHROTTLE', 'normal expiry still rejects ETHROTTLE');
+    test.equal(rejected.throttleReset, 50, 'throttleReset preserved');
+    test.equal(client._throttleTimer, null, 'throttle timer cleared after normal expiry');
+
+    await readerDone;
+    client.close();
+    test.done();
+};

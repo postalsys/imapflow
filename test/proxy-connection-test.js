@@ -1,6 +1,7 @@
 'use strict';
 
 const proxyquire = require('proxyquire').noCallThru();
+const { EventEmitter } = require('events');
 
 // Mock socket object
 const createMockSocket = () => ({
@@ -9,6 +10,16 @@ const createMockSocket = () => ({
     end: () => {},
     destroy: () => {}
 });
+
+// Real EventEmitter-backed mock socket, for tests that need listener tracking / emit.
+const createMockEmitterSocket = () => Object.assign(new EventEmitter(), { write() {}, end() {}, destroy() {} });
+
+// Asserts proxyConnection returned the socket and guarded it with an error listener.
+const assertEarlyErrorHandler = (test, socket, mockSocket) => {
+    test.equal(socket, mockSocket);
+    test.ok(socket.listenerCount('error') >= 1, 'proxy socket carries an error listener before being returned');
+    test.doesNotThrow(() => socket.emit('error', new Error('early proxy error')), 'an early proxy socket error does not throw');
+};
 
 // Mock logger
 const createMockLogger = () => {
@@ -537,5 +548,80 @@ module.exports['Proxy Connection: SOCKS with username only'] = async test => {
     });
 
     await proxyConnection(logger, 'socks5://testuser@proxy.example.com:1080', '192.168.1.1', 993);
+    test.done();
+};
+
+// ============================================
+// Early error handler (no unhandled 'error' before ImapFlow takes over)
+// ============================================
+
+module.exports['Proxy Connection: HTTP socket has early error handler before return'] = async test => {
+    const mockSocket = createMockEmitterSocket();
+    const logger = createMockLogger();
+
+    const { proxyConnection } = proxyquire('../lib/proxy-connection', {
+        'nodemailer/lib/smtp-connection/http-proxy-client': (url, port, host, cb) => {
+            cb(null, mockSocket);
+        },
+        socks: { SocksClient: {} },
+        dns: { promises: { resolve: async () => ['127.0.0.1'] } },
+        net: { isIP: () => true }
+    });
+
+    const socket = await proxyConnection(logger, 'http://proxy.example.com:8080', '192.168.1.1', 993);
+
+    assertEarlyErrorHandler(test, socket, mockSocket);
+    test.done();
+};
+
+module.exports['Proxy Connection: SOCKS socket has early error handler before return'] = async test => {
+    const mockSocket = createMockEmitterSocket();
+    const logger = createMockLogger();
+
+    const { proxyConnection } = proxyquire('../lib/proxy-connection', {
+        'nodemailer/lib/smtp-connection/http-proxy-client': () => {},
+        socks: {
+            SocksClient: {
+                createConnection: async () => ({ socket: mockSocket })
+            }
+        },
+        dns: { promises: { resolve: async () => ['127.0.0.1'] } },
+        net: { isIP: () => true }
+    });
+
+    const socket = await proxyConnection(logger, 'socks5://proxy.example.com:1080', '192.168.1.1', 993);
+
+    assertEarlyErrorHandler(test, socket, mockSocket);
+    test.done();
+};
+
+// detachEarlyErrorHandler must remove the guard once the caller takes ownership of the socket,
+// so it no longer swallows/logs errors meant for the new owner's handlers.
+module.exports['Proxy Connection: detachEarlyErrorHandler removes the early guard'] = async test => {
+    const mockSocket = createMockEmitterSocket();
+    const logger = createMockLogger();
+
+    const { proxyConnection, detachEarlyErrorHandler } = proxyquire('../lib/proxy-connection', {
+        'nodemailer/lib/smtp-connection/http-proxy-client': (url, port, host, cb) => {
+            cb(null, mockSocket);
+        },
+        socks: { SocksClient: {} },
+        dns: { promises: { resolve: async () => ['127.0.0.1'] } },
+        net: { isIP: () => true }
+    });
+
+    const socket = await proxyConnection(logger, 'http://proxy.example.com:8080', '192.168.1.1', 993);
+    test.ok(socket.listenerCount('error') >= 1, 'early error handler attached on return');
+    test.ok(typeof socket._earlyErrorHandler === 'function', 'handler reference stored on the socket');
+
+    detachEarlyErrorHandler(socket);
+
+    test.equal(socket.listenerCount('error'), 0, 'early error handler removed after detach');
+    test.equal(socket._earlyErrorHandler, null, 'stored handler reference cleared');
+
+    // Detaching again (or on a bare socket) must be a safe no-op.
+    test.doesNotThrow(() => detachEarlyErrorHandler(socket));
+    test.doesNotThrow(() => detachEarlyErrorHandler(createMockEmitterSocket()));
+
     test.done();
 };

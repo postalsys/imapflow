@@ -67,6 +67,11 @@ export interface ImapFlowOptions {
      */
     maxLineLength?: number;
     /**
+     * Maximum allowed size in bytes of a single IMAP literal block. Bounds peak memory allocation
+     * against a malicious or broken server announcing an oversized literal. Defaults to 1GB.
+     */
+    maxLiteralSize?: number;
+    /**
      * Threshold in milliseconds for warning that a mailbox lock has been held
      * for a long time (diagnostic for forgotten release() calls). Defaults to
      * 30 minutes. Set to 0 or false to disable.

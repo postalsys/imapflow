@@ -2,6 +2,7 @@
 
 const { ImapFlow } = require('../lib/imap-flow');
 const { EventEmitter } = require('events');
+const net = require('net');
 
 // Edge Cases Tests
 
@@ -1539,7 +1540,14 @@ async function setupCompressedClient() {
     mockSocket.destroy = () => {};
     mockSocket.destroyed = false;
     client.socket = mockSocket;
-    client.streamer = new EventEmitter();
+    // Mock streamer that tracks destruction like a real stream, so close() drives it into
+    // the destroyed state the post-close guards actually check.
+    client.streamer = Object.assign(new EventEmitter(), {
+        destroyed: false,
+        destroy() {
+            this.destroyed = true;
+        }
+    });
 
     client.run = async command => {
         if (command === 'COMPRESS') {
@@ -1625,6 +1633,33 @@ module.exports['Connection Edge: compress _deflate error after close does not cr
     // This should not throw (guard at lines 1060-1062)
     test.doesNotThrow(() => {
         deflate.emit('error', new Error('late deflate error'));
+    });
+
+    test.done();
+};
+
+module.exports['Connection Edge: compress _inflate error after close does not crash'] = async test => {
+    let { client } = await setupCompressedClient();
+
+    let inflate = client._inflate;
+
+    // close() removes the streamer 'error' listener and destroys the streamer.
+    // A late inflate error must not be forwarded into the destroyed streamer
+    // (which would throw an unhandled 'error' and crash the process).
+    client.close();
+
+    // Confirm we actually reached the post-close state the guard targets.
+    test.ok(client.streamer.destroyed, 'streamer is destroyed after close()');
+
+    // Re-attach an 'error' listener so listenerCount('error') > 0: this isolates the
+    // `!streamer.destroyed` term of the guard. If forwarding still happened, this listener
+    // would throw and escape doesNotThrow — proving the destroyed-check is what suppresses it.
+    client.streamer.on('error', () => {
+        throw new Error('inflate error must not be forwarded into a destroyed streamer');
+    });
+
+    test.doesNotThrow(() => {
+        inflate.emit('error', new Error('late inflate error'));
     });
 
     test.done();
@@ -1721,5 +1756,107 @@ module.exports['Connection Edge: multiple locks rejected when no connection'] = 
     for (let err of errors) {
         test.equal(err.code, 'NoConnection');
     }
+    test.done();
+};
+
+// ============================================
+// reader() survives a write() throw without stalling the stream
+// ============================================
+
+module.exports['Connection Edge: reader survives write throw on + continuation'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        logger: false
+    });
+
+    client.currentRequest = false;
+    client.commandParts = [Buffer.from('literal-bytes')];
+
+    let writeAttempted = false;
+    client.write = () => {
+        writeAttempted = true;
+        throw new Error('write boom');
+    };
+
+    let nextCalled = false;
+    let done = false;
+    client.streamer.read = () => {
+        if (done) {
+            return null;
+        }
+        done = true;
+        return {
+            payload: Buffer.from('+ Ready'),
+            literals: [],
+            next: () => {
+                nextCalled = true;
+            }
+        };
+    };
+
+    let rejected = false;
+    await client.reader().catch(() => {
+        rejected = true;
+    });
+
+    test.ok(writeAttempted, 'the literal-continuation write path was exercised');
+    test.equal(rejected, false, 'reader did not reject on write throw');
+    test.ok(nextCalled, 'data.next() was still called so the stream is not stalled');
+    test.done();
+};
+
+// ============================================
+// BYE greeting surfaces its reason on the connect rejection
+// ============================================
+
+module.exports['Connection Edge: BYE greeting surfaces reason on connect rejection'] = async test => {
+    // Deterministic ordering: the server ends the socket only AFTER the client has parsed the
+    // BYE and set byeReason, instead of racing a fixed 50ms timer that could flake on slow CI.
+    let signalByeParsed;
+    let byeParsed = new Promise(resolve => {
+        signalByeParsed = resolve;
+    });
+
+    let server = net.createServer(socket => {
+        socket.on('error', () => {});
+        socket.write('* BYE Server too busy\r\n');
+        byeParsed.then(() => socket.end());
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    let port = server.address().port;
+
+    let client = new ImapFlow({
+        host: '127.0.0.1',
+        port,
+        secure: false,
+        disableAutoIdle: true,
+        logger: false,
+        auth: { user: 'test', pass: 'test' }
+    });
+    client.on('error', () => {});
+
+    // Signal once the client's BYE handler has run, so byeReason is guaranteed set before close().
+    let origServerBye = client.serverBye.bind(client);
+    client.serverBye = async parsed => {
+        await origServerBye(parsed);
+        signalByeParsed();
+    };
+
+    let connectErr = null;
+    try {
+        await client.connect();
+        test.ok(false, 'connect() should reject after a BYE greeting');
+    } catch (err) {
+        connectErr = err;
+    }
+
+    test.ok(connectErr, 'connect() rejected');
+    test.equal(connectErr.reason, 'Server too busy', 'BYE reason surfaced on the rejection');
+
+    client.close();
+    server.close();
     test.done();
 };
