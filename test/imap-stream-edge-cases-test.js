@@ -392,3 +392,67 @@ module.exports['Line length cap allows line within limit'] = test => {
 
     stream.end(Buffer.from('A NOOP\r\n'));
 };
+
+// ---------------------------------------------------------------------------
+// checkLiteralMarker direct edge cases + _transform string handling + _destroy
+// draining (lines that the normal streaming flow does not exercise).
+// ---------------------------------------------------------------------------
+
+module.exports['ImapStream: checkLiteralMarker returns false for empty line'] = test => {
+    const stream = new ImapStream({ cid: 't' });
+    test.equal(stream.checkLiteralMarker(Buffer.alloc(0)), false);
+    test.equal(stream.checkLiteralMarker(null), false);
+    test.done();
+};
+
+module.exports['ImapStream: checkLiteralMarker returns false when no trailing LF'] = test => {
+    const stream = new ImapStream({ cid: 't' });
+    test.equal(stream.checkLiteralMarker(Buffer.from('A1 OK no newline')), false);
+    test.done();
+};
+
+module.exports['ImapStream: checkLiteralMarker returns false for non-numeric marker'] = test => {
+    const stream = new ImapStream({ cid: 't' });
+    // '{' present but contains a non-digit, and an empty {} marker
+    test.equal(stream.checkLiteralMarker(Buffer.from('A1 CMD {x}\r\n')), false);
+    test.equal(stream.checkLiteralMarker(Buffer.from('A1 CMD {}\r\n')), false);
+    test.done();
+};
+
+module.exports['ImapStream: checkLiteralMarker activates literal state for valid marker'] = test => {
+    const stream = new ImapStream({ cid: 't' });
+    test.equal(stream.checkLiteralMarker(Buffer.from('A1 CMD {5}\r\n')), true);
+    test.equal(stream.literalWaiting, 5);
+    test.done();
+};
+
+module.exports['ImapStream: _transform converts string chunks to Buffer'] = test => {
+    const stream = new ImapStream({ cid: 't' });
+    let commands = [];
+    stream.on('readable', () => {
+        let cmd;
+        while ((cmd = stream.read()) !== null) {
+            commands.push(cmd.payload.toString());
+            cmd.next();
+        }
+    });
+    stream.on('end', () => {
+        test.ok(commands.some(c => /A1 OK/.test(c)));
+        test.done();
+    });
+    // write a string (not a Buffer) to exercise the string->Buffer branch
+    stream.write('A1 OK done\r\n');
+    stream.end();
+};
+
+module.exports['ImapStream: _destroy drains pending input queue callbacks'] = test => {
+    const stream = new ImapStream({ cid: 't' });
+    let nextCalled = false;
+    // Stage a pending queue item with a next() callback, then destroy.
+    stream.inputQueue.push({ chunk: Buffer.from('x'), next: () => (nextCalled = true) });
+    stream.destroy();
+    setImmediate(() => {
+        test.ok(nextCalled, 'pending next() invoked during destroy');
+        test.done();
+    });
+};

@@ -390,3 +390,67 @@ module.exports['Token Parser: malformed REFERRAL with no closing bracket consume
         test.equal(section[0].value, 'REFERRAL');
         test.equal(section[1].value, 'imap://user@host/INBOX');
     });
+
+// ---------------------------------------------------------------------------
+// Additional error-path and edge-case coverage (E11, E12, E16, E17, E19-E22,
+// E24, E27) plus the bare-"*" sequence and "~"-as-atom normalization paths.
+// All use a non-status command (FETCH) so the TokenParser is actually invoked.
+// ---------------------------------------------------------------------------
+
+const expectParserError = (input, code) => test =>
+    asyncWrapper(test, async test => {
+        let err;
+        try {
+            await parser(input);
+        } catch (e) {
+            err = e;
+        }
+        if (!err) throw new Error('Expected parser to throw but it did not');
+        test.equal(err.code, code);
+    });
+
+module.exports['Token Parser: E11: unexpected ] throws ParserError11'] = expectParserError('* 1 FETCH (])', 'ParserError11');
+module.exports['Token Parser: E12: ~ not followed by { throws ParserError12'] = expectParserError('* 1 FETCH ~%', 'ParserError12');
+module.exports['Token Parser: E16: \\* followed by char throws ParserError17'] = expectParserError('* 1 FETCH \\*x', 'ParserError17');
+module.exports['Token Parser: E19: partial ending with . throws ParserError19'] = expectParserError('* 1 FETCH BODY[]<0.>', 'ParserError19');
+module.exports['Token Parser: E20: partial leading . throws ParserError20'] = expectParserError('* 1 FETCH BODY[]<.>', 'ParserError20');
+module.exports['Token Parser: E21: non-digit in partial throws ParserError21'] = expectParserError('* 1 FETCH BODY[]<0.x>', 'ParserError21');
+module.exports['Token Parser: E22: invalid leading-zero partial throws ParserError22'] = expectParserError('* 1 FETCH BODY[]<00>', 'ParserError22');
+module.exports['Token Parser: E24: literal prefix not followed by CRLF throws ParserError24'] = expectParserError('* 1 FETCH {3}xyz', 'ParserError24');
+module.exports['Token Parser: E27: whitespace mid-sequence throws ParserError27'] = expectParserError('* 1 FETCH 1: 2', 'ParserError27');
+
+module.exports['Token Parser: bare * is normalized to an ATOM'] = test =>
+    asyncWrapper(test, async test => {
+        let r = await parser('* 1 FETCH *');
+        let last = r.attributes[r.attributes.length - 1];
+        test.equal(last.type, 'ATOM');
+        test.equal(last.value, '*');
+    });
+
+module.exports['Token Parser: ~ followed by atom chars becomes an ATOM'] = test =>
+    asyncWrapper(test, async test => {
+        let r = await parser('* 1 FETCH ~abc');
+        let last = r.attributes[r.attributes.length - 1];
+        test.equal(last.type, 'ATOM');
+        test.equal(last.value, '~abc');
+    });
+
+module.exports['Token Parser: E16: invalid char in atom throws ParserError16'] = expectParserError('* 1 FETCH 3* 4', 'ParserError16');
+
+module.exports['Token Parser: literal+ (non-synchronizing) marker is accepted'] = test =>
+    asyncWrapper(test, async test => {
+        // {3+} is a LITERAL+ prefix; with literalPlus enabled and no pre-parsed
+        // literals, the parser reads the literal bytes inline.
+        let r = await parser('* 1 FETCH {3+}\r\nabc', { literalPlus: true });
+        let lit = r.attributes[r.attributes.length - 1];
+        test.equal(lit.type, 'LITERAL');
+        test.equal(lit.value.toString(), 'abc');
+    });
+
+module.exports['Token Parser: literal prefix terminated by bare LF is accepted'] = test =>
+    asyncWrapper(test, async test => {
+        let r = await parser('* 1 FETCH {3}\nabc');
+        let lit = r.attributes[r.attributes.length - 1];
+        test.equal(lit.type, 'LITERAL');
+        test.equal(lit.value.toString(), 'abc');
+    });

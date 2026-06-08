@@ -2,6 +2,7 @@
 
 const { JPDecoder } = require('../lib/jp-decoder');
 const { PassThrough, Transform } = require('stream');
+const encodingJapanese = require('encoding-japanese');
 
 // Helper to collect stream output
 const collectStream = stream =>
@@ -123,6 +124,53 @@ module.exports['JPDecoder: _flush handles conversion errors gracefully'] = async
     let result = await output;
     // On error, should return original input
     test.equal(result.toString(), 'test data');
+    test.done();
+};
+
+module.exports['JPDecoder: _flush falls back to raw input when convert throws'] = async test => {
+    // encoding-japanese rarely throws on its own, so force it: the module object
+    // is shared by reference with the copy held inside jp-decoder.js, so patching
+    // .convert here affects the decoder's call too.
+    let originalConvert = encodingJapanese.convert;
+    encodingJapanese.convert = () => {
+        throw new Error('forced conversion failure');
+    };
+
+    try {
+        let decoder = new JPDecoder('iso-2022-jp');
+        let output = collectStream(decoder);
+
+        let input = Buffer.from('raw bytes preserved');
+        decoder.write(input);
+        decoder.end();
+
+        let result = await output;
+        // On a thrown error the catch block pushes the original, untouched input
+        test.equal(result.toString(), 'raw bytes preserved');
+    } finally {
+        encodingJapanese.convert = originalConvert;
+    }
+    test.done();
+};
+
+module.exports['JPDecoder: _flush converts non-string convert output to buffer'] = async test => {
+    // When convert returns a non-string (e.g. an array of code units), it must be
+    // pushed as-is without the Buffer.from(string) branch.
+    let originalConvert = encodingJapanese.convert;
+    encodingJapanese.convert = () => Buffer.from('converted buffer');
+
+    try {
+        let decoder = new JPDecoder('iso-2022-jp');
+        let output = collectStream(decoder);
+
+        decoder.write(Buffer.from('whatever'));
+        decoder.end();
+
+        let result = await output;
+        test.equal(result.toString(), 'converted buffer');
+    } finally {
+        encodingJapanese.convert = originalConvert;
+    }
     test.done();
 };
 

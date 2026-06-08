@@ -160,6 +160,67 @@ module.exports['ESEARCH: no RETURN clause when server lacks ESEARCH capability']
     }).catch(err => test.done(err));
 };
 
+module.exports['ESEARCH: parseEsearchResponse skips non-ATOM tokens'] = test => {
+    const attrs = [
+        [{ type: 'ATOM', value: 'stray' }], // non-ATOM (Array) token is skipped
+        { type: 'ATOM', value: 'COUNT' },
+        { type: 'ATOM', value: '9' }
+    ];
+    const result = parseEsearchResponse(attrs);
+    test.equal(result.count, 9);
+    test.done();
+};
+
+module.exports['ESEARCH: parseEsearchResponse skips trailing key with no value'] = test => {
+    const attrs = [{ type: 'ATOM', value: 'COUNT' }]; // dangling key, no value
+    const result = parseEsearchResponse(attrs);
+    test.deepEqual(result, {});
+    test.done();
+};
+
+module.exports['ESEARCH: untagged handler parses ESEARCH response'] = test => {
+    const conn = makeConnection({ hasEsearch: true });
+    conn.exec = async (command, attributes, handlers) => {
+        const esearch = handlers && handlers.untagged && handlers.untagged.ESEARCH;
+        // leading (TAG "A1") list + UID atom are stripped before parsing
+        await esearch({
+            attributes: [
+                [
+                    { type: 'ATOM', value: 'TAG' },
+                    { type: 'STRING', value: 'A1' }
+                ],
+                { type: 'ATOM', value: 'UID' },
+                { type: 'ATOM', value: 'COUNT' },
+                { type: 'ATOM', value: '7' }
+            ]
+        });
+        // also exercise the empty-attributes guard
+        await esearch({ attributes: null });
+        return { next: () => {} };
+    };
+    searchCmd(conn, { seen: false }, { uid: true, returnOptions: ['COUNT'] })
+        .then(result => {
+            test.equal(result.count, 7);
+            test.done();
+        })
+        .catch(err => test.done(err));
+};
+
+module.exports['ESEARCH: command path returns false on exec error'] = test => {
+    const conn = makeConnection({ hasEsearch: true });
+    conn.exec = async () => {
+        let err = new Error('search failed');
+        err.responseStatus = 'NO';
+        throw err;
+    };
+    searchCmd(conn, { seen: false }, { uid: true, returnOptions: ['COUNT'] })
+        .then(result => {
+            test.equal(result, false);
+            test.done();
+        })
+        .catch(err => test.done(err));
+};
+
 module.exports['ESEARCH: parseEsearchResponse ignores unknown keywords'] = test => {
     // Dovecot with CONDSTORE may append MODSEQ to ESEARCH responses
     const attrs = [

@@ -3,6 +3,7 @@
 'use strict';
 
 const { parser } = require('../lib/handler/imap-handler');
+const { ParserInstance } = require('../lib/handler/parser-instance');
 const mimetorture = require('./fixtures/serialized-mimetorture');
 
 let asyncWrapper = (test, handler) => {
@@ -25,6 +26,20 @@ let asyncWrapperFail = (test, handler) => {
             test.done();
         });
 };
+
+// Asserts that `fn` throws (or rejects with) an error carrying the expected `code`,
+// not merely that *some* error was thrown.
+let expectErrorCode = (test, code, fn) =>
+    asyncWrapper(test, async test => {
+        let err;
+        try {
+            await fn();
+        } catch (e) {
+            err = e;
+        }
+        test.ok(err, 'expected an error to be thrown');
+        test.equal(err && err.code, code);
+    });
 
 module.exports['IMAP Parser: Tags: get TAG'] = test => asyncWrapper(test, async test => test.equal((await parser('TAG1 CMD')).tag, 'TAG1'));
 module.exports['IMAP Parser: Tags: space before TAG'] = test => asyncWrapperFail(test, async test => test.ok(await parser(' TAG CMD')));
@@ -318,6 +333,43 @@ module.exports['IMAP Parser: Literals: literal with NULL'] = test =>
             }
         ])
     );
+
+module.exports['IMAP Parser: empty continuation (+) response'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('+');
+        test.equal(parsed.tag, '+');
+        test.equal(parsed.command, '');
+    });
+
+module.exports['IMAP Parser: non-space after command throws ParserError5'] = test =>
+    expectErrorCode(test, 'ParserError5', () => parser('TAG1 CMD\tx'));
+
+module.exports['IMAP Parser: leading whitespace in attributes throws ParserError7'] = test =>
+    expectErrorCode(test, 'ParserError7', () => parser('TAG1 CMD \tx'));
+
+module.exports['IMAP Parser: getAttributes on empty input throws ParserError6'] = test =>
+    expectErrorCode(test, 'ParserError6', () => {
+        // constructed without options to also exercise the options default branch
+        let pi = new ParserInstance('');
+        return pi.getAttributes();
+    });
+
+module.exports['IMAP Parser: strips leading NUL padding and records count'] = test =>
+    asyncWrapper(test, async test => {
+        let buf = Buffer.concat([Buffer.from([0, 0, 0]), Buffer.from('* OK ready')]);
+        let parsed = await parser(buf);
+        test.equal(parsed.tag, '*');
+        test.equal(parsed.command, 'OK');
+        test.equal(parsed.nullBytesRemoved, 3);
+    });
+
+module.exports['IMAP Parser: all-NUL input becomes BAD response'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser(Buffer.from([0, 0, 0, 0]));
+        test.equal(parsed.tag, '*');
+        test.equal(parsed.command, 'BAD');
+        test.deepEqual(parsed.attributes, []);
+    });
 
 module.exports['IMAP Parser: Literals: literal8'] = test =>
     asyncWrapper(test, async test =>

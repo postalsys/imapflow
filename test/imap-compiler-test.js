@@ -56,6 +56,53 @@ module.exports['IMAP Compiler: TEXT'] = test =>
         )
     );
 
+module.exports['IMAP Compiler: NUMBER attribute'] = test =>
+    asyncWrapper(test, async test =>
+        test.equal(
+            (
+                await compiler({
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [
+                        {
+                            type: 'NUMBER',
+                            value: 42
+                        }
+                    ]
+                })
+            ).toString(),
+            '* CMD 42'
+        )
+    );
+
+module.exports['IMAP Compiler: NUMBER attribute defaults missing value to 0'] = test =>
+    asyncWrapper(test, async test =>
+        test.equal(
+            (
+                await compiler({
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [{ type: 'NUMBER' }]
+                })
+            ).toString(),
+            '* CMD 0'
+        )
+    );
+
+module.exports['IMAP Compiler: unrecognized value type compiles to empty buffer'] = test =>
+    asyncWrapper(test, async test => {
+        // A SEQUENCE node whose value is neither string/number/Buffer falls through
+        // formatRespEntry to an empty Buffer rather than throwing.
+        let out = (
+            await compiler({
+                tag: '*',
+                command: 'CMD',
+                attributes: [{ type: 'SEQUENCE', value: { unexpected: true } }]
+            })
+        ).toString();
+        test.equal(out, '* CMD ');
+    });
+
 module.exports['IMAP Compiler: SECTION'] = test =>
     asyncWrapper(test, async test =>
         test.equal(

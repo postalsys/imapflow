@@ -844,6 +844,37 @@ module.exports['Search Compiler: HEADER with Unicode adds CHARSET'] = test => {
     test.done();
 };
 
+module.exports['Search Compiler: non-ASCII text field adds CHARSET UTF-8'] = test => {
+    let connection = createMockConnection({
+        enabled: new Set() // UTF8=ACCEPT not enabled
+    });
+    // Non-ASCII subject must flip hasUnicode and prepend CHARSET UTF-8
+    let compiled = searchCompiler(connection, { subject: 'résumé café' });
+    test.ok(hasAttr(compiled, 'CHARSET'));
+    test.ok(hasAttr(compiled, 'UTF-8'));
+    test.done();
+};
+
+module.exports['Search Compiler: non-ASCII body field adds CHARSET UTF-8'] = test => {
+    let connection = createMockConnection({
+        enabled: new Set()
+    });
+    let compiled = searchCompiler(connection, { body: 'Grüße' });
+    test.ok(hasAttr(compiled, 'CHARSET'));
+    test.done();
+};
+
+module.exports['Search Compiler: non-ASCII GMRAW adds CHARSET UTF-8'] = test => {
+    let connection = createMockConnection({
+        capabilities: [['X-GM-EXT-1', true]],
+        enabled: new Set()
+    });
+    let compiled = searchCompiler(connection, { gmraw: 'subject:café' });
+    test.ok(hasAttr(compiled, 'CHARSET'));
+    test.ok(hasAttr(compiled, 'X-GM-RAW'));
+    test.done();
+};
+
 // ============================================
 // Complex query tests
 // ============================================

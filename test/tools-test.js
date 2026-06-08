@@ -1188,6 +1188,366 @@ module.exports['Tools: formatMessageResponse normalizes non-ASCII mailbox path f
     test.done();
 };
 
+module.exports['Tools: formatMessageResponse parses the full attribute set'] = async test => {
+    let untagged = await parser(
+        '* 3 FETCH (UID 100 RFC822.SIZE 5000 FLAGS (\\Seen \\Flagged) MODSEQ (12345) ' +
+            'X-GM-MSGID 999 X-GM-THRID 888 X-GM-LABELS (\\Important Work) ' +
+            'INTERNALDATE "12-Jan-2020 10:00:00 +0000" BODY[1] {3}\r\n BODY[HEADER] {2}\r\n)',
+        { literals: [Buffer.from('abc'), Buffer.from('hi')] }
+    );
+    let mailbox = { path: 'INBOX', uidValidity: 1n }; // no uidNext/highestModseq -> exercise the bump branches
+    let r = await tools.formatMessageResponse(untagged, mailbox);
+    test.equal(r.uid, 100);
+    test.equal(r.size, 5000);
+    test.ok(r.flags.has('\\Seen'));
+    test.equal(r.modseq, 12345n);
+    test.equal(r.emailId, '999'); // X-GM-MSGID
+    test.equal(r.threadId, '888'); // X-GM-THRID
+    test.ok(r.labels.has('Work'));
+    test.ok(r.internalDate instanceof Date);
+    test.ok(Buffer.isBuffer(r.headers));
+    test.ok(r.bodyParts.get('1'));
+    // mailbox estimates bumped from the FETCH data
+    test.equal(mailbox.uidNext, 101);
+    test.equal(mailbox.highestModseq, 12345n);
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse parses envelope and bodystructure'] = async test => {
+    let untagged = await parser(
+        '* 1 FETCH (ENVELOPE ("Mon, 2 Sep 2013 05:30:13 -0700" "Subject" ((NIL NIL "a" "b.com")) NIL NIL NIL NIL NIL NIL "<id@x>") ' +
+            'BODYSTRUCTURE ("TEXT" "PLAIN" ("CHARSET" "utf-8") NIL NIL "7BIT" 12 0 NIL NIL NIL))'
+    );
+    let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' });
+    test.ok(r.envelope);
+    test.equal(r.envelope.subject, 'Subject');
+    test.ok(r.bodyStructure);
+    test.equal(r.bodyStructure.type, 'text/plain');
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse source from BODY[] and BINARY[] literals'] = async test => {
+    let untagged = await parser('* 1 FETCH (BODY[] {5}\r\n)', { literals: [Buffer.from('HELLO')] });
+    let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' });
+    test.ok(Buffer.isBuffer(r.source));
+    test.equal(r.source.toString(), 'HELLO');
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse keeps invalid INTERNALDATE as raw string'] = async test => {
+    let untagged = await parser('* 1 FETCH (INTERNALDATE "not a date")');
+    let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' });
+    test.equal(r.internalDate, 'not a date');
+    test.done();
+};
+
+module.exports['Tools: parseEnvelope parses every field'] = async test => {
+    let untagged = await parser(
+        '* 1 FETCH (ENVELOPE ("Mon, 2 Sep 2013 05:30:13 -0700" "Hello" ' +
+            '((NIL NIL "from" "x.com")) ((NIL NIL "sender" "x.com")) ((NIL NIL "reply" "x.com")) ' +
+            '((NIL NIL "to" "x.com")) ((NIL NIL "cc" "x.com")) ((NIL NIL "bcc" "x.com")) ' +
+            '"<inreplyto@x>" "<msgid@x>"))'
+    );
+    let env = tools.parseEnvelope(untagged.attributes[1][1]);
+    test.ok(env.date instanceof Date);
+    test.equal(env.subject, 'Hello');
+    test.equal(env.from[0].address, 'from@x.com');
+    test.equal(env.sender[0].address, 'sender@x.com');
+    test.equal(env.replyTo[0].address, 'reply@x.com');
+    test.equal(env.to[0].address, 'to@x.com');
+    test.equal(env.cc[0].address, 'cc@x.com');
+    test.equal(env.bcc[0].address, 'bcc@x.com');
+    test.equal(env.inReplyTo, '<inreplyto@x>');
+    test.equal(env.messageId, '<msgid@x>');
+    test.done();
+};
+
+module.exports['Tools: parseEnvelope keeps invalid date as string'] = async test => {
+    let untagged = await parser('* 1 FETCH (ENVELOPE ("not a date" "Subj" NIL NIL NIL NIL NIL NIL NIL NIL))');
+    let env = tools.parseEnvelope(untagged.attributes[1][1]);
+    test.equal(env.date, 'not a date');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure parses all single-part extension fields'] = async test => {
+    let bs =
+        '("TEXT" "PLAIN" ("CHARSET" "utf-8") "<cid@x>" "a description" "BASE64" 100 5 ' +
+        '"d41d8cd9" ("attachment" ("filename" "f.txt")) ("en" "de") "http://loc/")';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.type, 'text/plain');
+    test.equal(node.id, '<cid@x>');
+    test.equal(node.description, 'a description');
+    test.equal(node.encoding, 'base64');
+    test.equal(node.size, 100);
+    test.equal(node.lineCount, 5);
+    test.equal(node.md5, 'd41d8cd9');
+    test.equal(node.disposition, 'attachment');
+    test.equal(node.dispositionParameters.filename, 'f.txt');
+    test.deepEqual(node.language, ['en', 'de']);
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure parses message/rfc822 with envelope and child'] = async test => {
+    let bs =
+        '("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 200 ' +
+        '("date" "subj" NIL NIL NIL NIL NIL NIL "<reply>" "<msgid>") ' +
+        '("TEXT" "PLAIN" NIL NIL NIL "7BIT" 10 1) 3)';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.type, 'message/rfc822');
+    test.ok(node.envelope);
+    test.equal(node.childNodes.length, 1);
+    test.equal(node.lineCount, 3);
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure parses multipart with params and disposition'] = async test => {
+    let bs =
+        '(("TEXT" "PLAIN" NIL NIL NIL "7BIT" 10 1)("TEXT" "HTML" NIL NIL NIL "7BIT" 20 2) ' +
+        '"ALTERNATIVE" ("BOUNDARY" "xyz") ("inline" NIL) ("en"))';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.type, 'multipart/alternative');
+    test.equal(node.childNodes.length, 2);
+    test.equal(node.parameters.boundary, 'xyz');
+    test.equal(node.disposition, 'inline');
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse handles NIL, Buffer and unknown keys'] = async test => {
+    let untagged = await parser('* 1 FETCH (UID NIL RFC822.SIZE NIL X-GM-MSGID {3}\r\n BODY[] NIL FOOBAR 123)', {
+        literals: [Buffer.from('999')]
+    });
+    let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' });
+    test.equal(r.uid, 0); // NIL value -> getString returns false -> Number(false) = 0
+    test.equal(r.size, 0);
+    test.equal(r.emailId, '999'); // Buffer literal value -> getString stringifies it
+    test.equal(r.source, false); // BODY[] NIL -> getBuffer returns false
+    test.done();
+};
+
+module.exports['Tools: getFolderTree merges duplicate folder entries'] = test => {
+    let tree = tools.getFolderTree([
+        { name: 'Parent', path: 'Parent', parent: [], flags: new Set(['\\HasChildren']), delimiter: '/' },
+        { name: 'Parent', path: 'Parent', parent: [], flags: new Set(['\\Noselect', '\\HasChildren']), specialUse: '\\Sent', delimiter: '/' }
+    ]);
+    test.equal(tree.folders.length, 1);
+    test.equal(tree.folders[0].disabled, true);
+    test.equal(tree.folders[0].specialUse, '\\Sent');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure handles minimal NIL fields'] = async test => {
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ("APPLICATION" "OCTET-STREAM" NIL NIL NIL NIL NIL))');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.type, 'application/octet-stream');
+    test.equal(node.id, undefined);
+    test.equal(node.encoding, undefined);
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure decodes RFC 2231 charset continuation params'] = async test => {
+    let bs = "(\"TEXT\" \"PLAIN\" (\"name*0*\" \"utf-8''%E2%82%AC abc\" \"name*1\" \"def\") NIL NIL \"7BIT\" 10 1)";
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.parameters.name, '€ abcdef');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure handles empty-string extension fields'] = async test => {
+    // Empty-string values exercise the `|| ''` / `|| 0` fallbacks in each field.
+    let bs = '("TEXT" "PLAIN" ("CHARSET" "") "" "" "" 0 0 "" ("" ("" "")) ("") "")';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.id, '');
+    test.equal(node.description, '');
+    test.equal(node.size, 0);
+    test.equal(node.md5, '');
+    test.deepEqual(node.language, ['']);
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse with no data list returns just seq'] = async test => {
+    let untagged = await parser('* 5 FETCH');
+    let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' });
+    test.equal(r.seq, 5);
+    test.done();
+};
+
+module.exports['Tools: getFolderTree adds folders array when existing entry gains HasChildren'] = test => {
+    let tree = tools.getFolderTree([
+        { name: 'P', path: 'P', parent: [], flags: new Set([]), delimiter: '/' },
+        { name: 'P', path: 'P', parent: [], flags: new Set(['\\HasChildren']), delimiter: '/' }
+    ]);
+    test.ok(Array.isArray(tree.folders[0].folders), 'folders array created on merge');
+    test.done();
+};
+
+module.exports['Tools: normalizePath joins array with empty delimiter fallback'] = test => {
+    // namespace present but without a delimiter -> the (... || '') fallback joins directly
+    let connection = { namespace: { prefix: '' } };
+    test.equal(tools.normalizePath(connection, ['a', 'b']), 'ab');
+    test.done();
+};
+
+module.exports['Tools: updateCapabilities defaults non-numeric APPENDLIMIT to 0'] = test => {
+    let caps = tools.updateCapabilities([{ value: 'APPENDLIMIT=abc' }]);
+    test.equal(caps.get('APPENDLIMIT'), 0);
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse skips non-string label entries'] = async test => {
+    let untagged = await parser('* 1 FETCH (X-GM-LABELS (\\Important NIL))');
+    let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' });
+    test.deepEqual([...r.labels], ['\\Important']); // NIL entry filtered out
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse does not lower highestModseq'] = async test => {
+    let mailbox = { path: 'INBOX', highestModseq: 99999n };
+    let untagged = await parser('* 1 FETCH (MODSEQ (5) FLAGS (\\Seen))');
+    await tools.formatMessageResponse(untagged, mailbox);
+    test.equal(mailbox.highestModseq, 99999n); // unchanged: incoming modseq is lower
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure multipart with NIL subtype'] = async test => {
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE (("TEXT" "PLAIN" NIL NIL NIL "7BIT" 1 1) NIL))');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.type, 'multipart/');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure content type with NIL type/subtype'] = async test => {
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE (NIL NIL NIL NIL NIL "7BIT" 1))');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.type, '/');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure message/rfc822 with NIL envelope/linecount'] = async test => {
+    let bs = '("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 100 NIL ("TEXT" "PLAIN" NIL NIL NIL "7BIT" 1 1) NIL NIL (NIL) NIL)';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.type, 'message/rfc822');
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure text with NIL language/location entries'] = async test => {
+    let bs = '("TEXT" "PLAIN" NIL NIL NIL "7BIT" 100 NIL "md5" ("inline" NIL) (NIL) NIL)';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.deepEqual(node.language, ['']);
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure empty-string size/linecount/language/location'] = async test => {
+    let bs = '("TEXT" "PLAIN" NIL NIL NIL "7BIT" "" "" "" ("inline" NIL) ("") "")';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.size, 0);
+    test.equal(node.lineCount, 0);
+    test.deepEqual(node.language, ['']);
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure message/rfc822 empty-string linecount'] = async test => {
+    let bs =
+        '("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 100 ("d" "s" NIL NIL NIL NIL NIL NIL NIL NIL) ' +
+        '("TEXT" "PLAIN" NIL NIL NIL "7BIT" 1 1) "")';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.type, 'message/rfc822');
+    test.equal(node.lineCount, 0);
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure decodes RFC 2231 with empty charset and special chars'] = async test => {
+    // Empty charset before the first quote defaults to utf-8; '=' / '?' in the value
+    // exercise the 2-char hex escape branch; the empty *1* continuation segment too.
+    // value includes '=' / '?' (2-char hex escapes), a space (-> '_') and a TAB
+    // (a <0x10 control char -> single-hex-digit escape needing a '0' pad).
+    let bs = "(\"TEXT\" \"PLAIN\" (\"name*0*\" \"''a=b?c d\te\" \"name*1*\" \"\") NIL NIL \"7BIT\" 1 1)";
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.ok(node.parameters.name.includes('a=b?c'));
+    test.done();
+};
+
+module.exports['Tools: parseBodystructure parses empty-string body location'] = async test => {
+    // A trailing element after location makes the (i < length-1) guard pass so the
+    // empty-string location value goes through the `|| ''` fallback.
+    let bs = '("TEXT" "PLAIN" NIL NIL NIL "7BIT" 1 1 NIL NIL NIL "" NIL)';
+    let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
+    let node = tools.parseBodystructure(untagged.attributes[1][1]);
+    test.equal(node.location, '');
+    test.done();
+};
+
+module.exports['Tools: expandRange descending range to non-numeric second bound'] = test => {
+    test.deepEqual(tools.expandRange('5:abc'), [5, 4, 3, 2, 1, 0]);
+    test.done();
+};
+
+module.exports['Tools: expandRange tolerates non-numeric entries'] = test => {
+    test.deepEqual(tools.expandRange('abc,:5,1:3'), [0, 0, 1, 2, 3, 4, 5, 1, 2, 3]);
+    test.done();
+};
+
+module.exports['Tools: expandRange handles descending ranges'] = test => {
+    test.deepEqual(tools.expandRange('5:3'), [5, 4, 3]);
+    test.done();
+};
+
+module.exports['Tools: encodePath keeps name as-is when iconv encode throws'] = test => {
+    // The iconv module object is shared by reference; patch encode to throw so the
+    // defensive catch is exercised, then restore.
+    let original = iconv.encode;
+    iconv.encode = () => {
+        throw new Error('encode boom');
+    };
+    try {
+        let connection = { enabled: new Set() };
+        let result = tools.encodePath(connection, 'Tärä');
+        test.equal(result, 'Tärä', 'falls back to the raw path');
+    } finally {
+        iconv.encode = original;
+    }
+    test.done();
+};
+
+module.exports['Tools: decodePath keeps name as-is when iconv decode throws'] = test => {
+    let original = iconv.decode;
+    iconv.decode = () => {
+        throw new Error('decode boom');
+    };
+    try {
+        let connection = { enabled: new Set() };
+        let result = tools.decodePath(connection, 'Inbox&AOk-');
+        test.equal(result, 'Inbox&AOk-');
+    } finally {
+        iconv.decode = original;
+    }
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse id falls back when iconv encode throws'] = async test => {
+    let original = iconv.encode;
+    iconv.encode = () => {
+        throw new Error('encode boom');
+    };
+    try {
+        let untagged = await parser('* 1 FETCH (UID 5 FLAGS (\\Seen))');
+        // non-ASCII path triggers the encode branch; the throw is swallowed
+        let r = await tools.formatMessageResponse(untagged, { path: 'Tärä', uidValidity: 1n });
+        test.ok(r.id, 'an id is still produced');
+    } finally {
+        iconv.encode = original;
+    }
+    test.done();
+};
+
 // ============================================
 // packMessageRange
 // ============================================

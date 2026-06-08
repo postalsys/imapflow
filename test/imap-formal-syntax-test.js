@@ -273,3 +273,21 @@ module.exports['Formal Syntax: CHAR() returns same string reference on repeated 
     test.strictEqual(first, second);
     test.done();
 };
+
+// Memoization: the second invocation must return the cached value via the
+// rewritten getter (covers the memoized inner functions).
+module.exports['Formal Syntax: atom-specials is memoized across calls'] = test => {
+    let first = imapFormalSyntax['atom-specials']();
+    let second = imapFormalSyntax['atom-specials']();
+    test.equal(first, second);
+    test.ok(second.includes('('));
+    test.done();
+};
+
+module.exports['Formal Syntax: quoted-specials is memoized across calls'] = test => {
+    let first = imapFormalSyntax['quoted-specials']();
+    let second = imapFormalSyntax['quoted-specials']();
+    test.equal(first, second);
+    test.ok(second.includes('"'));
+    test.done();
+};

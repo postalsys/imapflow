@@ -142,6 +142,23 @@ module.exports['LimitedPassthrough: zero maxBytes treated as Infinity'] = async 
     test.done();
 };
 
+module.exports['LimitedPassthrough: drops chunk when no remaining budget but not yet limited'] = async test => {
+    // Force the remainingBytes<1 guard (distinct from the `this.limited` fast path):
+    // override maxBytes to 0 after construction so the very first chunk hits it
+    // while `limited` is still false.
+    let stream = new LimitedPassthrough();
+    stream.maxBytes = 0;
+    let output = collectStream(stream);
+
+    stream.write(Buffer.from('dropped'));
+    stream.end();
+
+    let result = await output;
+    test.equal(result.length, 0, 'chunk dropped when no budget remains');
+    test.equal(stream.limited, false, 'limited flag never set via this path');
+    test.done();
+};
+
 module.exports['LimitedPassthrough: handles limit of 1 byte'] = async test => {
     let stream = new LimitedPassthrough({ maxBytes: 1 });
     let output = collectStream(stream);
