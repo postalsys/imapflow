@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.7](https://github.com/postalsys/imapflow/compare/v1.3.6...v1.3.7) (2026-06-08)
+
+
+### Bug Fixes
+
+* harden FLAGS guard and bring lib to full test coverage ([6666bec](https://github.com/postalsys/imapflow/commit/6666bec7f82072e5aa8a1e63736e35d5c6644d4c))
+
 ## [1.3.6](https://github.com/postalsys/imapflow/compare/v1.3.5...v1.3.6) (2026-06-05)
 
 
