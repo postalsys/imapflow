@@ -357,6 +357,8 @@ export interface SearchObject {
     gmraw?: string;
     /** Gmail raw search query (alias for gmraw) */
     gmailraw?: string;
+    /** Gmail label filter (only for Gmail). Compiles to an X-GM-RAW "label:"/"-label:" query. "has" matches messages carrying all listed labels, "not" excludes messages carrying any listed label */
+    labels?: { has?: string[]; not?: string[] };
 }
 
 export interface FetchQueryObject {
@@ -373,12 +375,14 @@ export interface FetchQueryObject {
     /** If true then include message size in the response */
     size?: boolean;
     /** If true then include full message in the response */
-    source?: boolean | {
-        /** Include full message in the response starting from start byte */
-        start?: number;
-        /** Include full message in the response, up to maxLength bytes */
-        maxLength?: number;
-    };
+    source?:
+        | boolean
+        | {
+              /** Include full message in the response starting from start byte */
+              start?: number;
+              /** Include full message in the response, up to maxLength bytes */
+              maxLength?: number;
+          };
     /** If true then include thread ID in the response (only if server supports either OBJECTID or X-GM-EXT-1 extensions) */
     threadId?: boolean;
     /** If true then include GMail labels in the response (only if server supports X-GM-EXT-1 extension) */
@@ -740,14 +744,17 @@ export class ImapFlow extends EventEmitter {
     mailboxClose(): Promise<boolean>;
 
     /** Requests the status of the indicated mailbox */
-    status(path: string, query: {
-        messages?: boolean;
-        recent?: boolean;
-        uidNext?: boolean;
-        uidValidity?: boolean;
-        unseen?: boolean;
-        highestModseq?: boolean;
-    }): Promise<StatusObject>;
+    status(
+        path: string,
+        query: {
+            messages?: boolean;
+            recent?: boolean;
+            uidNext?: boolean;
+            uidValidity?: boolean;
+            unseen?: boolean;
+            highestModseq?: boolean;
+        }
+    ): Promise<StatusObject>;
 
     /** Starts listening for new or deleted messages from the currently opened mailbox */
     idle(): Promise<boolean>;
@@ -779,10 +786,13 @@ export class ImapFlow extends EventEmitter {
     /** Search messages from the currently opened mailbox — returns number[] (backward-compatible) */
     search(query: SearchObject, options?: { uid?: boolean }): Promise<number[] | false>;
     /** Search messages with ESEARCH RETURN options — returns ESearchResult */
-    search(query: SearchObject, options: {
-        uid?: boolean;
-        returnOptions: Array<'MIN' | 'MAX' | 'COUNT' | 'ALL' | { partial: string }>;
-    }): Promise<ESearchResult | number[] | false>;
+    search(
+        query: SearchObject,
+        options: {
+            uid?: boolean;
+            returnOptions: Array<'MIN' | 'MAX' | 'COUNT' | 'ALL' | { partial: string }>;
+        }
+    ): Promise<ESearchResult | number[] | false>;
 
     /** Fetch messages from the currently opened mailbox */
     fetch(range: SequenceString | number[] | SearchObject, query: FetchQueryObject, options?: FetchOptions): AsyncIterableIterator<FetchMessageObject>;
@@ -794,14 +804,22 @@ export class ImapFlow extends EventEmitter {
     fetchOne(seq: SequenceString, query: FetchQueryObject, options?: FetchOptions): Promise<FetchMessageObject | false>;
 
     /** Download either full rfc822 formatted message or a specific bodystructure part as a Stream */
-    download(range: SequenceString, part?: string, options?: {
-        uid?: boolean;
-        maxBytes?: number;
-        chunkSize?: number;
-    }): Promise<DownloadObject>;
+    download(
+        range: SequenceString,
+        part?: string,
+        options?: {
+            uid?: boolean;
+            maxBytes?: number;
+            chunkSize?: number;
+        }
+    ): Promise<DownloadObject>;
 
     /** Fetch multiple attachments as Buffer values */
-    downloadMany(range: SequenceString, parts: string[], options?: { uid?: boolean }): Promise<{
+    downloadMany(
+        range: SequenceString,
+        parts: string[],
+        options?: { uid?: boolean }
+    ): Promise<{
         [part: string]: {
             meta: {
                 contentType?: string;
@@ -811,7 +829,7 @@ export class ImapFlow extends EventEmitter {
                 encoding?: string;
             };
             content: Buffer | null;
-        }
+        };
     }>;
 
     /** Opens a mailbox if not already open and returns a lock */

@@ -444,6 +444,86 @@ module.exports['Search Compiler: GMRAW throws without capability'] = test => {
 };
 
 // ============================================
+// Gmail label search tests
+// ============================================
+
+module.exports['Search Compiler: LABELS has compiles to label: via X-GM-RAW'] = test => {
+    let connection = createMockConnection({
+        capabilities: [['X-GM-EXT-1', true]]
+    });
+    let compiled = searchCompiler(connection, { labels: { has: ['Horizon'] } });
+
+    test.ok(hasAttr(compiled, 'X-GM-RAW'));
+    test.ok(hasAttr(compiled, 'label:Horizon'));
+    test.done();
+};
+
+module.exports['Search Compiler: LABELS not compiles to -label: via X-GM-RAW'] = test => {
+    let connection = createMockConnection({
+        capabilities: [['X-GM-EXT-1', true]]
+    });
+    let compiled = searchCompiler(connection, { labels: { not: ['Horizon'] } });
+
+    test.ok(hasAttr(compiled, 'X-GM-RAW'));
+    test.ok(hasAttr(compiled, '-label:Horizon'));
+    test.done();
+};
+
+module.exports['Search Compiler: LABELS has and not combined'] = test => {
+    let connection = createMockConnection({
+        capabilities: [['X-GM-EXT-1', true]]
+    });
+    let compiled = searchCompiler(connection, { labels: { has: ['Imported'], not: ['Horizon'] } });
+
+    test.ok(hasAttr(compiled, 'label:Imported -label:Horizon'));
+    test.done();
+};
+
+module.exports['Search Compiler: LABELS quotes multi-word names'] = test => {
+    let connection = createMockConnection({
+        capabilities: [['X-GM-EXT-1', true]]
+    });
+    let compiled = searchCompiler(connection, { labels: { has: ['Some Label'] } });
+
+    test.ok(hasAttr(compiled, 'label:"Some Label"'));
+    test.done();
+};
+
+module.exports['Search Compiler: LABELS coexists with gmraw'] = test => {
+    let connection = createMockConnection({
+        capabilities: [['X-GM-EXT-1', true]]
+    });
+    let compiled = searchCompiler(connection, { gmraw: 'has:attachment', labels: { not: ['Horizon'] } });
+
+    test.ok(hasAttr(compiled, 'has:attachment'));
+    test.ok(hasAttr(compiled, '-label:Horizon'));
+    test.done();
+};
+
+module.exports['Search Compiler: LABELS throws without capability'] = test => {
+    let connection = createMockConnection();
+
+    try {
+        searchCompiler(connection, { labels: { not: ['Horizon'] } });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'MissingServerExtension');
+        test.ok(err.message.includes('X-GM-EXT-1'));
+    }
+
+    test.done();
+};
+
+module.exports['Search Compiler: empty LABELS is a no-op without capability'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, { labels: {} });
+
+    test.ok(!hasAttr(compiled, 'X-GM-RAW'));
+    test.equal(compiled.length, 0);
+    test.done();
+};
+
+// ============================================
 // Date search tests
 // ============================================
 
