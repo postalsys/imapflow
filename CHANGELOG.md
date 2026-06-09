@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/postalsys/imapflow/compare/v1.3.7...v1.4.0) (2026-06-09)
+
+
+### Features
+
+* add Gmail label search term to the search compiler ([4b2d173](https://github.com/postalsys/imapflow/commit/4b2d1736660441e95cd55a30ad6632a676fb605c))
+
 ## [1.3.7](https://github.com/postalsys/imapflow/compare/v1.3.6...v1.3.7) (2026-06-08)
 
 
