@@ -7,18 +7,25 @@ on:
 permissions:
     contents: read
 
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
 jobs:
     test:
+        name: Test (Node ${{ matrix.node }})
+        timeout-minutes: 10
         strategy:
             matrix:
-                node: [20.x, 22.x, 24.x]
+                node: [22.x, 24.x]
                 os: [ubuntu-latest]
         runs-on: ${{ matrix.os }}
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
             - name: Use Node.js ${{ matrix.node }}
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v6
               with:
                   node-version: ${{ matrix.node }}
+                  cache: npm
             - run: npm install
             - run: npm test
