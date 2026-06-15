@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/postalsys/imapflow/compare/v1.4.0...v1.4.1) (2026-06-15)
+
+
+### Bug Fixes
+
+* ship refreshed dependencies (nodemailer 9, updated toolchain) ([e1d36e6](https://github.com/postalsys/imapflow/commit/e1d36e68c7a5dd4dd3bc9a7816dc96a01f063af3))
+
 ## [1.4.0](https://github.com/postalsys/imapflow/compare/v1.3.7...v1.4.0) (2026-06-09)
 
 
