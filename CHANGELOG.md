@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/postalsys/imapflow/compare/v1.4.1...v1.4.2) (2026-06-19)
+
+
+### Bug Fixes
+
+* bump nodemailer to 9.0.1 ([9c46aa9](https://github.com/postalsys/imapflow/commit/9c46aa9a6156184ee298d003331b8af607f9a8ff))
+
 ## [1.4.1](https://github.com/postalsys/imapflow/compare/v1.4.0...v1.4.1) (2026-06-15)
 
 
