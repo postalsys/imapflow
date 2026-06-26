@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.3](https://github.com/postalsys/imapflow/compare/v1.4.2...v1.4.3) (2026-06-26)
+
+
+### Bug Fixes
+
+* update dependencies (libmime 5.4.0, mailsplit 5.4.13) ([ae175eb](https://github.com/postalsys/imapflow/commit/ae175eb6976ea633d69154cff4c161f3beb0586a))
+
 ## [1.4.2](https://github.com/postalsys/imapflow/compare/v1.4.1...v1.4.2) (2026-06-19)
 
 
