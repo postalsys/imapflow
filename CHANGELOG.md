@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.5](https://github.com/postalsys/imapflow/compare/v1.4.4...v1.4.5) (2026-07-05)
+
+
+### Bug Fixes
+
+* update dependencies (libmime 5.4.1) ([2e8fa0e](https://github.com/postalsys/imapflow/commit/2e8fa0eca0ec1074283c7ab9992b49a26af326b0))
+
 ## [1.4.4](https://github.com/postalsys/imapflow/compare/v1.4.3...v1.4.4) (2026-07-05)
 
 
