@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.6](https://github.com/postalsys/imapflow/compare/v1.4.5...v1.4.6) (2026-07-05)
+
+
+### Bug Fixes
+
+* update dependencies (@zone-eu/mailsplit 5.4.14) ([e977b7d](https://github.com/postalsys/imapflow/commit/e977b7d0926af57756155bdb605f60352096bbe2))
+
 ## [1.4.5](https://github.com/postalsys/imapflow/compare/v1.4.4...v1.4.5) (2026-07-05)
 
 
