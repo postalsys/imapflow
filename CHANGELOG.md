@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.4](https://github.com/postalsys/imapflow/compare/v1.4.3...v1.4.4) (2026-07-05)
+
+
+### Bug Fixes
+
+* update dependencies (nodemailer 9.0.3, iconv-lite 0.7.3) ([1faf7e8](https://github.com/postalsys/imapflow/commit/1faf7e84e08c62c68f8cf033bcd8bf650096f4ad))
+
 ## [1.4.3](https://github.com/postalsys/imapflow/compare/v1.4.2...v1.4.3) (2026-06-26)
 
 
