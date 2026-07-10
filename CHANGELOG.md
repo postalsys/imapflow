@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.7](https://github.com/postalsys/imapflow/compare/v1.4.6...v1.4.7) (2026-07-10)
+
+
+### Bug Fixes
+
+* treat \NonExistent mailboxes as \Noselect in LIST responses ([af21245](https://github.com/postalsys/imapflow/commit/af21245dab4e1320afc4c4458afe33d1508180c1))
+
 ## [1.4.6](https://github.com/postalsys/imapflow/compare/v1.4.5...v1.4.6) (2026-07-05)
 
 
