@@ -3550,6 +3550,94 @@ module.exports['Commands: list skips Noselect folders for status'] = async test 
     test.done();
 };
 
+module.exports['Commands: list adds Noselect to NonExistent mailboxes'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\NonExistent' }], { value: '/' }, { value: 'Phantom' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const phantom = result.find(e => e.path === 'Phantom');
+    test.ok(phantom);
+    // RFC 5258: \\NonExistent implies \\Noselect
+    test.equal(phantom.flags.has('\\Noselect'), true);
+    // The original flag is preserved, not replaced
+    test.equal(phantom.flags.has('\\NonExistent'), true);
+    const inbox = result.find(e => e.path === 'INBOX');
+    test.ok(inbox);
+    test.equal(inbox.flags.has('\\Noselect'), false);
+    test.done();
+};
+
+module.exports['Commands: list LSUB merge adds Noselect to NonExistent'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
+                // Some servers only report \\NonExistent in LSUB responses
+                await opts.untagged.LSUB({
+                    attributes: [[{ value: '\\NonExistent' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const folder = result.find(e => e.path === 'Folder1');
+    test.ok(folder);
+    test.equal(folder.subscribed, true);
+    test.equal(folder.flags.has('\\NonExistent'), true);
+    // RFC 5258: \\NonExistent merged from LSUB implies \\Noselect
+    test.equal(folder.flags.has('\\Noselect'), true);
+    test.done();
+};
+
+module.exports['Commands: list does not STATUS NonExistent mailboxes'] = async test => {
+    let statusPaths = [];
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map(),
+        run: async (cmd, path) => {
+            if (cmd === 'STATUS') {
+                statusPaths.push(path);
+                return { messages: 10 };
+            }
+        },
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\NonExistent' }], { value: '/' }, { value: 'Phantom' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await listCommand(connection, '', '*', { statusQuery: { messages: true } });
+    // STATUS runs for the selectable mailbox only
+    test.deepEqual(statusPaths, ['INBOX']);
+    test.done();
+};
+
 module.exports['Commands: list XLIST removes Inbox flag from non-INBOX'] = async test => {
     const connection = createMockConnection({
         state: 3,
