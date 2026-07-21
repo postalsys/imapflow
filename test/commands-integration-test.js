@@ -30,6 +30,9 @@ const createMockConnection = (overrides = {}) => {
         states,
         state: overrides.state || states.SELECTED,
         id: 'test-connection-id',
+        // Mirrors imap-flow.js, which always resolves a port before authenticating. Without a
+        // default the OAUTHBEARER payload builds `port=undefined`.
+        port: overrides.port || 993,
         capabilities: new Map(overrides.capabilities || [['IMAP4rev1', true]]),
         enabled: new Set(overrides.enabled || []),
         authCapabilities: new Map(),
@@ -57,6 +60,9 @@ const createMockConnection = (overrides = {}) => {
         ...overrides
     };
 };
+
+// Decodes the base64 SASL payload that authenticate() hands to exec().
+const decodeSaslPayload = execArgs => Buffer.from(execArgs.args[1].value, 'base64').toString();
 
 // ============================================
 // CAPABILITY Command Tests
@@ -7441,6 +7447,55 @@ module.exports['Commands: authenticate with OAUTHBEARER'] = async test => {
     test.equal(execArgs.cmd, 'AUTHENTICATE');
     test.equal(execArgs.args[0].value, 'OAUTHBEARER');
     test.ok(connection.authCapabilities.has('AUTH=OAUTHBEARER'));
+    test.ok(decodeSaslPayload(execArgs).includes('port=993'), 'the payload should report the connection port');
+    test.done();
+};
+
+module.exports['Commands: OAUTHBEARER payload reports the port actually in use'] = async test => {
+    // Regression: the port field was hardcoded to 993 - see lib/commands/authenticate.js.
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+        servername: 'imap.example.com',
+        port: 143,
+        authCapabilities: new Map(),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await authenticateCommand(connection, 'user@example.com', { accessToken: 'token123' });
+
+    const payload = decodeSaslPayload(execArgs);
+    test.ok(payload.includes('port=143'), `expected port=143 in the SASL payload, got: ${JSON.stringify(payload)}`);
+    test.ok(payload.includes('host=imap.example.com'), 'the host field should still describe the connection');
+    test.done();
+};
+
+module.exports['Commands: OAUTHBEARER payload falls back to host when servername is false'] = async test => {
+    // imap-flow.js sets servername = false for a bare-IP host, which rendered as "host=false".
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 1,
+        capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+        servername: false,
+        host: '198.51.100.7',
+        authCapabilities: new Map(),
+        exec: async (cmd, args) => {
+            execArgs = { cmd, args };
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await authenticateCommand(connection, 'user@example.com', { accessToken: 'token123' });
+
+    const payload = decodeSaslPayload(execArgs);
+    test.ok(payload.includes('host=198.51.100.7'), `expected the host as fallback, got: ${JSON.stringify(payload)}`);
+    test.ok(!payload.includes('host=false'), 'the literal "host=false" must never be sent');
     test.done();
 };
 
