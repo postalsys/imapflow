@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.8](https://github.com/postalsys/imapflow/compare/v1.4.7...v1.4.8) (2026-07-21)
+
+
+### Bug Fixes
+
+* **auth:** describe the real connection in the OAUTHBEARER payload ([aca7cb3](https://github.com/postalsys/imapflow/commit/aca7cb3ab7e67704cb692ad59f6db0792040a888))
+* default a non-secure connection to IMAP port 143, not POP3 110 ([5896488](https://github.com/postalsys/imapflow/commit/589648821c5dd1b1750959fa2917b3571ba93db5))
+
 ## [1.4.7](https://github.com/postalsys/imapflow/compare/v1.4.6...v1.4.7) (2026-07-10)
 
 
