@@ -20,7 +20,7 @@ module.exports['Connection: Default options'] = test => {
         auth: { user: 'test', pass: 'test' }
     });
 
-    test.equal(client.port, 110);
+    test.equal(client.port, 143);
     test.equal(client.secureConnection, false);
     test.done();
 };

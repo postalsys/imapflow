@@ -143,7 +143,7 @@ module.exports['Connection Edge: Connection with default values'] = test => {
     });
 
     test.ok(client, 'Client should be created with defaults');
-    test.equal(client.port, 110, 'Should use default port');
+    test.equal(client.port, 143, 'Should use default port');
     test.equal(client.secureConnection, false, 'Should default to non-secure');
     test.done();
 };
@@ -155,7 +155,7 @@ module.exports['Connection Edge: Port number handling'] = test => {
         secure: false,
         auth: { user: 'test', pass: 'test' }
     });
-    test.equal(client1.port, 110, 'Default non-secure port');
+    test.equal(client1.port, 143, 'Default non-secure port');
 
     let client2 = new ImapFlow({
         host: 'imap.example.com',
