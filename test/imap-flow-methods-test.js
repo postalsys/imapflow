@@ -721,12 +721,7 @@ module.exports['Methods: untaggedFetch emits flags event'] = async test => {
         command: '1',
         attributes: [
             { type: 'ATOM', value: 'FETCH' },
-            [
-                { type: 'ATOM', value: 'UID' },
-                { type: 'ATOM', value: '100' },
-                { type: 'ATOM', value: 'FLAGS' },
-                [{ type: 'ATOM', value: '\\Seen' }]
-            ]
+            [{ type: 'ATOM', value: 'UID' }, { type: 'ATOM', value: '100' }, { type: 'ATOM', value: 'FLAGS' }, [{ type: 'ATOM', value: '\\Seen' }]]
         ]
     };
     await client.untaggedFetch(untagged);
@@ -734,5 +729,56 @@ module.exports['Methods: untaggedFetch emits flags event'] = async test => {
     test.equal(evt.uid, 100);
     test.ok(evt.flags instanceof Set);
     test.ok(evt.flags.has('\\Seen'));
+    test.done();
+};
+
+// ============================================
+// autoEnable
+// ============================================
+
+module.exports['Methods: autoEnable requests IMAP4rev2 alongside the base extensions'] = async test => {
+    let client = makeClient();
+    let calls = recordRun(client, new Set(['CONDSTORE', 'IMAP4REV2']));
+    await client.autoEnable();
+    test.equal(calls.length, 1);
+    test.deepEqual(calls[0], ['ENABLE', ['CONDSTORE', 'UTF8=ACCEPT', 'IMAP4rev2']]);
+    test.done();
+};
+
+module.exports['Methods: autoEnable honors disableIMAP4rev2'] = async test => {
+    let client = makeClient({ disableIMAP4rev2: true });
+    let calls = recordRun(client, new Set(['CONDSTORE']));
+    await client.autoEnable();
+    test.equal(calls.length, 1);
+    test.deepEqual(calls[0], ['ENABLE', ['CONDSTORE', 'UTF8=ACCEPT']]);
+    test.done();
+};
+
+module.exports['Methods: autoEnable includes QRESYNC when requested'] = async test => {
+    let client = makeClient({ qresync: true });
+    let calls = recordRun(client, new Set(['CONDSTORE', 'QRESYNC', 'IMAP4REV2']));
+    await client.autoEnable();
+    test.equal(calls.length, 1);
+    test.deepEqual(calls[0], ['ENABLE', ['CONDSTORE', 'UTF8=ACCEPT', 'QRESYNC', 'IMAP4rev2']]);
+    test.done();
+};
+
+module.exports['Methods: autoEnable retries without IMAP4rev2 when the whole command fails'] = async test => {
+    let client = makeClient();
+    // RFC 5161 requires unknown ENABLE arguments to be ignored, but a broken
+    // server may reject the whole command over IMAP4rev2 - the retry keeps
+    // CONDSTORE/UTF8=ACCEPT from being lost as collateral damage
+    let calls = recordRun(client, (cmd, list) => (list.includes('IMAP4rev2') ? false : new Set(['CONDSTORE'])));
+    await client.autoEnable();
+    test.equal(calls.length, 2);
+    test.deepEqual(calls[1], ['ENABLE', ['CONDSTORE', 'UTF8=ACCEPT']]);
+    test.done();
+};
+
+module.exports['Methods: autoEnable does not retry when disableIMAP4rev2 already omitted it'] = async test => {
+    let client = makeClient({ disableIMAP4rev2: true });
+    let calls = recordRun(client, () => false);
+    await client.autoEnable();
+    test.equal(calls.length, 1);
     test.done();
 };

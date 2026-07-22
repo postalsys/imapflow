@@ -355,7 +355,7 @@ module.exports['Internals: secure connection defaults to port 993'] = test => {
 
 module.exports['Internals: getUntaggedHandler ignores non-string type token'] = test => {
     let client = makeClient();
-    client.untaggedHandlers = { '5': () => 'numeric-keyword-handler' };
+    client.untaggedHandlers = { 5: () => 'numeric-keyword-handler' };
     // numeric prefix but attributes[0].value is not a string -> keyword stays '5'
     let handler = client.getUntaggedHandler('5', [{ type: 'ATOM', value: 12345 }]);
     test.equal(handler(), 'numeric-keyword-handler');
@@ -409,7 +409,7 @@ module.exports['Internals: unbind falls back to socket when writeSocket missing'
     };
     client.socket = raw;
     client.writeSocket = null;
-    client.streamer = { /* unused here */ };
+    client.streamer = {/* unused here */};
     let result = client.unbind();
     test.equal(result.writeSocket, raw);
     test.done();

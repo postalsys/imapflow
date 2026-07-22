@@ -341,8 +341,7 @@ module.exports['IMAP Parser: empty continuation (+) response'] = test =>
         test.equal(parsed.command, '');
     });
 
-module.exports['IMAP Parser: non-space after command throws ParserError5'] = test =>
-    expectErrorCode(test, 'ParserError5', () => parser('TAG1 CMD\tx'));
+module.exports['IMAP Parser: non-space after command throws ParserError5'] = test => expectErrorCode(test, 'ParserError5', () => parser('TAG1 CMD\tx'));
 
 module.exports['IMAP Parser: leading whitespace in attributes throws ParserError7'] = test =>
     expectErrorCode(test, 'ParserError7', () => parser('TAG1 CMD \tx'));

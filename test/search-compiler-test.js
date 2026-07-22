@@ -191,6 +191,25 @@ module.exports['Search Compiler: RECENT flag'] = test => {
     test.done();
 };
 
+module.exports['Search Compiler: NEW/OLD/RECENT throw on rev2 sessions'] = test => {
+    // IMAP4rev2 (RFC 9051) removed the \Recent flag and these search keys -
+    // a rev2 server would reject the whole search with a tagged BAD
+    let connection = createMockConnection({ enabled: ['IMAP4REV2'] });
+    for (let key of ['new', 'old', 'recent']) {
+        try {
+            searchCompiler(connection, { [key]: true });
+            test.ok(false, `Should have thrown for ${key}`);
+        } catch (err) {
+            test.equal(err.code, 'MissingServerExtension');
+        }
+    }
+    // Falsy values compile to nothing and must not throw
+    test.equal(searchCompiler(connection, { recent: false }).length, 0);
+    // ALL is still part of the rev2 grammar
+    test.ok(hasAttr(searchCompiler(connection, { all: true }), 'ALL'));
+    test.done();
+};
+
 module.exports['Search Compiler: Simple flags ignored when falsy'] = test => {
     let connection = createMockConnection();
     let compiled = searchCompiler(connection, {

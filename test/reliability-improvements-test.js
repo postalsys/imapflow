@@ -204,7 +204,10 @@ module.exports['Reliability: per-call maxLockHoldTime overrides constructor opti
     let lock = await client.getMailboxLock('INBOX', { maxLockHoldTime: 20 });
     await new Promise(r => setTimeout(r, 50));
 
-    test.ok(warnings.some(w => w && w.msg === 'Mailbox lock held for a long time'), 'Per-call override must take effect');
+    test.ok(
+        warnings.some(w => w && w.msg === 'Mailbox lock held for a long time'),
+        'Per-call override must take effect'
+    );
 
     lock.release();
     await drain();

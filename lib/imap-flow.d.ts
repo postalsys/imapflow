@@ -54,6 +54,8 @@ export interface ImapFlowOptions {
     disableBinary?: boolean;
     /** If true, do not enable supported extensions */
     disableAutoEnable?: boolean;
+    /** If true, do not enable IMAP4rev2 mode even if the server supports it */
+    disableIMAP4rev2?: boolean;
     /** How long to wait for the connection to be established. Defaults to 90 seconds */
     connectionTimeout?: number;
     /** How long to wait for the greeting. Defaults to 16 seconds */
@@ -103,7 +105,7 @@ export interface MailboxObject {
     specialUse?: string;
     /** True if mailbox was found from the output of LIST command */
     listed?: boolean;
-    /** True if mailbox was found from the output of LSUB command */
+    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers */
     subscribed?: boolean;
     /** A Set of flags available to use in this mailbox. If it is not set or includes special flag "\*" then any flag can be used */
     permanentFlags?: Set<string>;
@@ -184,7 +186,7 @@ export interface ListResponse {
     specialUse?: string;
     /** True if mailbox was found from the output of LIST command */
     listed: boolean;
-    /** True if mailbox was found from the output of LSUB command */
+    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers */
     subscribed: boolean;
     /** If statusQuery was used, then this value includes the status response */
     status?: StatusObject;
@@ -234,7 +236,7 @@ export interface ListTreeResponse {
     specialUse?: string;
     /** True if mailbox was found from the output of LIST command */
     listed?: boolean;
-    /** True if mailbox was found from the output of LSUB command */
+    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers */
     subscribed?: boolean;
     /** If true then this mailbox can not be selected in the UI */
     disabled?: boolean;

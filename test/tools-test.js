@@ -7,7 +7,8 @@ const iconv = require('iconv-lite');
 
 // Mock connection for testing
 let createMockConnection = (options = {}) => ({
-    enabled: new Set(options.utf8 ? ['UTF8=ACCEPT'] : []),
+    enabled: new Set(options.enabled || (options.utf8 ? ['UTF8=ACCEPT'] : [])),
+    capabilities: new Map(options.capabilities || []),
     namespace: options.namespace || null
 });
 
@@ -159,6 +160,102 @@ module.exports['Tools: updateCapabilities with valid list'] = test => {
     test.equal(result.get('IMAP4rev1'), true);
     test.equal(result.get('IDLE'), true);
     test.equal(result.get('NAMESPACE'), true);
+    test.done();
+};
+
+module.exports['Tools: updateCapabilities normalizes IMAP4rev2 casing'] = test => {
+    let list = [{ value: 'IMAP4rev2' }, { value: 'imap4rev1' }];
+    let result = tools.updateCapabilities(list);
+    // Wire tokens are uppercased, but the rev1/rev2 keys use the RFC spelling
+    test.equal(result.get('IMAP4rev2'), true);
+    test.equal(result.get('IMAP4rev1'), true);
+    test.equal(result.has('IMAP4REV2'), false);
+    test.done();
+};
+
+module.exports['Tools: isRev2Active for rev2-only server'] = test => {
+    // rev2 without rev1 means rev2 is the base protocol, no ENABLE needed
+    let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
+    test.equal(tools.isRev2Active(connection), true);
+    test.done();
+};
+
+module.exports['Tools: isRev2Active for dual server without ENABLE'] = test => {
+    // Advertising both keeps the session in rev1 mode until ENABLE IMAP4rev2
+    let connection = createMockConnection({
+        capabilities: [
+            ['IMAP4rev1', true],
+            ['IMAP4rev2', true]
+        ]
+    });
+    test.equal(tools.isRev2Active(connection), false);
+    test.done();
+};
+
+module.exports['Tools: isRev2Active for dual server with ENABLE'] = test => {
+    let connection = createMockConnection({
+        capabilities: [
+            ['IMAP4rev1', true],
+            ['IMAP4rev2', true]
+        ],
+        enabled: ['IMAP4REV2']
+    });
+    test.equal(tools.isRev2Active(connection), true);
+    test.done();
+};
+
+module.exports['Tools: isRev2Active for rev1-only server'] = test => {
+    let connection = createMockConnection({ capabilities: [['IMAP4rev1', true]] });
+    test.equal(tools.isRev2Active(connection), false);
+    test.done();
+};
+
+module.exports['Tools: hasCapability with advertised token'] = test => {
+    let connection = createMockConnection({
+        capabilities: [
+            ['IMAP4rev1', true],
+            ['UIDPLUS', true]
+        ]
+    });
+    test.equal(tools.hasCapability(connection, 'UIDPLUS'), true);
+    test.equal(tools.hasCapability(connection, 'MOVE'), false);
+    test.done();
+};
+
+module.exports['Tools: hasCapability folds extensions into active rev2'] = test => {
+    let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
+    // RFC 9051 Appendix E folds these into base IMAP4rev2
+    for (let capability of ['UIDPLUS', 'MOVE', 'NAMESPACE', 'ESEARCH', 'LITERAL-', 'LIST-EXTENDED', 'LIST-STATUS', 'SPECIAL-USE', 'ENABLE']) {
+        test.equal(tools.hasCapability(connection, capability), true, `${capability} should be folded into rev2`);
+    }
+    // BINARY is intentionally not folded
+    test.equal(tools.hasCapability(connection, 'BINARY'), false);
+    test.done();
+};
+
+module.exports['Tools: hasCapability does not fold on unenabled dual server'] = test => {
+    let connection = createMockConnection({
+        capabilities: [
+            ['IMAP4rev1', true],
+            ['IMAP4rev2', true]
+        ]
+    });
+    // Session is in rev1 mode - only explicitly advertised tokens count
+    test.equal(tools.hasCapability(connection, 'UIDPLUS'), false);
+    test.done();
+};
+
+module.exports['Tools: encodePath keeps UTF-8 when rev2 is active'] = test => {
+    let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
+    // rev2 mailbox names are native UTF-8, modified UTF-7 must not be applied
+    test.equal(tools.encodePath(connection, 'T\u00f5rva'), 'T\u00f5rva');
+    test.done();
+};
+
+module.exports['Tools: decodePath keeps ampersand sequences when rev2 is active'] = test => {
+    let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
+    // Under rev2 an "&"-sequence is a literal name, not modified UTF-7
+    test.equal(tools.decodePath(connection, 'A&AOQ-B'), 'A&AOQ-B');
     test.done();
 };
 
@@ -490,6 +587,30 @@ module.exports['Tools: expandRange with mixed'] = test => {
 module.exports['Tools: expandRange with same start/end'] = test => {
     let result = tools.expandRange('5:5');
     test.deepEqual(result, [5]);
+    test.done();
+};
+
+module.exports['Tools: expandRange skips entries that are not valid nz-numbers'] = test => {
+    // Server-supplied garbage must not produce bogus ids or endless loops
+    test.deepEqual(tools.expandRange('Infinity:5'), []);
+    test.deepEqual(tools.expandRange('0:3'), []);
+    test.deepEqual(tools.expandRange('abc,4,1:x'), [4]);
+    test.deepEqual(tools.expandRange('*'), []);
+    test.deepEqual(tools.expandRange('4294967296'), []);
+    test.done();
+};
+
+module.exports['Tools: expandRange caps hostile range spans'] = test => {
+    // A hostile range like 1:4294967295 is cut off at the expansion limit
+    // instead of exhausting memory
+    let result = tools.expandRange('1:4294967295');
+    test.equal(result.length, 0x1000000);
+    test.equal(result[0], 1);
+    test.equal(result[result.length - 1], 0x1000000);
+
+    let reverse = tools.expandRange('4294967295:4278190080');
+    test.equal(reverse.length, 0x1000000);
+    test.equal(reverse[0], 4294967295);
     test.done();
 };
 
@@ -1303,9 +1424,7 @@ module.exports['Tools: parseBodystructure parses message/rfc822 with envelope an
 };
 
 module.exports['Tools: parseBodystructure parses multipart with params and disposition'] = async test => {
-    let bs =
-        '(("TEXT" "PLAIN" NIL NIL NIL "7BIT" 10 1)("TEXT" "HTML" NIL NIL NIL "7BIT" 20 2) ' +
-        '"ALTERNATIVE" ("BOUNDARY" "xyz") ("inline" NIL) ("en"))';
+    let bs = '(("TEXT" "PLAIN" NIL NIL NIL "7BIT" 10 1)("TEXT" "HTML" NIL NIL NIL "7BIT" 20 2) "ALTERNATIVE" ("BOUNDARY" "xyz") ("inline" NIL) ("en"))';
     let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
     let node = tools.parseBodystructure(untagged.attributes[1][1]);
     test.equal(node.type, 'multipart/alternative');
@@ -1348,7 +1467,7 @@ module.exports['Tools: parseBodystructure handles minimal NIL fields'] = async t
 };
 
 module.exports['Tools: parseBodystructure decodes RFC 2231 charset continuation params'] = async test => {
-    let bs = "(\"TEXT\" \"PLAIN\" (\"name*0*\" \"utf-8''%E2%82%AC abc\" \"name*1\" \"def\") NIL NIL \"7BIT\" 10 1)";
+    let bs = '("TEXT" "PLAIN" ("name*0*" "utf-8\'\'%E2%82%AC abc" "name*1" "def") NIL NIL "7BIT" 10 1)';
     let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
     let node = tools.parseBodystructure(untagged.attributes[1][1]);
     test.equal(node.parameters.name, '€ abcdef');
@@ -1453,9 +1572,7 @@ module.exports['Tools: parseBodystructure empty-string size/linecount/language/l
 };
 
 module.exports['Tools: parseBodystructure message/rfc822 empty-string linecount'] = async test => {
-    let bs =
-        '("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 100 ("d" "s" NIL NIL NIL NIL NIL NIL NIL NIL) ' +
-        '("TEXT" "PLAIN" NIL NIL NIL "7BIT" 1 1) "")';
+    let bs = '("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 100 ("d" "s" NIL NIL NIL NIL NIL NIL NIL NIL) ("TEXT" "PLAIN" NIL NIL NIL "7BIT" 1 1) "")';
     let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
     let node = tools.parseBodystructure(untagged.attributes[1][1]);
     test.equal(node.type, 'message/rfc822');
@@ -1468,7 +1585,7 @@ module.exports['Tools: parseBodystructure decodes RFC 2231 with empty charset an
     // exercise the 2-char hex escape branch; the empty *1* continuation segment too.
     // value includes '=' / '?' (2-char hex escapes), a space (-> '_') and a TAB
     // (a <0x10 control char -> single-hex-digit escape needing a '0' pad).
-    let bs = "(\"TEXT\" \"PLAIN\" (\"name*0*\" \"''a=b?c d\te\" \"name*1*\" \"\") NIL NIL \"7BIT\" 1 1)";
+    let bs = '("TEXT" "PLAIN" ("name*0*" "\'\'a=b?c d\te" "name*1*" "") NIL NIL "7BIT" 1 1)';
     let untagged = await parser('* 1 FETCH (BODYSTRUCTURE ' + bs + ')');
     let node = tools.parseBodystructure(untagged.attributes[1][1]);
     test.ok(node.parameters.name.includes('a=b?c'));
@@ -1485,13 +1602,15 @@ module.exports['Tools: parseBodystructure parses empty-string body location'] = 
     test.done();
 };
 
-module.exports['Tools: expandRange descending range to non-numeric second bound'] = test => {
-    test.deepEqual(tools.expandRange('5:abc'), [5, 4, 3, 2, 1, 0]);
+module.exports['Tools: expandRange skips descending range to non-numeric second bound'] = test => {
+    // Endpoints that are not valid nz-numbers make the whole entry invalid -
+    // the pre-hardening behavior expanded '5:abc' down to 0
+    test.deepEqual(tools.expandRange('5:abc'), []);
     test.done();
 };
 
-module.exports['Tools: expandRange tolerates non-numeric entries'] = test => {
-    test.deepEqual(tools.expandRange('abc,:5,1:3'), [0, 0, 1, 2, 3, 4, 5, 1, 2, 3]);
+module.exports['Tools: expandRange skips non-numeric entries but keeps valid ones'] = test => {
+    test.deepEqual(tools.expandRange('abc,:5,1:3'), [1, 2, 3]);
     test.done();
 };
 
@@ -1508,7 +1627,7 @@ module.exports['Tools: encodePath keeps name as-is when iconv encode throws'] = 
         throw new Error('encode boom');
     };
     try {
-        let connection = { enabled: new Set() };
+        let connection = { enabled: new Set(), capabilities: new Map() };
         let result = tools.encodePath(connection, 'Tärä');
         test.equal(result, 'Tärä', 'falls back to the raw path');
     } finally {
@@ -1523,7 +1642,7 @@ module.exports['Tools: decodePath keeps name as-is when iconv decode throws'] = 
         throw new Error('decode boom');
     };
     try {
-        let connection = { enabled: new Set() };
+        let connection = { enabled: new Set(), capabilities: new Map() };
         let result = tools.decodePath(connection, 'Inbox&AOk-');
         test.equal(result, 'Inbox&AOk-');
     } finally {

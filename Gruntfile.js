@@ -8,7 +8,9 @@ module.exports = function (grunt) {
         },
 
         nodeunit: {
-            all: ['test/**/*-test.js']
+            // test/integration is excluded: those tests need a live Docker server
+            // and run via `npm run test:rev2` instead
+            all: ['test/**/*-test.js', '!test/integration/**']
         }
     });
 

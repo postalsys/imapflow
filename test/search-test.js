@@ -14,6 +14,7 @@ function makeConnection({ hasEsearch = true } = {}) {
         state: 'SELECTED',
         states: { SELECTED: 'SELECTED' },
         capabilities: caps,
+        enabled: new Set(),
         exec: async () => ({ next: () => {} }),
         log: { warn: () => {} }
     };
@@ -72,23 +73,6 @@ module.exports['ESEARCH: parseEsearchResponse PARTIAL (Array form)'] = test => {
     test.done();
 };
 
-module.exports['ESEARCH: parseEsearchResponse PARTIAL (LIST object form)'] = test => {
-    // Also handle {type: 'LIST', attributes: [...]} form for robustness
-    const attrs = [
-        { type: 'ATOM', value: 'PARTIAL' },
-        {
-            type: 'LIST',
-            attributes: [
-                { type: 'ATOM', value: '1:100' },
-                { type: 'ATOM', value: '1001,1003:1010,1015' }
-            ]
-        }
-    ];
-    const result = parseEsearchResponse(attrs);
-    test.deepEqual(result.partial, { range: '1:100', messages: '1001,1003:1010,1015' });
-    test.done();
-};
-
 module.exports['ESEARCH: parseEsearchResponse COUNT + PARTIAL combined'] = test => {
     const attrs = [
         { type: 'ATOM', value: 'COUNT' },
@@ -116,12 +100,14 @@ module.exports['ESEARCH: emits RETURN clause when returnOptions present and serv
         capturedAttributes = JSON.stringify(attributes);
         return { next: () => {} };
     };
-    searchCmd(conn, { seen: false }, { uid: true, returnOptions: ['COUNT'] }).then(() => {
-        test.equal(capturedCommand, 'UID SEARCH');
-        test.ok(capturedAttributes.includes('"RETURN"'), 'should include RETURN atom');
-        test.ok(capturedAttributes.includes('"COUNT"'), 'should include COUNT in return list');
-        test.done();
-    }).catch(err => test.done(err));
+    searchCmd(conn, { seen: false }, { uid: true, returnOptions: ['COUNT'] })
+        .then(() => {
+            test.equal(capturedCommand, 'UID SEARCH');
+            test.ok(capturedAttributes.includes('"RETURN"'), 'should include RETURN atom');
+            test.ok(capturedAttributes.includes('"COUNT"'), 'should include COUNT in return list');
+            test.done();
+        })
+        .catch(err => test.done(err));
 };
 
 module.exports['ESEARCH: RETURN clause includes PARTIAL range atom'] = test => {
@@ -131,11 +117,13 @@ module.exports['ESEARCH: RETURN clause includes PARTIAL range atom'] = test => {
         capturedAttributes = JSON.stringify(attributes);
         return { next: () => {} };
     };
-    searchCmd(conn, { seen: false }, { uid: true, returnOptions: [{ partial: '1:100' }] }).then(() => {
-        test.ok(capturedAttributes.includes('"PARTIAL"'), 'should include PARTIAL atom');
-        test.ok(capturedAttributes.includes('"1:100"'), 'should include range string');
-        test.done();
-    }).catch(err => test.done(err));
+    searchCmd(conn, { seen: false }, { uid: true, returnOptions: [{ partial: '1:100' }] })
+        .then(() => {
+            test.ok(capturedAttributes.includes('"PARTIAL"'), 'should include PARTIAL atom');
+            test.ok(capturedAttributes.includes('"1:100"'), 'should include range string');
+            test.done();
+        })
+        .catch(err => test.done(err));
 };
 
 module.exports['ESEARCH: no RETURN clause when server lacks ESEARCH capability'] = test => {
@@ -152,12 +140,14 @@ module.exports['ESEARCH: no RETURN clause when server lacks ESEARCH capability']
         }
         return { next: () => {} };
     };
-    searchCmd(conn, { seen: false }, { uid: true, returnOptions: ['COUNT', 'ALL'] }).then(result => {
-        test.ok(!capturedAttributes.includes('"RETURN"'), 'should NOT include RETURN when no ESEARCH');
-        test.ok(Array.isArray(result), 'should return number[] when ESEARCH unavailable');
-        test.deepEqual(result, [1, 2, 3]);
-        test.done();
-    }).catch(err => test.done(err));
+    searchCmd(conn, { seen: false }, { uid: true, returnOptions: ['COUNT', 'ALL'] })
+        .then(result => {
+            test.ok(!capturedAttributes.includes('"RETURN"'), 'should NOT include RETURN when no ESEARCH');
+            test.ok(Array.isArray(result), 'should return number[] when ESEARCH unavailable');
+            test.deepEqual(result, [1, 2, 3]);
+            test.done();
+        })
+        .catch(err => test.done(err));
 };
 
 module.exports['ESEARCH: parseEsearchResponse skips non-ATOM tokens'] = test => {
@@ -247,11 +237,13 @@ module.exports['ESEARCH: backward compat — no returnOptions returns number[]']
         return { next: () => {} };
     };
     // No returnOptions — must return number[] even if server has ESEARCH
-    searchCmd(conn, { seen: true }, { uid: true }).then(result => {
-        test.ok(Array.isArray(result));
-        test.deepEqual(result, [10, 20]);
-        test.done();
-    }).catch(err => test.done(err));
+    searchCmd(conn, { seen: true }, { uid: true })
+        .then(result => {
+            test.ok(Array.isArray(result));
+            test.deepEqual(result, [10, 20]);
+            test.done();
+        })
+        .catch(err => test.done(err));
 };
 
 // ── imap-flow.js public API fallback test ─────────────────────────────────
@@ -271,16 +263,19 @@ module.exports['imap-flow: search() derives ESearchResult when server has no ESE
     // Stub run() to return a sorted number[]
     client.run = async () => [10, 20, 30, 40, 50];
 
-    client.search({ seen: false }, { uid: true, returnOptions: ['COUNT', 'MIN', 'MAX', 'ALL'] }).then(result => {
-        test.equal(typeof result, 'object', 'should return object, not array');
-        test.ok(!Array.isArray(result), 'should not be an array');
-        test.equal(result.count, 5);
-        test.equal(result.min, 10);
-        test.equal(result.max, 50);
-        // packMessageRange([10,20,30,40,50]) → "10,20,30,40,50" (non-contiguous)
-        test.ok(typeof result.all === 'string' && result.all.length > 0, 'all should be non-empty compact string');
-        test.done();
-    }).catch(err => test.done(err));
+    client
+        .search({ seen: false }, { uid: true, returnOptions: ['COUNT', 'MIN', 'MAX', 'ALL'] })
+        .then(result => {
+            test.equal(typeof result, 'object', 'should return object, not array');
+            test.ok(!Array.isArray(result), 'should not be an array');
+            test.equal(result.count, 5);
+            test.equal(result.min, 10);
+            test.equal(result.max, 50);
+            // packMessageRange([10,20,30,40,50]) → "10,20,30,40,50" (non-contiguous)
+            test.ok(typeof result.all === 'string' && result.all.length > 0, 'all should be non-empty compact string');
+            test.done();
+        })
+        .catch(err => test.done(err));
 };
 
 module.exports['imap-flow: search() fallback with empty result set'] = test => {
@@ -294,9 +289,12 @@ module.exports['imap-flow: search() fallback with empty result set'] = test => {
     client.state = client.states.SELECTED;
     client.capabilities = new Map();
     client.run = async () => [];
-    client.search({}, { uid: true, returnOptions: ['COUNT', 'ALL'] }).then(result => {
-        test.equal(result.count, 0);
-        test.equal(result.all, undefined, 'all should be absent for empty result');
-        test.done();
-    }).catch(err => test.done(err));
+    client
+        .search({}, { uid: true, returnOptions: ['COUNT', 'ALL'] })
+        .then(result => {
+            test.equal(result.count, 0);
+            test.equal(result.all, undefined, 'all should be absent for empty result');
+            test.done();
+        })
+        .catch(err => test.done(err));
 };

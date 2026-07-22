@@ -553,7 +553,14 @@ module.exports['Coverage: reader handles compiler failure when building executed
     client.requestTagMap.set('A1', {
         command: 'NOOP',
         // a circular/odd attribute that makes the logging compiler throw
-        attributes: [{ type: 'LITERAL', get value() { throw new Error('compile boom'); } }],
+        attributes: [
+            {
+                type: 'LITERAL',
+                get value() {
+                    throw new Error('compile boom');
+                }
+            }
+        ],
         options: {},
         resolve: () => {},
         reject: err => {

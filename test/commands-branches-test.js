@@ -415,7 +415,7 @@ module.exports['Branches: search with undefined options uses {} fallback'] = asy
 // operand of the OR is evaluated and used to skip it.
 // ============================================================================
 
-module.exports['Branches: search ESEARCH without uid emits SEARCH and skips LIST-typed tag'] = async test => {
+module.exports['Branches: search ESEARCH without uid emits SEARCH and skips the tag correlator'] = async test => {
     let execCmd = null;
     const connection = createMockConnection({
         state: 3,
@@ -423,10 +423,17 @@ module.exports['Branches: search ESEARCH without uid emits SEARCH and skips LIST
         exec: async (cmd, attrs, opts) => {
             execCmd = cmd;
             if (opts && opts.untagged && opts.untagged.ESEARCH) {
-                // attrs[0] is a LIST-typed object (not a plain Array) -> exercises
-                // the `attrs[start].type === 'LIST'` branch on line 150.
+                // attrs[0] is the (TAG "...") correlator group, represented by the
+                // parser as a plain Array - it must be skipped before the keywords
                 await opts.untagged.ESEARCH({
-                    attributes: [{ type: 'LIST' }, { type: 'ATOM', value: 'COUNT' }, { type: 'ATOM', value: '7' }]
+                    attributes: [
+                        [
+                            { type: 'ATOM', value: 'TAG' },
+                            { type: 'STRING', value: 'A1' }
+                        ],
+                        { type: 'ATOM', value: 'COUNT' },
+                        { type: 'ATOM', value: '7' }
+                    ]
                 });
             }
             return { next: () => {} };

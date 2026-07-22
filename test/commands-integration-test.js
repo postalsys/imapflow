@@ -49,6 +49,10 @@ const createMockConnection = (overrides = {}) => {
         close: overrides.close || (() => {}),
         emit: overrides.emit || (() => {}),
         currentSelectCommand: false,
+        skipListSubscribedArg: false,
+        skipListStatusArgs: false,
+        skipListAuxArgs: false,
+        skipLsub: false,
         messageFlagsAdd: overrides.messageFlagsAdd || (async () => {}),
         run: overrides.run || (async () => {}),
         exec:
@@ -63,6 +67,20 @@ const createMockConnection = (overrides = {}) => {
 
 // Decodes the base64 SASL payload that authenticate() hands to exec().
 const decodeSaslPayload = execArgs => Buffer.from(execArgs.args[1].value, 'base64').toString();
+
+// Builds the error shape the reader loop attaches to failed commands: tagged
+// rejections carry responseStatus ('BAD'/'NO'), transport and throttling
+// failures carry a code ('NoConnection', 'ETHROTTLE').
+const commandError = (message, responseStatus, code) => {
+    let err = new Error(message);
+    if (responseStatus) {
+        err.responseStatus = responseStatus;
+    }
+    if (code) {
+        err.code = code;
+    }
+    return err;
+};
 
 // ============================================
 // CAPABILITY Command Tests
@@ -439,6 +457,109 @@ module.exports['Commands: search with ALL'] = async test => {
     const result = await searchCommand(connection, true, {});
     test.deepEqual(result, [1, 2, 3]);
     test.equal(execArgs.cmd, 'SEARCH');
+    test.done();
+};
+
+module.exports['Commands: search collects results from an ESEARCH reply to plain SEARCH'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            // IMAP4rev2 servers answer a plain SEARCH with an untagged ESEARCH
+            // response instead of the deprecated SEARCH response
+            if (opts && opts.untagged && opts.untagged.ESEARCH) {
+                await opts.untagged.ESEARCH({
+                    attributes: [
+                        [
+                            { type: 'ATOM', value: 'TAG' },
+                            { type: 'STRING', value: 'A282' }
+                        ],
+                        { type: 'ATOM', value: 'ALL' },
+                        { type: 'ATOM', value: '1:3,5' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, {});
+    test.deepEqual(result, [1, 2, 3, 5]);
+    test.done();
+};
+
+module.exports['Commands: search caps a hostile ESEARCH ALL range at the mailbox size'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        mailbox: { path: 'INBOX', exists: 100 },
+        exec: async (cmd, attrs, opts) => {
+            // A few bytes of hostile response must not expand into billions of ids
+            await opts.untagged.ESEARCH({
+                attributes: [
+                    { type: 'ATOM', value: 'ALL' },
+                    { type: 'ATOM', value: '1:4294967295' }
+                ]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, {});
+    // A conforming server cannot match more messages than the mailbox holds
+    test.equal(result.length, 100);
+    test.equal(result[0], 1);
+    test.equal(result[99], 100);
+    test.done();
+};
+
+module.exports['Commands: search resolves * in an ESEARCH ALL sequence-set'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        mailbox: { path: 'INBOX', exists: 5 },
+        exec: async (cmd, attrs, opts) => {
+            await opts.untagged.ESEARCH({
+                attributes: [
+                    { type: 'ATOM', value: 'ALL' },
+                    { type: 'ATOM', value: '3:*' }
+                ]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, {});
+    // '*' means the largest sequence number in use, which is the EXISTS count
+    test.deepEqual(result, [3, 4, 5]);
+    test.done();
+};
+
+module.exports['Commands: search drops * from ESEARCH UID results'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        mailbox: { path: 'INBOX', exists: 5, uidNext: 1000 },
+        exec: async (cmd, attrs, opts) => {
+            await opts.untagged.ESEARCH({
+                attributes: [
+                    [
+                        { type: 'ATOM', value: 'TAG' },
+                        { type: 'STRING', value: 'A1' }
+                    ],
+                    { type: 'ATOM', value: 'UID' },
+                    { type: 'ATOM', value: 'ALL' },
+                    { type: 'ATOM', value: '7,3:*' }
+                ]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, { uid: true });
+    // Server-sent UID sets may not contain '*' (RFC 9051 4.1.1) - the offending
+    // part is dropped, valid parts are kept
+    test.deepEqual(result, [7]);
     test.done();
 };
 
@@ -1208,6 +1329,23 @@ module.exports['Commands: move with UID and MOVE capability'] = async test => {
     test.done();
 };
 
+module.exports['Commands: move uses MOVE via folded rev2 capability'] = async test => {
+    let execCmd = null;
+    const connection = createMockConnection({
+        state: 3,
+        // No MOVE token - RFC 9051 folds MOVE into base IMAP4rev2
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async cmd => {
+            execCmd = cmd;
+            return { next: () => {}, response: { attributes: [] } };
+        }
+    });
+
+    await moveCommand(connection, '1:10', 'Archive', {});
+    test.equal(execCmd, 'MOVE');
+    test.done();
+};
+
 module.exports['Commands: move skips when not selected'] = async test => {
     const connection = createMockConnection({ state: 2 });
 
@@ -1550,6 +1688,25 @@ module.exports['Commands: expunge with UID range'] = async test => {
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map([['UIDPLUS', true]]),
+        exec: async cmd => {
+            execCmd = cmd;
+            return { next: () => {}, response: { attributes: [] } };
+        }
+    });
+
+    await expungeCommand(connection, '1:100', { uid: true });
+    test.equal(execCmd, 'UID EXPUNGE');
+    test.done();
+};
+
+module.exports['Commands: expunge uses UID EXPUNGE via folded rev2 capability'] = async test => {
+    let execCmd = null;
+    const connection = createMockConnection({
+        state: 3,
+        // No UIDPLUS token - RFC 9051 folds UIDPLUS into base IMAP4rev2. Falling
+        // back to plain EXPUNGE here would purge every \Deleted message instead
+        // of only the requested range.
+        capabilities: new Map([['IMAP4rev2', true]]),
         exec: async cmd => {
             execCmd = cmd;
             return { next: () => {}, response: { attributes: [] } };
@@ -2477,6 +2634,79 @@ module.exports['Commands: enable handles error'] = async test => {
 
     const result = await enableCommand(connection, ['CONDSTORE']);
     test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: enable passes IMAP4rev2 through the capability prefilter'] = async test => {
+    let enableAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['IMAP4rev1', true],
+            // Canonical mixed-case key as stored by updateCapabilities
+            ['IMAP4rev2', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            enableAttrs = attrs;
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({ attributes: [{ value: 'IMAP4rev2' }] });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['IMAP4rev2']);
+    // The mixed-case capability key must not trip the case-sensitive lookup
+    test.ok(enableAttrs);
+    test.ok(enableAttrs.some(attr => attr.value === 'IMAP4REV2'));
+    test.ok(result.has('IMAP4REV2'));
+    test.done();
+};
+
+module.exports['Commands: enable merges into previously enabled extensions'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([
+            ['ENABLE', true],
+            ['IMAP4rev1', true],
+            ['IMAP4rev2', true]
+        ]),
+        enabled: new Set(['CONDSTORE']),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({ attributes: [{ value: 'IMAP4rev2' }] });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await enableCommand(connection, ['IMAP4rev2']);
+    // The ENABLED response only lists newly enabled extensions - earlier grants
+    // must survive
+    test.ok(connection.enabled.has('CONDSTORE'));
+    test.ok(connection.enabled.has('IMAP4REV2'));
+    test.done();
+};
+
+module.exports['Commands: enable works without the ENABLE token on rev2-only servers'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 2,
+        // ENABLE is part of base IMAP4rev2 - rev2-only servers may omit the token
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            execCalled = true;
+            if (opts && opts.untagged && opts.untagged.ENABLED) {
+                await opts.untagged.ENABLED({ attributes: [{ value: 'IMAP4rev2' }] });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await enableCommand(connection, ['IMAP4rev2']);
+    test.equal(execCalled, true);
+    test.ok(result.has('IMAP4REV2'));
     test.done();
 };
 
@@ -3614,6 +3844,803 @@ module.exports['Commands: list LSUB merge adds Noselect to NonExistent'] = async
     test.done();
 };
 
+module.exports['Commands: list uses RETURN (SUBSCRIBED) instead of LSUB on IMAP4rev2'] = async test => {
+    let lsubCalled = false;
+    let listAttrs = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                lsubCalled = true;
+            }
+            if (cmd === 'LIST') {
+                listAttrs = attrs;
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                    });
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder2' }]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // IMAP4rev2 removed LSUB, subscription state comes from RETURN (SUBSCRIBED)
+    test.equal(lsubCalled, false);
+    test.ok(JSON.stringify(listAttrs).includes('SUBSCRIBED'));
+    const folder1 = result.find(e => e.path === 'Folder1');
+    test.ok(folder1);
+    test.equal(folder1.subscribed, true);
+    // The \Subscribed attribute is folded into the subscribed property
+    test.equal(folder1.flags.has('\\Subscribed'), false);
+    const folder2 = result.find(e => e.path === 'Folder2');
+    test.ok(folder2);
+    test.ok(!folder2.subscribed);
+    test.done();
+};
+
+module.exports['Commands: list uses RETURN (SUBSCRIBED) with LIST-EXTENDED'] = async test => {
+    let lsubCalled = false;
+    let listAttrs = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                lsubCalled = true;
+            }
+            if (cmd === 'LIST') {
+                listAttrs = attrs;
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(lsubCalled, false);
+    test.ok(JSON.stringify(listAttrs).includes('SUBSCRIBED'));
+    const inbox = result.find(e => e.path === 'INBOX');
+    test.ok(inbox);
+    test.equal(inbox.subscribed, true);
+    test.done();
+};
+
+module.exports['Commands: list listOnly does not add RETURN args on IMAP4rev2'] = async test => {
+    let listAttrs = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                listAttrs = attrs;
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await listCommand(connection, '', '*', { listOnly: true });
+    // Just reference and pattern, no RETURN block
+    test.equal(listAttrs.length, 2);
+    test.done();
+};
+
+module.exports['Commands: list survives LSUB rejection'] = async test => {
+    let lsubCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                lsubCalls++;
+                // e.g. Exchange in IMAP4rev2 mode responds "BAD Command Argument Error"
+                throw commandError('Command failed', 'BAD');
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(result.length, 2);
+    const inbox = result.find(e => e.path === 'INBOX');
+    test.ok(inbox);
+    // INBOX is always reported as subscribed even without LSUB data
+    test.equal(inbox.subscribed, true);
+
+    // The rejection is remembered - a follow-up listing skips LSUB entirely
+    test.equal(connection.skipLsub, true);
+    await listCommand(connection, '', '*');
+    test.equal(lsubCalls, 1);
+    test.done();
+};
+
+module.exports['Commands: list fails when LSUB dies without a server rejection'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                // Transport failure, no tagged BAD/NO from the server
+                throw commandError('Connection not available', null, 'NoConnection');
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    try {
+        await listCommand(connection, '', '*');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'NoConnection');
+    }
+    // A transport failure says nothing about LSUB support - must not latch
+    test.ok(!connection.skipLsub);
+    test.done();
+};
+
+module.exports['Commands: list rewrites a parsed error response into text'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async () => {
+            // Same shape as the reader loop attaches for a tagged BAD
+            let err = commandError('Command failed', 'BAD');
+            err.response = { tag: '5', command: 'BAD', attributes: [{ type: 'TEXT', value: 'Command Argument Error. 12' }] };
+            throw err;
+        }
+    });
+
+    try {
+        await listCommand(connection, '', '*');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        // enhanceCommandError folds the parsed object into a plain string
+        test.equal(typeof err.response, 'string');
+        test.ok(err.response.includes('Command Argument Error'));
+    }
+    test.done();
+};
+
+module.exports['Commands: list retries with plain LIST when RETURN is rejected'] = async test => {
+    let listCalls = 0;
+    let lsubCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
+                lsubCalled = true;
+                await opts.untagged.LSUB({
+                    attributes: [[], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            if (cmd === 'LIST') {
+                listCalls++;
+                if (JSON.stringify(attrs).includes('SUBSCRIBED')) {
+                    // Partial untagged response arrives before the tagged BAD
+                    if (opts && opts.untagged && opts.untagged.LIST) {
+                        await opts.untagged.LIST({
+                            attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                        });
+                    }
+                    throw commandError('Command failed', 'BAD');
+                }
+                // Retry must be a plain LIST without RETURN args
+                test.equal(attrs.length, 2);
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    // Extended attempt, auxiliary-free attempt, plain attempt
+    test.equal(listCalls, 3);
+    test.equal(lsubCalled, true);
+    // Partial rejected-attempt results were discarded - no duplicate entries
+    test.equal(result.filter(e => e.path === 'Folder1').length, 1);
+    const folder = result.find(e => e.path === 'Folder1');
+    test.equal(folder.subscribed, true);
+
+    // The plain retry succeeding right after the rejection proves SUBSCRIBED was
+    // the offending option - a follow-up listing goes straight to plain LIST
+    test.equal(connection.skipListSubscribedArg, true);
+    test.ok(!connection.skipListStatusArgs);
+    await listCommand(connection, '', '*');
+    test.equal(listCalls, 4);
+    test.done();
+};
+
+module.exports['Commands: list does not retry extended LIST on transport errors'] = async test => {
+    let listCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async cmd => {
+            if (cmd === 'LIST') {
+                listCalls++;
+                // Dropped connection - no tagged BAD/NO from the server
+                throw commandError('Connection not available', null, 'NoConnection');
+            }
+            return { next: () => {} };
+        }
+    });
+
+    try {
+        await listCommand(connection, '', '*');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'NoConnection');
+    }
+    // A doomed retry against a dead connection is pointless
+    test.equal(listCalls, 1);
+    test.ok(!connection.skipListSubscribedArg);
+    test.done();
+};
+
+module.exports['Commands: list does not retry extended LIST on NO responses'] = async test => {
+    let listCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async cmd => {
+            if (cmd === 'LIST') {
+                listCalls++;
+                // RFC 9051: unrecognized RETURN options are rejected with BAD;
+                // NO is a transient operational failure
+                throw commandError('Command failed', 'NO');
+            }
+            return { next: () => {} };
+        }
+    });
+
+    try {
+        await listCommand(connection, '', '*');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.responseStatus, 'NO');
+    }
+    test.equal(listCalls, 1);
+    test.ok(!connection.skipListSubscribedArg);
+    test.done();
+};
+
+module.exports['Commands: list does not treat throttling as a RETURN rejection'] = async test => {
+    let listCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async cmd => {
+            if (cmd === 'LIST') {
+                listCalls++;
+                // O365-style throttling surfaces as BAD plus code ETHROTTLE
+                throw commandError('Request is throttled', 'BAD', 'ETHROTTLE');
+            }
+            return { next: () => {} };
+        }
+    });
+
+    try {
+        await listCommand(connection, '', '*');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'ETHROTTLE');
+    }
+    // Re-issuing against a throttled server and permanently downgrading the
+    // connection would both be wrong
+    test.equal(listCalls, 1);
+    test.ok(!connection.skipListSubscribedArg);
+    test.done();
+};
+
+module.exports['Commands: list drops RETURN option groups one stage at a time'] = async test => {
+    let listAttempts = [];
+    let lsubCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true],
+            ['LIST-STATUS', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                lsubCalled = true;
+            }
+            if (cmd === 'LIST') {
+                let flat = JSON.stringify(attrs);
+                listAttempts.push(flat);
+                if (flat.includes('STATUS')) {
+                    throw commandError('Command failed', 'BAD');
+                }
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', { statusQuery: { messages: true } });
+    test.equal(listAttempts.length, 4);
+    // Stage 1: both option groups with the auxiliary options
+    test.ok(listAttempts[0].includes('STATUS'));
+    test.ok(listAttempts[0].includes('SUBSCRIBED'));
+    test.ok(listAttempts[0].includes('CHILDREN'));
+    // Stage 2: the same groups without the auxiliary options - the rejection
+    // might have been about the auxiliaries alone
+    test.ok(listAttempts[1].includes('STATUS'));
+    test.ok(listAttempts[1].includes('SUBSCRIBED'));
+    test.ok(!listAttempts[1].includes('CHILDREN'));
+    // Stage 3: SUBSCRIBED dropped, STATUS kept
+    test.ok(listAttempts[2].includes('STATUS'));
+    test.ok(!listAttempts[2].includes('SUBSCRIBED'));
+    // Stage 4: plain
+    test.ok(!listAttempts[3].includes('RETURN'));
+
+    // Only the group whose removal was followed by success is latched - the BAD of
+    // the earlier stages might have been caused by the STATUS group alone, so
+    // SUBSCRIBED stays unproven and gets retried on the next listing
+    test.equal(connection.skipListStatusArgs, true);
+    test.ok(!connection.skipListSubscribedArg);
+    test.ok(!connection.skipListAuxArgs);
+    test.equal(lsubCalled, true);
+    test.equal(result.length, 1);
+
+    // Next listing converges: SUBSCRIBED-only first, no STATUS args
+    const result2 = await listCommand(connection, '', '*', { statusQuery: { messages: true } });
+    test.equal(listAttempts.length, 5);
+    test.ok(listAttempts[4].includes('SUBSCRIBED'));
+    test.ok(!listAttempts[4].includes('STATUS'));
+    test.equal(result2.length, 1);
+    test.done();
+};
+
+module.exports['Commands: list does not latch flags when the reduced retry also dies'] = async test => {
+    let listCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true],
+            ['LIST-STATUS', true]
+        ]),
+        exec: async cmd => {
+            if (cmd === 'LIST') {
+                listCalls++;
+                if (listCalls === 1) {
+                    throw commandError('Command failed', 'BAD');
+                }
+                // The reduced retry dies on a transport error
+                throw commandError('Connection not available', null, 'NoConnection');
+            }
+            return { next: () => {} };
+        }
+    });
+
+    try {
+        await listCommand(connection, '', '*', { statusQuery: { messages: true } });
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'NoConnection');
+    }
+    // Nothing was proven - no flag may be latched
+    test.equal(listCalls, 2);
+    test.ok(!connection.skipListSubscribedArg);
+    test.ok(!connection.skipListStatusArgs);
+    test.ok(!connection.skipListAuxArgs);
+    test.done();
+};
+
+module.exports['Commands: list tolerates LSUB NO without latching'] = async test => {
+    let lsubCalls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                lsubCalls++;
+                // Transient operational failure, not a missing command
+                throw commandError('Server busy', 'NO');
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(result.length, 1);
+    // NO is transient - the next listing must try LSUB again
+    test.ok(!connection.skipLsub);
+    await listCommand(connection, '', '*');
+    test.equal(lsubCalls, 2);
+    test.done();
+};
+
+module.exports['Commands: list rethrows throttled LSUB without latching'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                throw commandError('Request is throttled', 'BAD', 'ETHROTTLE');
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    try {
+        await listCommand(connection, '', '*');
+        test.ok(false, 'Should have thrown');
+    } catch (err) {
+        test.equal(err.code, 'ETHROTTLE');
+    }
+    // Throttling says nothing about LSUB support
+    test.ok(!connection.skipLsub);
+    test.done();
+};
+
+module.exports['Commands: list folds LSUB-delivered Subscribed flag into the property'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
+                // Some servers echo the RFC 5258 \Subscribed attribute in LSUB
+                await opts.untagged.LSUB({
+                    attributes: [[{ value: '\\Subscribed' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const folder = result.find(e => e.path === 'Folder1');
+    test.equal(folder.subscribed, true);
+    // The flag is folded into the property on the LSUB merge path too
+    test.equal(folder.flags.has('\\Subscribed'), false);
+    test.done();
+};
+
+module.exports['Commands: list retries INBOX fixup plain without latching'] = async test => {
+    let listAttempts = [];
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                let flat = JSON.stringify(attrs);
+                listAttempts.push(flat);
+                if (listAttempts.length === 2) {
+                    // Fixup call with RETURN args is rejected by a quirky server
+                    throw commandError('Command failed', 'BAD');
+                }
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    if (listAttempts.length === 1) {
+                        await opts.untagged.LIST({
+                            attributes: [[{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }], { value: '.' }, { value: 'Prefix.Folder1' }]
+                        });
+                    } else {
+                        await opts.untagged.LIST({
+                            attributes: [[{ value: '\\HasNoChildren' }], { value: '.' }, { value: 'INBOX' }]
+                        });
+                    }
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, 'Prefix.', '*');
+    // Main listing + rejected fixup + plain fixup retry
+    test.equal(listAttempts.length, 3);
+    test.ok(listAttempts[1].includes('SUBSCRIBED'));
+    test.ok(!listAttempts[2].includes('RETURN'));
+    // Entries from the successful main run were kept
+    test.ok(result.find(e => e.path === 'Prefix.Folder1'));
+    test.ok(result.find(e => e.path === 'INBOX'));
+    // The main run succeeded with the same RETURN args - nothing may be latched
+    test.ok(!connection.skipListSubscribedArg);
+    test.ok(!connection.skipListStatusArgs);
+    test.done();
+};
+
+module.exports['Commands: list discards partial results from a rejected INBOX fixup'] = async test => {
+    let listAttempts = [];
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                listAttempts.push(JSON.stringify(attrs));
+                if (listAttempts.length === 1) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }], { value: '.' }, { value: 'Prefix.Folder1' }]
+                    });
+                } else if (listAttempts.length === 2) {
+                    // The fixup attempt streams an untagged INBOX line and THEN gets
+                    // the tagged BAD - the partial line must not survive the retry
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '.' }, { value: 'INBOX' }]
+                    });
+                    throw commandError('Command failed', 'BAD');
+                } else {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '.' }, { value: 'INBOX' }]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, 'Prefix.', '*');
+    test.equal(listAttempts.length, 3);
+    // Exactly one INBOX entry - the rejected attempt's partial line was discarded
+    test.equal(result.filter(e => e.path === 'INBOX').length, 1);
+    test.ok(result.find(e => e.path === 'Prefix.Folder1'));
+    test.done();
+};
+
+module.exports['Commands: list latches only the auxiliary options when the server rejects them'] = async test => {
+    let listAttempts = [];
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true],
+            ['LIST-STATUS', true],
+            ['SPECIAL-USE', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                let flat = JSON.stringify(attrs);
+                listAttempts.push(flat);
+                if (flat.includes('SPECIAL-USE') || flat.includes('CHILDREN')) {
+                    throw commandError('Command failed', 'BAD');
+                }
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+                if (opts.untagged.STATUS) {
+                    await opts.untagged.STATUS({
+                        attributes: [{ value: 'Folder1' }, [{ value: 'MESSAGES' }, { value: '3' }]]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', { statusQuery: { messages: true } });
+    // Extended attempt with auxiliaries, then the same groups without them
+    test.equal(listAttempts.length, 2);
+    test.ok(listAttempts[0].includes('SPECIAL-USE'));
+    test.ok(listAttempts[1].includes('STATUS'));
+    test.ok(listAttempts[1].includes('SUBSCRIBED'));
+    test.ok(!listAttempts[1].includes('SPECIAL-USE'));
+    test.ok(!listAttempts[1].includes('CHILDREN'));
+    // Only the auxiliaries are latched - both option groups survived intact
+    test.equal(connection.skipListAuxArgs, true);
+    test.ok(!connection.skipListSubscribedArg);
+    test.ok(!connection.skipListStatusArgs);
+    let folder = result.find(e => e.path === 'Folder1');
+    test.equal(folder.subscribed, true);
+    test.equal(folder.status.messages, 3);
+
+    // The next listing goes straight to the auxiliary-free extended form
+    await listCommand(connection, '', '*', { statusQuery: { messages: true } });
+    test.equal(listAttempts.length, 3);
+    test.ok(listAttempts[2].includes('STATUS'));
+    test.ok(listAttempts[2].includes('SUBSCRIBED'));
+    test.ok(!listAttempts[2].includes('SPECIAL-USE'));
+    test.done();
+};
+
+module.exports['Commands: list falls back to LSUB when RETURN (SUBSCRIBED) is silently ignored'] = async test => {
+    let lsubCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB' && opts && opts.untagged && opts.untagged.LSUB) {
+                lsubCalled = true;
+                await opts.untagged.LSUB({
+                    attributes: [[], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Server accepted RETURN (SUBSCRIBED) but returned no \Subscribed flags
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(lsubCalled, true);
+    test.equal(result.find(e => e.path === 'Folder1').subscribed, true);
+    test.done();
+};
+
+module.exports['Commands: list skips the LSUB safety net on rev2 sessions'] = async test => {
+    let lsubCalled = false;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                lsubCalled = true;
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // No folder is subscribed - legitimate on a fresh account, and rev2
+                // removed LSUB so there is nothing to fall back to
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    await listCommand(connection, '', '*');
+    test.equal(lsubCalled, false);
+    test.done();
+};
+
+module.exports['Commands: list honors special-use flags on rev2-only servers'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // RFC 9051 folds the RFC 6154 attributes into base rev2 - no separate
+                // SPECIAL-USE capability token is required
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\Sent' }, { value: '\\HasNoChildren' }], { value: '/' }, { value: 'Custom-Sent-Name' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const folder = result.find(e => e.path === 'Custom-Sent-Name');
+    test.equal(folder.specialUse, '\\Sent');
+    test.done();
+};
+
+module.exports['Commands: list uses inline STATUS on rev2-only servers and omits RECENT'] = async test => {
+    let listAttrs = false;
+    let statusCommands = 0;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        run: async cmd => {
+            if (cmd === 'STATUS') {
+                statusCommands++;
+            }
+            return {};
+        },
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                listAttrs = JSON.stringify(attrs);
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                    });
+                }
+                if (opts && opts.untagged && opts.untagged.STATUS) {
+                    await opts.untagged.STATUS({
+                        attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '5' }]]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', { statusQuery: { messages: true, recent: true } });
+    // LIST-STATUS is part of base rev2, so STATUS data arrives inline
+    test.ok(listAttrs.includes('STATUS'));
+    // RECENT was removed in rev2 and must not be requested
+    test.ok(!listAttrs.includes('RECENT'));
+    test.equal(statusCommands, 0);
+    test.equal(result.find(e => e.path === 'INBOX').status.messages, 5);
+    // The requested recent value is synthesized - rev2 defines it as always 0
+    test.equal(result.find(e => e.path === 'INBOX').status.recent, 0);
+    test.done();
+};
+
+module.exports['Commands: list does not let NonExistent phantoms win special-use by name'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // Phantom subscription leftover of a deleted folder
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\NonExistent' }, { value: '\\Subscribed' }], { value: '/' }, { value: 'Sent' }]
+                });
+                // The real sent-mail folder, matched by name
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Sent Messages' }]
+                });
+            }
+            if (cmd === 'LSUB') {
+                throw commandError('Command failed', 'BAD');
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const phantom = result.find(e => e.path === 'Sent');
+    const real = result.find(e => e.path === 'Sent Messages');
+    test.ok(phantom);
+    test.notEqual(phantom.specialUse, '\\Sent');
+    test.equal(real.specialUse, '\\Sent');
+    test.done();
+};
+
 module.exports['Commands: list does not STATUS NonExistent mailboxes'] = async test => {
     let statusPaths = [];
     const connection = createMockConnection({
@@ -4670,6 +5697,48 @@ module.exports['Commands: status skips when no query attributes'] = async test =
 
     const result = await statusCommand(connection, 'INBOX', {});
     test.equal(result, false);
+    test.done();
+};
+
+module.exports['Commands: status returns synthetic recent on rev2 sessions'] = async test => {
+    let execCalled = false;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async () => {
+            execCalled = true;
+            return { next: () => {} };
+        }
+    });
+
+    // RECENT does not exist in IMAP4rev2 - the caller still gets a status object
+    // (recent is 0 by definition) instead of false, and no command is sent
+    const result = await statusCommand(connection, 'INBOX', { recent: true });
+    test.equal(execCalled, false);
+    test.deepEqual(result, { path: 'INBOX', recent: 0 });
+    test.done();
+};
+
+module.exports['Commands: status merges synthetic recent into rev2 query results'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            queryAttrs = JSON.stringify(attrs);
+            await opts.untagged.STATUS({
+                attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '100' }]]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true, recent: true });
+    // RECENT must not be requested from a rev2 session, but the result keeps the
+    // rev1 shape for the same query
+    test.ok(!queryAttrs.includes('RECENT'));
+    test.equal(result.messages, 100);
+    test.equal(result.recent, 0);
     test.done();
 };
 
@@ -5769,6 +6838,27 @@ module.exports['Commands: idle with IDLE capability'] = async test => {
     await idleCommand(connection);
     test.equal(execCommand, 'IDLE');
     test.equal(idlingSet, true);
+    test.done();
+};
+
+module.exports['Commands: idle uses IDLE on rev2-only servers without the IDLE token'] = async test => {
+    let execCommand = '';
+    const connection = createMockConnection({
+        state: 3,
+        // IDLE is part of base IMAP4rev2 - no separate token required
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            execCommand = cmd;
+            if (opts && opts.onPlusTag) {
+                await opts.onPlusTag();
+            }
+            return { next: () => {} };
+        },
+        write: () => {}
+    });
+
+    await idleCommand(connection);
+    test.equal(execCommand, 'IDLE');
     test.done();
 };
 
@@ -8608,10 +9698,11 @@ module.exports['Commands: enable updates connection.enabled'] = async test => {
     });
 
     await enableCommand(connection, ['CONDSTORE', 'UTF8=ACCEPT']);
-    // connection.enabled should be replaced with new set
+    // New grants are merged in; earlier grants survive because the untagged
+    // ENABLED response only lists extensions enabled by this command (RFC 5161)
     test.ok(connection.enabled.has('CONDSTORE'));
     test.ok(connection.enabled.has('UTF8=ACCEPT'));
-    test.ok(!connection.enabled.has('EXISTING')); // Old value should be gone
+    test.ok(connection.enabled.has('EXISTING'));
     test.done();
 };
 

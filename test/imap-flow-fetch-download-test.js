@@ -624,10 +624,7 @@ module.exports['DownloadMany: returns {response:false} when no bodyParts'] = asy
 
 module.exports['DownloadMany: parses charset, flowed and name params'] = async test => {
     let client = makeClient();
-    let mime = Buffer.from(
-        'Content-Type: text/plain; charset=iso-8859-1; format=flowed; delsp=yes; name="x.txt"\r\n' +
-            'Content-Disposition: inline\r\n\r\n'
-    );
+    let mime = Buffer.from('Content-Type: text/plain; charset=iso-8859-1; format=flowed; delsp=yes; name="x.txt"\r\nContent-Disposition: inline\r\n\r\n');
     client.fetchOne = async () => {
         let bodyParts = new Map();
         bodyParts.set('2.mime', mime);
