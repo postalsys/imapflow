@@ -38,13 +38,15 @@ npm run coverage   # Run tests under c8 coverage (text + html reports)
 npm run lint       # Lint with ESLint
 npm run format     # Format with Prettier (js, json, md, yml, yaml)
 npm run update     # Refresh deps: remove node_modules + lockfile, ncu -u, npm install
+npm run test:rev2  # Live IMAP4rev2 tests against Dovecot in Docker (see test/integration/)
 ```
 
 ## Testing
 
-- Tests live in `test/` and are named `*-test.js`; the Grunt nodeunit glob only matches that pattern, so helpers/fixtures are never run as tests.
+- Tests live in `test/` and are named `*-test.js`; the Grunt nodeunit glob only matches that pattern, so helpers/fixtures are never run as tests. Exception: `test/integration/` is excluded from the glob - those tests need Docker and run only via `npm run test:rev2`.
 - `npm test` runs `grunt`, which runs ESLint first, then the nodeunit suite. Keep the suite green and lint-clean before committing.
 - New tests go in `test/` as `*-test.js`. The parser, command compiler, and search compiler are the most security-sensitive areas - add hostile/malformed-input cases there.
+- `npm run test:rev2` starts a Dovecot 2.4 container (real IMAP4rev2 server) and runs `test/integration/rev2-live-test.js` against it - use it to verify rev2-facing changes end to end, mocks alone are not enough.
 
 ## Packaging Constraints (IMPORTANT)
 
@@ -59,6 +61,13 @@ CommonJS-compatible:
 - ImapFlow source stays CommonJS (`require`/`module.exports`). Do not convert the library to ESM.
 - Do not add a dependency that is pure ESM (`"type": "module"` with only an `import`/ESM entry and no CommonJS export). It must be `require()`-able.
 - When `npm run update` or a new dependency would pull in a pure-ESM package (a common outcome of major-version bumps), pin to the last CommonJS-compatible version instead, or find a CommonJS alternative. Verify with a quick `require()` of the package after updating.
+- After every `npm run update`, run this check to confirm all production dependencies are still CommonJS (it must print `CJS OK` for every dependency and report no pure-ESM packages), then run `npm test`:
+
+    ```
+    node -e "Object.keys(require('./package.json').dependencies).forEach(d => { require(d); console.log('CJS OK:', d); })"
+    node -e "const fs=require('fs');const bad=Object.keys(require('./package.json').dependencies).filter(d=>JSON.parse(fs.readFileSync(require.resolve(d+'/package.json'),'utf8')).type==='module');console.log(bad.length?'PURE-ESM DEPS FOUND: '+bad.join(', '):'No pure-ESM production dependencies')"
+    ```
+
 - Keep dynamic `require()` paths static enough for `pkg` to detect; avoid building module paths at runtime in ways the bundler can't trace.
 
 ## Code Style Rules
