@@ -40,7 +40,13 @@ const connectClient = async (options, logs) => {
 
 const wireLines = logs => logs.filter(entry => entry && typeof entry.msg === 'string' && ['c', 's'].includes(entry.src));
 const clientSent = (logs, needle) => wireLines(logs).some(entry => entry.src === 'c' && entry.msg.includes(needle));
-const serverSent = (logs, needle) => wireLines(logs).some(entry => entry.src === 's' && entry.msg.includes(needle));
+// Matches only an untagged response for the given command ("* ESEARCH ...").
+// A plain substring check would false-positive on capability listings - the
+// login response advertises tokens like ESEARCH in its CAPABILITY list.
+const serverSentUntagged = (logs, command) => {
+    let re = new RegExp(`^\\* ${command}( |$)`);
+    return wireLines(logs).some(entry => entry.src === 's' && re.test(entry.msg));
+};
 
 module.exports['Live rev2: connect negotiates ENABLE IMAP4rev2'] = async test => {
     const client = await connectClient();
@@ -153,7 +159,7 @@ module.exports['Live rev2: statusQuery is answered inline via LIST-STATUS'] = as
     test.done();
 };
 
-module.exports['Live rev2: plain search results arrive via ESEARCH'] = async test => {
+module.exports['Live rev2: plain search results are collected'] = async test => {
     const logs = [];
     const client = await connectClient(null, logs);
     try {
@@ -163,9 +169,38 @@ module.exports['Live rev2: plain search results arrive via ESEARCH'] = async tes
         await client.mailboxOpen('INBOX');
         const results = await client.search({ all: true });
 
-        // rev2 servers reply to SEARCH with an untagged ESEARCH response
-        test.ok(serverSent(logs, 'ESEARCH'), 'server should reply with ESEARCH');
+        // RFC 9051 deprecates the untagged SEARCH response in favor of ESEARCH,
+        // but Dovecot 2.4 still answers a plain SEARCH with the legacy form even
+        // on an ENABLEd rev2 session (verified on the wire). The client accepts
+        // both forms, so assert that the results arrived via one of them - the
+        // ESEARCH-answered variant of a plain SEARCH is covered by the mock
+        // suite, and a real ESEARCH response is exercised live in the
+        // returnOptions test below.
+        test.ok(serverSentUntagged(logs, 'SEARCH') || serverSentUntagged(logs, 'ESEARCH'), 'results should arrive via an untagged SEARCH or ESEARCH response');
         test.deepEqual(results, [1, 2]);
+    } finally {
+        await client.logout();
+    }
+    test.done();
+};
+
+module.exports['Live rev2: returnOptions search is answered via a real ESEARCH response'] = async test => {
+    const logs = [];
+    const client = await connectClient(null, logs);
+    try {
+        await client.append('INBOX', Buffer.from('Subject: first\r\n\r\nfirst\r\n'));
+        await client.append('INBOX', Buffer.from('Subject: second\r\n\r\nsecond\r\n'));
+
+        await client.mailboxOpen('INBOX');
+        const result = await client.search({ all: true }, { returnOptions: ['ALL', 'COUNT'] });
+
+        // SEARCH RETURN (...) makes Dovecot answer with a genuine untagged
+        // ESEARCH response - this exercises the ESEARCH parsing path against a
+        // real server
+        test.ok(serverSentUntagged(logs, 'ESEARCH'), 'server should reply with an untagged ESEARCH response');
+        test.ok(!serverSentUntagged(logs, 'SEARCH'), 'no legacy untagged SEARCH response is expected');
+        test.equal(result.count, 2);
+        test.equal(result.all, '1:2');
     } finally {
         await client.logout();
     }
