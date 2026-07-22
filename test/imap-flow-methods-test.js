@@ -96,6 +96,19 @@ module.exports['Methods: listTree returns tree structure'] = async test => {
     test.done();
 };
 
+module.exports['Methods: listTree passes through inline status objects'] = async test => {
+    let client = makeClient();
+    recordRun(client, [
+        { path: 'INBOX', name: 'INBOX', delimiter: '/', parent: [], flags: new Set(), status: { path: 'INBOX', messages: 5, unseen: 2 } },
+        { path: 'INBOX/Sub', name: 'Sub', delimiter: '/', parent: ['INBOX'], flags: new Set() }
+    ]);
+    let tree = await client.listTree({ statusQuery: { messages: true, unseen: true } });
+    // The StatusObject must survive into the tree node - it used to be coerced
+    // into a boolean by the tree builder
+    test.deepEqual(tree.folders[0].status, { path: 'INBOX', messages: 5, unseen: 2 });
+    test.done();
+};
+
 module.exports['Methods: noop dispatches NOOP'] = async test => {
     let client = makeClient();
     let calls = recordRun(client, true);
