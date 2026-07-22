@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.9](https://github.com/postalsys/imapflow/compare/v1.4.8...v1.4.9) (2026-07-22)
+
+
+### Bug Fixes
+
+* **folder:** pass StatusObject value instead of its boolean primitive ([043e248](https://github.com/postalsys/imapflow/commit/043e24802f2d73fac297d051a673fe9bc9eb3b25))
+* **list:** request subscription state inline and support IMAP4rev2 ([93e899d](https://github.com/postalsys/imapflow/commit/93e899ded64b219e7fbac2eff083890cb4baa382))
+
 ## [1.4.8](https://github.com/postalsys/imapflow/compare/v1.4.7...v1.4.8) (2026-07-21)
 
 
