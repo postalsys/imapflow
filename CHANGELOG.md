@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/postalsys/imapflow/compare/v1.4.9...v1.5.0) (2026-07-23)
+
+
+### Features
+
+* add STATUS SIZE/DELETED and rev2 BINARY fetch support, fix protocol bugs found in an RFC 9051 review ([04f5bf6](https://github.com/postalsys/imapflow/commit/04f5bf6c1a49e155dd23b2af062e570530b814b1))
+
 ## [1.4.9](https://github.com/postalsys/imapflow/compare/v1.4.8...v1.4.9) (2026-07-22)
 
 
