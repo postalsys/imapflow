@@ -29,3 +29,23 @@ jobs:
                   cache: npm
             - run: npm install
             - run: npm test
+
+    test-rev2:
+        # Live IMAP4rev2 integration tests against a real Dovecot 2.4 server in
+        # Docker on linux/amd64 (ubuntu runners are amd64 with Docker preinstalled).
+        # This is the only place the suite runs on amd64 - Apple Silicon dev
+        # machines cannot run the amd64 image under Rosetta.
+        name: Live IMAP4rev2 tests (Dovecot, linux/amd64)
+        timeout-minutes: 15
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - name: Use Node.js 24.x
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24.x
+                  cache: npm
+            - run: npm install
+            - run: npm run test:rev2
+              env:
+                  IMAPFLOW_DOVECOT_PLATFORM: linux/amd64

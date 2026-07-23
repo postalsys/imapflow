@@ -30,6 +30,20 @@ cleanup() {
 trap cleanup EXIT
 cleanup
 
+# Guard against a stale image cached for the wrong architecture: `docker run`
+# without --platform silently reuses a local image even when its architecture
+# does not match the host (e.g. an amd64 image left behind on an arm64 host),
+# and Dovecot then fails to start with confusing emulation errors. Only applies
+# when no explicit platform override was requested.
+if [ -z "${IMAPFLOW_DOVECOT_PLATFORM:-}" ] && docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    image_arch="$(docker image inspect --format '{{.Architecture}}' "$IMAGE" 2>/dev/null || true)"
+    host_arch="$(docker version --format '{{.Server.Arch}}' 2>/dev/null || true)"
+    if [ -n "$image_arch" ] && [ -n "$host_arch" ] && [ "$image_arch" != "$host_arch" ]; then
+        echo "Local $IMAGE image is $image_arch but the Docker host is $host_arch - re-pulling for linux/$host_arch..."
+        docker pull --platform "linux/$host_arch" "$IMAGE"
+    fi
+fi
+
 docker run ${PLATFORM_ARG:+"$PLATFORM_ARG"} -d --name "$CONTAINER_NAME" \
     -e USER_PASSWORD=pass \
     -v "$SCRIPT_DIR/dovecot-test.conf:/etc/dovecot/conf.d/99-imapflow-test.conf:ro" \
