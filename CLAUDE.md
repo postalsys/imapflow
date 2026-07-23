@@ -81,7 +81,7 @@ CommonJS-compatible:
     1. Run `npm run format` and `npm run lint`
     2. Run `npm test` and keep it green
     3. For non-trivial changes, run `/simplify` to review changed code and `/security-review` to check for security issues before committing
-- After pushing, check the GitHub Actions runs for the push (e.g. `gh run list --branch master`) and report their status, including the CodeQL "CodeQL Advanced" code-scanning run. If a run fails for a strange or unrelated reason (for example a checkout step reporting "account suspended", HTTP 403, or other auth/infrastructure errors that have nothing to do with the change), check <https://www.githubstatus.com/> for an active GitHub incident before assuming the failure is caused by the change.
+- After pushing, check the GitHub Actions runs for the push (e.g. `gh run list --branch master`) and report their status. If a run fails for a strange or unrelated reason (for example a checkout step reporting "account suspended", HTTP 403, or other auth/infrastructure errors that have nothing to do with the change), check <https://www.githubstatus.com/> for an active GitHub incident before assuming the failure is caused by the change.
 
 ## Relationship to EmailEngine
 
@@ -97,9 +97,7 @@ Packaging Constraints).
 ## Security
 
 Security policy and private reporting channels are documented in
-[`SECURITY.md`](SECURITY.md) / [`SECURITY.txt`](SECURITY.txt). Code scanning runs
-through the "CodeQL Advanced" GitHub Actions workflow
-(`.github/workflows/codeql.yml`, config in `.github/codeql/codeql-config.yml`).
+[`SECURITY.md`](SECURITY.md) / [`SECURITY.txt`](SECURITY.txt).
 
 ## Release Process
 
