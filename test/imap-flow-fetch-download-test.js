@@ -300,6 +300,62 @@ module.exports['Download: base64 body part is decoded'] = async test => {
     test.done();
 };
 
+module.exports['Download: binary-fetched part skips the client-side transfer decoding'] = async test => {
+    let client = makeClient();
+    // BINARY fetch (RFC 3516, FETCH side folded into IMAP4rev2): the server
+    // decodes the content-transfer-encoding itself, so the client gets raw bytes
+    // even though the MIME headers still declare base64 - decoding again would
+    // corrupt the data. formatMessageResponse records the parts that arrived via
+    // BINARY[...] in the binaryParts set, which the mock mirrors here.
+    let mime = Buffer.from('Content-Type: text/plain\r\nContent-Transfer-Encoding: base64\r\n\r\n');
+    let decoded = Buffer.from('Hello World');
+    client.fetchOne = async () => {
+        let bodyParts = new Map();
+        bodyParts.set('2.mime', mime);
+        bodyParts.set('2', decoded);
+        return { uid: 1, size: decoded.length, bodyParts, binaryParts: new Set(['2']) };
+    };
+    let { meta, content } = await client.download('1', '2', { chunkSize: 1024, binary: true });
+    test.equal(meta.encoding, 'base64');
+    let data = await collect(content);
+    test.equal(data.toString(), 'Hello World');
+    test.done();
+};
+
+module.exports['DownloadMany: binary-fetched parts skip the client-side transfer decoding'] = async test => {
+    let client = makeClient();
+    let mime = Buffer.from('Content-Type: text/plain\r\nContent-Transfer-Encoding: base64\r\n\r\n');
+    client.fetchOne = async () => {
+        let bodyParts = new Map();
+        bodyParts.set('2.mime', mime);
+        bodyParts.set('2', Buffer.from('part two'));
+        return { uid: 1, bodyParts, binaryParts: new Set(['2']) };
+    };
+    let res = await client.downloadMany('1', ['2'], { binary: true });
+    test.equal(res['2'].content.toString(), 'part two');
+    test.equal(res['2'].meta.encoding, 'base64');
+    test.done();
+};
+
+module.exports['Download: BODY-answered part is still decoded even when binary was requested'] = async test => {
+    let client = makeClient();
+    // RFC 3516 lets a server answer a BINARY request with a NO or a BODY response
+    // (e.g. [UNKNOWN-CTE]) - decoding must follow what actually arrived, so a part
+    // absent from binaryParts gets the client-side decoder despite options.binary
+    let mime = Buffer.from('Content-Type: text/plain\r\nContent-Transfer-Encoding: base64\r\n\r\n');
+    let encoded = Buffer.from(libbase64.encode(Buffer.from('Hello World')));
+    client.fetchOne = async () => {
+        let bodyParts = new Map();
+        bodyParts.set('2.mime', mime);
+        bodyParts.set('2', encoded);
+        return { uid: 1, size: encoded.length, bodyParts };
+    };
+    let { content } = await client.download('1', '2', { chunkSize: 1024, binary: true });
+    let data = await collect(content);
+    test.equal(data.toString(), 'Hello World');
+    test.done();
+};
+
 module.exports['Download: quoted-printable inline text with charset + filename'] = async test => {
     let client = makeClient();
     let mime = Buffer.from(

@@ -488,6 +488,33 @@ module.exports['Commands: search collects results from an ESEARCH reply to plain
     test.done();
 };
 
+module.exports['Commands: search returns empty array for an ESEARCH reply without ALL'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            // RFC 9051: an ESEARCH response with no matches omits the ALL item
+            if (opts && opts.untagged && opts.untagged.ESEARCH) {
+                await opts.untagged.ESEARCH({
+                    attributes: [
+                        [
+                            { type: 'ATOM', value: 'TAG' },
+                            { type: 'STRING', value: 'A282' }
+                        ],
+                        { type: 'ATOM', value: 'COUNT' },
+                        { type: 'ATOM', value: '0' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, {});
+    test.deepEqual(result, []);
+    test.done();
+};
+
 module.exports['Commands: search caps a hostile ESEARCH ALL range at the mailbox size'] = async test => {
     const connection = createMockConnection({
         state: 3,
@@ -690,6 +717,26 @@ module.exports['Commands: store add flags'] = async test => {
     test.equal(result, true);
     test.equal(execArgs.cmd, 'STORE');
     test.ok(execArgs.attrs[1].value.startsWith('+'));
+    test.done();
+};
+
+module.exports['Commands: store drops the Recent flag from the wire'] = async test => {
+    let execArgs = null;
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs) => {
+            execArgs = { cmd, attrs };
+            return { next: () => {} };
+        }
+    });
+
+    // \Recent is owned by the server (and removed entirely in IMAP4rev2) - a
+    // client-side STORE must never try to set it
+    const result = await storeCommand(connection, '1:10', ['\\Seen', '\\Recent'], { operation: 'add' });
+    test.equal(result, true);
+    const attrsStr = JSON.stringify(execArgs.attrs);
+    test.ok(attrsStr.includes('\\\\Seen'));
+    test.ok(!attrsStr.toLowerCase().includes('recent'));
     test.done();
 };
 
@@ -2975,6 +3022,97 @@ module.exports['Commands: fetch with BINARY capability'] = async test => {
     test.done();
 };
 
+module.exports['Commands: fetch with binary uses BINARY on rev2-only servers without the token'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        // rev2-only server: no BINARY token, but RFC 9051 folds the FETCH side of
+        // the BINARY extension into base IMAP4rev2
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { source: true }, { binary: true });
+    test.ok(queryAttrs);
+    test.ok(JSON.stringify(queryAttrs).includes('BINARY.PEEK'));
+    test.done();
+};
+
+module.exports['Commands: fetch with binary keeps BODY for non-numeric sections'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['BINARY', true]]),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    // RFC 3516/RFC 9051: section-binary only allows numeric part specifiers -
+    // BINARY[HEADER], BINARY[TEXT] and BINARY[n.MIME] are invalid syntax that
+    // servers reject, so those sections must stay BODY fetches even with
+    // options.binary set
+    await fetchCommand(connection, '1', { headers: true, bodyParts: ['TEXT', '1.MIME', '1.2'] }, { binary: true });
+    test.ok(queryAttrs);
+    const sections = [];
+    const walk = list => {
+        for (let entry of Array.isArray(list) ? list : [list]) {
+            if (Array.isArray(entry)) {
+                walk(entry);
+            } else if (entry && entry.section) {
+                sections.push({ value: entry.value, section: entry.section.length ? entry.section[0].value : '' });
+            }
+        }
+    };
+    walk(queryAttrs);
+
+    for (let entry of sections) {
+        if (['HEADER', 'TEXT', '1.MIME'].includes(entry.section)) {
+            test.equal(entry.value, 'BODY.PEEK', `${entry.section} must be fetched via BODY.PEEK`);
+        }
+        if (entry.section === '1.2') {
+            test.equal(entry.value, 'BINARY.PEEK', 'numeric part specifiers may use BINARY.PEEK');
+        }
+    }
+    test.ok(
+        sections.some(entry => entry.section === '1.2'),
+        'numeric body part present'
+    );
+    test.ok(
+        sections.some(entry => entry.section === 'TEXT'),
+        'TEXT body part present'
+    );
+    test.done();
+};
+
+module.exports['Commands: fetch with binary keeps BODY on unenabled dual rev1+rev2 servers'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        // dual server without ENABLE IMAP4rev2 - rev2 semantics are not active, so
+        // the BINARY fold must not apply
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['IMAP4rev2', true]
+        ]),
+        exec: async (cmd, attrs) => {
+            queryAttrs = attrs;
+            return { next: () => {} };
+        }
+    });
+
+    await fetchCommand(connection, '1', { source: true }, { binary: true });
+    test.ok(queryAttrs);
+    const queryStr = JSON.stringify(queryAttrs);
+    test.ok(queryStr.includes('BODY.PEEK'));
+    test.ok(!queryStr.includes('BINARY.PEEK'));
+    test.done();
+};
+
 module.exports['Commands: fetch with OBJECTID capability'] = async test => {
     let queryAttrs = null;
     const connection = createMockConnection({
@@ -3450,6 +3588,71 @@ module.exports['Commands: list with statusQuery'] = async test => {
     test.ok(attrsStr.includes('RETURN'));
     test.ok(attrsStr.includes('STATUS'));
     test.ok(Array.isArray(result));
+    test.done();
+};
+
+module.exports['Commands: list statusQuery parses inline SIZE and DELETED on rev2 sessions'] = async test => {
+    let listAttrs = null;
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                listAttrs = attrs;
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                    });
+                }
+                if (opts && opts.untagged && opts.untagged.STATUS) {
+                    await opts.untagged.STATUS({
+                        attributes: [
+                            { value: 'INBOX' },
+                            [{ value: 'MESSAGES' }, { value: '10' }, { value: 'SIZE' }, { value: '12345678901234' }, { value: 'DELETED' }, { value: '3' }]
+                        ]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', {
+        statusQuery: { messages: true, size: true, deleted: true }
+    });
+    const attrsStr = JSON.stringify(listAttrs);
+    test.ok(attrsStr.includes('SIZE'));
+    test.ok(attrsStr.includes('DELETED'));
+    const inbox = result.find(entry => entry.path === 'INBOX');
+    test.ok(inbox);
+    test.equal(inbox.status.messages, 10);
+    // STATUS SIZE is a number64 - values beyond 2^32 must survive
+    test.strictEqual(inbox.status.size, 12345678901234);
+    test.strictEqual(inbox.status.deleted, 3);
+    test.done();
+};
+
+module.exports['Commands: list tolerates an OLDNAME extended data item'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                // RFC 9051 6.3.9.7: a LIST response may carry an OLDNAME extended
+                // data item after a RENAME or name normalization - the client must
+                // parse the response without choking on the extra attribute
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'NewBox' }, [{ value: 'OLDNAME' }, [{ value: 'OldBox' }]]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    const entry = result.find(folder => folder.path === 'NewBox');
+    test.ok(entry, 'mailbox with OLDNAME extended data must be listed');
+    test.ok(entry.flags.has('\\HasNoChildren'));
     test.done();
 };
 
@@ -5742,6 +5945,108 @@ module.exports['Commands: status merges synthetic recent into rev2 query results
     test.done();
 };
 
+module.exports['Commands: status requests and parses SIZE and DELETED on rev2 sessions'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        // rev2-only server: STATUS=SIZE is folded in and DELETED is a base rev2
+        // status item (RFC 9051 Appendix E item 3)
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            queryAttrs = JSON.stringify(attrs);
+            await opts.untagged.STATUS({
+                attributes: [
+                    { value: 'INBOX' },
+                    [{ value: 'MESSAGES' }, { value: '100' }, { value: 'SIZE' }, { value: '12345678901234' }, { value: 'DELETED' }, { value: '3' }]
+                ]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true, size: true, deleted: true });
+    test.ok(queryAttrs.includes('SIZE'));
+    test.ok(queryAttrs.includes('DELETED'));
+    test.equal(result.messages, 100);
+    // STATUS SIZE is a number64 - values beyond 2^32 must survive
+    test.strictEqual(result.size, 12345678901234);
+    test.strictEqual(result.deleted, 3);
+    test.done();
+};
+
+module.exports['Commands: status requests SIZE with the STATUS=SIZE token on rev1 sessions'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        // RFC 8438 server: SIZE is available via the capability token, DELETED is
+        // rev2-only and must be dropped
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['STATUS=SIZE', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            queryAttrs = JSON.stringify(attrs);
+            await opts.untagged.STATUS({
+                attributes: [{ value: 'INBOX' }, [{ value: 'SIZE' }, { value: '2048' }]]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { size: true, deleted: true });
+    test.ok(queryAttrs.includes('SIZE'));
+    test.ok(!queryAttrs.includes('DELETED'));
+    test.strictEqual(result.size, 2048);
+    test.done();
+};
+
+module.exports['Commands: status requests DELETED with QUOTA=RES-MESSAGE on rev1 sessions'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        // RFC 9208: the DELETED status item is mandatory when QUOTA=RES-MESSAGE
+        // is advertised, even without IMAP4rev2
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['QUOTA=RES-MESSAGE', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            queryAttrs = JSON.stringify(attrs);
+            await opts.untagged.STATUS({
+                attributes: [{ value: 'INBOX' }, [{ value: 'DELETED' }, { value: '4' }]]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { deleted: true });
+    test.ok(queryAttrs.includes('DELETED'));
+    test.strictEqual(result.deleted, 4);
+    test.done();
+};
+
+module.exports['Commands: status drops SIZE and DELETED on rev1 sessions without support'] = async test => {
+    let queryAttrs = null;
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            queryAttrs = JSON.stringify(attrs);
+            await opts.untagged.STATUS({
+                attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '100' }]]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    // requesting them must not poison the whole STATUS command on a server that
+    // does not know these items
+    const result = await statusCommand(connection, 'INBOX', { messages: true, size: true, deleted: true });
+    test.ok(!queryAttrs.includes('SIZE'));
+    test.ok(!queryAttrs.includes('DELETED'));
+    test.equal(result.messages, 100);
+    test.done();
+};
+
 module.exports['Commands: status skips when all query values are false'] = async test => {
     const connection = createMockConnection({ state: 2 });
 
@@ -7588,6 +7893,30 @@ module.exports['Commands: namespace with NAMESPACE capability'] = async test => 
     test.equal(connection.namespaces.personal[0].prefix, 'INBOX.');
     test.equal(connection.namespaces.other[0].prefix, 'Users.');
     test.equal(connection.namespaces.shared[0].prefix, 'Shared.');
+    test.done();
+};
+
+module.exports['Commands: namespace uses the real command on rev2-only servers without the token'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        // NAMESPACE is folded into base IMAP4rev2 (RFC 9051 Appendix E) - a
+        // rev2-only server gets a real NAMESPACE command, not the LIST fallback
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, args, opts) => {
+            test.equal(cmd, 'NAMESPACE');
+            if (opts && opts.untagged && opts.untagged.NAMESPACE) {
+                await opts.untagged.NAMESPACE({
+                    attributes: [[[{ value: '' }, { value: '/' }]], null, null]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await namespaceCommand(connection);
+    test.ok(result);
+    test.equal(result.prefix, '');
+    test.equal(result.delimiter, '/');
     test.done();
 };
 

@@ -608,46 +608,10 @@ module.exports['Connection Edge: Race condition in mailbox lock'] = test => {
     });
 };
 
-module.exports['Connection Edge: Capability update after STARTTLS'] = test => {
-    let client = new ImapFlow({
-        host: 'imap.example.com',
-        port: 143,
-        auth: { user: 'test', pass: 'test' }
-    });
-
-    // Mock capabilities
-    client.capabilities = new Map();
-    client.capabilities.set('STARTTLS', true);
-
-    // Mock run method
-    client.run = async command => {
-        if (command === 'STARTTLS') {
-            client.expectCapabilityUpdate = true;
-            return true;
-        }
-        if (command === 'CAPABILITY') {
-            return true;
-        }
-    };
-
-    // Mock socket upgrade
-    client.socket = new EventEmitter();
-    client.socket.unpipe = () => {};
-    client.streamer = new EventEmitter();
-
-    // Override the upgradeToSTARTTLS to test capability update
-    client
-        .upgradeToSTARTTLS()
-        .then(result => {
-            test.ok(result, 'Should successfully upgrade to TLS');
-            test.ok(client.expectCapabilityUpdate, 'Should expect capability update');
-            test.done();
-        })
-        .catch(() => {
-            // Expected for this mock setup
-            test.done();
-        });
-};
+// NB! the capability discard/re-fetch behavior around STARTTLS is asserted end to
+// end in imap-flow-secure-test.js ('Secure: STARTTLS upgrade completes a session',
+// PRETLS-ONLY/POSTTLS-ONLY markers) - a mocked upgradeToSTARTTLS cannot reach the
+// re-fetch code without a real TLS handshake, so no vacuous variant is kept here.
 
 module.exports['Connection Edge: Event handlers attached before piping'] = test => {
     let client = new ImapFlow({

@@ -23,11 +23,20 @@ module.exports['Tools: encodePath with ASCII path'] = test => {
     test.done();
 };
 
-module.exports['Tools: encodePath with Unicode path (no UTF8)'] = test => {
+module.exports['Tools: encodePath with ASCII path (no UTF8)'] = test => {
     let connection = createMockConnection({ utf8: false });
     let result = tools.encodePath(connection, 'Sent/Gesendete');
     // ASCII path should remain unchanged
     test.equal(result, 'Sent/Gesendete');
+    test.done();
+};
+
+module.exports['Tools: encodePath encodes Unicode to modified UTF-7 on rev1 (no UTF8)'] = test => {
+    let connection = createMockConnection({ utf8: false });
+    // 'õ' (U+00F5) -> UTF-16BE 00F5 -> modified-base64 'APU'
+    test.equal(tools.encodePath(connection, 'Tõrva'), 'T&APU-rva');
+    // a literal '&' must be escaped as '&-'
+    test.equal(tools.encodePath(connection, 'Test&Folder'), 'Test&-Folder');
     test.done();
 };
 
@@ -55,9 +64,10 @@ module.exports['Tools: decodePath with ASCII path'] = test => {
 
 module.exports['Tools: decodePath with ampersand'] = test => {
     let connection = createMockConnection({ utf8: false });
-    // UTF-7-IMAP encoded string
-    let result = tools.decodePath(connection, 'Test&-Folder');
-    test.ok(typeof result === 'string');
+    // modified UTF-7: '&-' is the escaped form of a literal ampersand
+    test.equal(tools.decodePath(connection, 'Test&-Folder'), 'Test&Folder');
+    // and an encoded sequence round-trips back to Unicode
+    test.equal(tools.decodePath(connection, 'T&APU-rva'), 'Tõrva');
     test.done();
 };
 
@@ -1285,6 +1295,34 @@ module.exports['Tools: formatMessageResponse handles normal THREADID'] = async t
     let result = await tools.formatMessageResponse(untagged, {});
     test.equal(result.threadId, 'T9999');
     test.equal(result.emailId, 'E2');
+    test.done();
+};
+
+// ============================================
+// formatMessageResponse: BINARY vs BODY part tracking (RFC 3516 / RFC 9051)
+// ============================================
+
+module.exports['Tools: formatMessageResponse records which parts arrived via BINARY'] = async test => {
+    // Parts answered as BINARY[...] arrive with the content-transfer-encoding
+    // already decoded by the server; consumers (download/downloadMany) use the
+    // binaryParts set to skip their own decoder for exactly those parts
+    let untagged = await parser('* 1 FETCH (UID 7 BINARY[1] {4}\r\n BODY[2] {4}\r\n)', {
+        literals: [Buffer.from('AAAA'), Buffer.from('BBBB')]
+    });
+    let result = await tools.formatMessageResponse(untagged, {});
+    test.equal(result.bodyParts.get('1').toString(), 'AAAA');
+    test.equal(result.bodyParts.get('2').toString(), 'BBBB');
+    test.ok(result.binaryParts, 'binaryParts set should exist when a BINARY part arrived');
+    test.ok(result.binaryParts.has('1'), 'BINARY-answered part is recorded');
+    test.ok(!result.binaryParts.has('2'), 'BODY-answered part is not recorded');
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse leaves binaryParts unset for plain BODY fetches'] = async test => {
+    let untagged = await parser('* 1 FETCH (UID 8 BODY[1] {4}\r\n)', { literals: [Buffer.from('CCCC')] });
+    let result = await tools.formatMessageResponse(untagged, {});
+    test.equal(result.bodyParts.get('1').toString(), 'CCCC');
+    test.equal(result.binaryParts, undefined);
     test.done();
 };
 

@@ -13,13 +13,17 @@ const CAPS = 'IMAP4rev1 ID ENABLE NAMESPACE';
 
 // Shared per-connection IMAP line handler used by both the plaintext and the
 // upgraded TLS phases. Returns responses for the minimal session commands.
-const handleLine = (sock, line, onStartTls) => {
+// `caps` is the full capability list to advertise for this phase - the STARTTLS
+// test uses different pre- and post-TLS sets to prove the client discards the
+// plaintext capabilities and re-fetches them over TLS (RFC 9051 6.2.1).
+const handleLine = (sock, line, onStartTls, caps) => {
+    caps = caps || `${CAPS} STARTTLS`;
     let parts = line.split(' ');
     let tag = parts[0];
     let cmd = (parts[1] || '').toUpperCase();
     switch (cmd) {
         case 'CAPABILITY':
-            sock.write(`* CAPABILITY ${CAPS} STARTTLS\r\n${tag} OK CAPABILITY done\r\n`);
+            sock.write(`* CAPABILITY ${caps}\r\n${tag} OK CAPABILITY done\r\n`);
             break;
         case 'STARTTLS':
             sock.write(`${tag} OK Begin TLS\r\n`);
@@ -81,17 +85,23 @@ module.exports['Secure: STARTTLS upgrade completes a session'] = async test => {
 
         let detachPlain;
         detachPlain = lineReader(rawSocket, line => {
-            handleLine(rawSocket, line, () => {
-                // Upgrade: stop reading plaintext, wrap the socket in TLS
-                detachPlain();
-                let tlsSocket = new tls.TLSSocket(rawSocket, { isServer: true, key, cert });
-                tlsSocket.on('error', () => {});
-                tlsSocket.on('secure', () => {});
-                lineReader(tlsSocket, l => handleLine(tlsSocket, l));
-            });
+            handleLine(
+                rawSocket,
+                line,
+                () => {
+                    // Upgrade: stop reading plaintext, wrap the socket in TLS
+                    detachPlain();
+                    let tlsSocket = new tls.TLSSocket(rawSocket, { isServer: true, key, cert });
+                    tlsSocket.on('error', () => {});
+                    tlsSocket.on('secure', () => {});
+                    // post-TLS phase advertises a different capability set
+                    lineReader(tlsSocket, l => handleLine(tlsSocket, l, null, `${CAPS} POSTTLS-ONLY`));
+                },
+                `${CAPS} STARTTLS PRETLS-ONLY`
+            );
         });
 
-        rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS] ready\r\n`);
+        rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS PRETLS-ONLY] ready\r\n`);
     });
 
     let port = await listen(server);
@@ -113,6 +123,10 @@ module.exports['Secure: STARTTLS upgrade completes a session'] = async test => {
     test.ok(client.secureConnection, 'connection upgraded to TLS');
     test.ok(client.authenticated, 'authenticated over TLS');
     test.ok(client.usable);
+    // RFC 9051 6.2.1: capabilities cached before STARTTLS MUST be discarded and
+    // re-fetched over the TLS channel
+    test.ok(client.capabilities.has('POSTTLS-ONLY'), 'post-TLS capabilities were re-fetched');
+    test.ok(!client.capabilities.has('PRETLS-ONLY'), 'pre-TLS capabilities were discarded');
 
     await client.noop();
     await client.logout();

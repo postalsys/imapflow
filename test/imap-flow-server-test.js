@@ -797,6 +797,8 @@ module.exports['Server: PREAUTH greeting skips login'] = async test => {
     await client.connect();
     test.equal(client.state, client.states.AUTHENTICATED);
     test.ok(client.usable);
+    // documented contract: `true` if the connection was authenticated by PREAUTH
+    test.strictEqual(client.authenticated, true);
 
     await client.logout();
     client.close();
@@ -838,6 +840,84 @@ module.exports['Server: unsolicited EXISTS and VANISHED reach the untagged handl
     test.equal(existsEvent.count, 5);
     test.ok(expungeEvents.length >= 1, 'VANISHED handler fired');
     test.equal(expungeEvents[0].vanished, true);
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
+
+module.exports['Server: rev2-shaped SELECT response is tolerated through the full pipeline'] = async test => {
+    // RFC 9051 requires rev2 servers to include an untagged LIST in the SELECT
+    // response and a CLOSED response code when another mailbox was selected, and
+    // to omit RECENT/UNSEEN. The client must consume such a response cleanly.
+    let server = createServer({
+        capabilities: 'IMAP4rev2 ID ENABLE NAMESPACE',
+        handlers: {
+            SELECT(ctx) {
+                ctx.write('* OK [CLOSED] Previous mailbox closed\r\n');
+                ctx.write('* 3 EXISTS\r\n');
+                ctx.write('* LIST () "/" INBOX\r\n');
+                ctx.write('* FLAGS (\\Seen \\Answered \\Flagged \\Deleted \\Draft)\r\n');
+                ctx.write('* OK [PERMANENTFLAGS (\\Seen \\*)] Limited\r\n');
+                ctx.write('* OK [UIDVALIDITY 12345] UIDs valid\r\n');
+                ctx.write('* OK [UIDNEXT 100] Predicted next UID\r\n');
+                ctx.ok('[READ-WRITE] SELECT completed');
+            }
+        }
+    });
+    let port = await listen(server);
+    let client = makeClient(port);
+    let errors = [];
+    client.on('error', err => errors.push(err));
+
+    await client.connect();
+    test.ok(client.capabilities.has('IMAP4rev2'));
+
+    let mailbox = await client.mailboxOpen('INBOX');
+    test.equal(mailbox.path, 'INBOX');
+    test.equal(mailbox.exists, 3);
+    test.equal(mailbox.uidNext, 100);
+    test.equal(mailbox.uidValidity, 12345n);
+
+    // re-select drives the CLOSED response code through the live pipeline again
+    let again = await client.mailboxOpen('INBOX');
+    test.equal(again.exists, 3);
+    test.equal(errors.length, 0, 'no errors from the rev2-shaped response');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
+
+module.exports['Server: unsolicited STATUS for another mailbox is tolerated'] = async test => {
+    // RFC 9051 (Appendix E item 20): with rev2, servers may push updates that are
+    // unrelated to the selected mailbox (e.g. a STATUS for another mailbox during
+    // IDLE). The client must ignore them without corrupting the selected state.
+    let server = createServer({
+        handlers: {
+            NOOP(ctx) {
+                ctx.write('* STATUS "Other" (MESSAGES 5 UNSEEN 1)\r\n');
+                ctx.ok('NOOP completed');
+            }
+        }
+    });
+    let port = await listen(server);
+    let client = makeClient(port);
+    let errors = [];
+    client.on('error', err => errors.push(err));
+
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+    test.equal(client.mailbox.exists, 3);
+
+    await client.noop();
+    await new Promise(r => setTimeout(r, 20));
+
+    test.equal(client.mailbox.path, 'INBOX', 'selected mailbox unchanged');
+    test.equal(client.mailbox.exists, 3, 'selected mailbox message count unchanged');
+    test.equal(errors.length, 0, 'unsolicited STATUS must not raise errors');
 
     await client.logout();
     client.close();

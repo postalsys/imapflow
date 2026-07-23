@@ -362,6 +362,91 @@ module.exports['IMAP Compiler: LITERAL literal8'] = test =>
         )
     );
 
+// RFC 7888 (folded into IMAP4rev2): with LITERAL- a non-synchronizing literal
+// marker {n+} is only allowed for literals of up to 4096 bytes - anything larger
+// must use the synchronizing {n} form, in every compilation mode
+module.exports['IMAP Compiler: LITERAL- oversized literal stays synchronizing in single-buffer mode'] = test =>
+    asyncWrapper(test, async test => {
+        let payload = 'a'.repeat(4097);
+        let compiled = (
+            await compiler(
+                {
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [
+                        {
+                            type: 'LITERAL',
+                            value: payload
+                        }
+                    ]
+                },
+                { literalMinus: true }
+            )
+        ).toString();
+        test.ok(compiled.startsWith('* CMD {4097}\r\n'), `must not use a non-synchronizing marker: ${compiled.slice(0, 20)}`);
+    });
+
+module.exports['IMAP Compiler: LITERAL- boundary: exactly 4096 bytes is non-synchronizing'] = test =>
+    asyncWrapper(test, async test => {
+        let payload = 'a'.repeat(4096);
+        let parts = (
+            await compiler(
+                {
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [
+                        {
+                            type: 'LITERAL',
+                            value: payload
+                        }
+                    ]
+                },
+                { asArray: true, literalMinus: true }
+            )
+        ).map(entry => entry.toString());
+        test.equal(parts.length, 1, 'literal must be appended inline without a continuation break');
+        test.ok(parts[0].startsWith('* CMD {4096+}\r\n'));
+    });
+
+module.exports['IMAP Compiler: LITERAL- boundary: 4097 bytes falls back to synchronizing'] = test =>
+    asyncWrapper(test, async test => {
+        let payload = 'a'.repeat(4097);
+        let parts = (
+            await compiler(
+                {
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [
+                        {
+                            type: 'LITERAL',
+                            value: payload
+                        }
+                    ]
+                },
+                { asArray: true, literalMinus: true }
+            )
+        ).map(entry => entry.toString());
+        test.equal(parts.length, 2, 'literal must wait for a continuation response');
+        test.ok(parts[0].endsWith('{4097}\r\n'), `marker must be synchronizing: ${parts[0].slice(-12)}`);
+    });
+
+// The literal size marker counts octets, not UTF-16 code units - a unicode string
+// value must declare its UTF-8 byte length
+module.exports['IMAP Compiler: LITERAL declares byte length for unicode string values'] = test =>
+    asyncWrapper(test, async test => {
+        let compiled = await compiler({
+            tag: '*',
+            command: 'CMD',
+            attributes: [
+                {
+                    type: 'LITERAL',
+                    value: 'Sõnumid'
+                }
+            ]
+        });
+        test.equal(compiled.toString(), '* CMD {8}\r\nSõnumid');
+    });
+
 module.exports['IMAP Compiler: LITERAL array 1'] = test =>
     asyncWrapper(test, async test =>
         test.deepEqual(

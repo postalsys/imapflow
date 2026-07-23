@@ -207,6 +207,10 @@ export interface ListOptions {
         unseen?: boolean;
         /** If true request last known modseq value */
         highestModseq?: boolean;
+        /** If true request total mailbox size in octets (requires STATUS=SIZE or IMAP4rev2) */
+        size?: boolean;
+        /** If true request count of messages with \Deleted flag (requires IMAP4rev2) */
+        deleted?: boolean;
     };
     /** Set specific paths as special use folders */
     specialUseHints?: {
@@ -282,6 +286,10 @@ export interface StatusObject {
     unseen?: number;
     /** Last known modseq value (if CONDSTORE extension is enabled) */
     highestModseq?: bigint;
+    /** Total size of the mailbox in octets (only if requested and the server supports STATUS=SIZE or IMAP4rev2) */
+    size?: number;
+    /** Count of messages with \Deleted flag (only if requested and IMAP4rev2 is active) */
+    deleted?: number;
 }
 
 export type SequenceString = string | number | bigint;
@@ -493,6 +501,8 @@ export interface FetchMessageObject {
     internalDate?: Date | string;
     /** A Map of message body parts where key is requested part identifier and value is a Buffer */
     bodyParts?: Map<string, Buffer>;
+    /** Part identifiers from bodyParts that arrived via FETCH BINARY, i.e. with the content-transfer-encoding already decoded by the server */
+    binaryParts?: Set<string>;
     /** Requested header lines as Buffer */
     headers?: Buffer;
     /** Account unique ID for this email */
@@ -755,6 +765,10 @@ export class ImapFlow extends EventEmitter {
             uidValidity?: boolean;
             unseen?: boolean;
             highestModseq?: boolean;
+            /** Requires STATUS=SIZE or IMAP4rev2 */
+            size?: boolean;
+            /** Requires IMAP4rev2 */
+            deleted?: boolean;
         }
     ): Promise<StatusObject>;
 

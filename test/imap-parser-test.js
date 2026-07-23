@@ -435,6 +435,115 @@ module.exports['IMAP Parser: Literals: allow zero length literal in the end of a
         ])
     );
 
+module.exports['IMAP Parser: Literals: zero length literal keeps the literal queue aligned'] = test =>
+    asyncWrapper(test, async test =>
+        // ImapStream queues a Buffer for every literal marker it extracts, including
+        // {0}, so the parser must consume exactly one queue entry per marker.
+        // Otherwise every literal after a {0} in the same response is silently
+        // shifted to the wrong value (RFC 9051 4.3 allows {0} as an empty string).
+        test.deepEqual((await parser('TAG1 CMD ({0}\r\n {5}\r\n)', { literals: [Buffer.from(''), Buffer.from('hello')] })).attributes, [
+            [
+                {
+                    type: 'LITERAL',
+                    value: Buffer.from('')
+                },
+                {
+                    type: 'LITERAL',
+                    value: Buffer.from('hello')
+                }
+            ]
+        ])
+    );
+
+module.exports['IMAP Parser: Literals: zero length literal between literals keeps values aligned'] = test =>
+    asyncWrapper(test, async test =>
+        test.deepEqual(
+            (await parser('TAG1 CMD ({3}\r\n {0}\r\n {5}\r\n)', { literals: [Buffer.from('abc'), Buffer.from(''), Buffer.from('world')] })).attributes,
+            [
+                [
+                    {
+                        type: 'LITERAL',
+                        value: Buffer.from('abc')
+                    },
+                    {
+                        type: 'LITERAL',
+                        value: Buffer.from('')
+                    },
+                    {
+                        type: 'LITERAL',
+                        value: Buffer.from('world')
+                    }
+                ]
+            ]
+        )
+    );
+
+// RFC 9051 updated resp-text to allow empty text: resp-text = ["[" resp-text-code "]" SP] [text]
+module.exports['IMAP Parser: resp-text: bare OK with no text'] = test =>
+    asyncWrapper(test, async test => test.deepEqual(await parser('* OK'), { tag: '*', command: 'OK' }));
+
+module.exports['IMAP Parser: resp-text: tagged OK with no text'] = test =>
+    asyncWrapper(test, async test => test.deepEqual(await parser('TAG1 OK'), { tag: 'TAG1', command: 'OK' }));
+
+module.exports['IMAP Parser: resp-text: response code with no trailing text'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('* OK [UIDNEXT 5]');
+        test.equal(parsed.command, 'OK');
+        test.deepEqual(parsed.attributes, [
+            {
+                type: 'ATOM',
+                value: '',
+                section: [
+                    { type: 'ATOM', value: 'UIDNEXT' },
+                    { type: 'ATOM', value: '5' }
+                ]
+            }
+        ]);
+    });
+
+module.exports['IMAP Parser: resp-text: response code with trailing space and no text'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('* OK [READ-WRITE] ');
+        test.equal(parsed.command, 'OK');
+        test.deepEqual(parsed.attributes, [
+            {
+                type: 'ATOM',
+                value: '',
+                section: [{ type: 'ATOM', value: 'READ-WRITE' }]
+            }
+        ]);
+    });
+
+// RFC 9051 uses number64 (up to 2^63-1) for message and body sizes - values beyond
+// 2^32 must survive the tokenizer without truncation
+module.exports['IMAP Parser: number64: RFC822.SIZE beyond 32 bits'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('* 1 FETCH (RFC822.SIZE 12345678901234)');
+        test.deepEqual(parsed.attributes, [
+            { type: 'ATOM', value: 'FETCH' },
+            [
+                { type: 'ATOM', value: 'RFC822.SIZE' },
+                { type: 'ATOM', value: '12345678901234' }
+            ]
+        ]);
+    });
+
+module.exports['IMAP Parser: number64: response code argument beyond 32 bits'] = test =>
+    asyncWrapper(test, async test => {
+        let parsed = await parser('* OK [HIGHESTMODSEQ 90060115194045007] Ok');
+        test.deepEqual(parsed.attributes, [
+            {
+                type: 'ATOM',
+                value: '',
+                section: [
+                    { type: 'ATOM', value: 'HIGHESTMODSEQ' },
+                    { type: 'ATOM', value: '90060115194045007' }
+                ]
+            },
+            { type: 'TEXT', value: 'Ok' }
+        ]);
+    });
+
 module.exports['IMAP Parser: Section: empty'] = test =>
     asyncWrapper(test, async test =>
         test.deepEqual((await parser('TAG1 CMD BODY[]')).attributes, [
@@ -1284,7 +1393,9 @@ module.exports['IMAP Parser, FETCH with BODYSTRUCTURE'] = test =>
         ]);
     });
 
-module.exports['IMAP Parser, FETCH with BODYSTRUCTURE'] = test =>
+// NB! must not share a name with the deep-BODYSTRUCTURE test above - a duplicate
+// module.exports key silently overwrites the earlier test and it never runs
+module.exports['IMAP Parser, FETCH exceeding max nesting depth'] = test =>
     asyncWrapper(test, async test => {
         try {
             let parsed = await parser('* 1 FETCH (UID 1 (((((((((((((((((((((((((');

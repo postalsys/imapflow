@@ -115,8 +115,9 @@ module.exports['imap-compiler: synchronizing literal with non-buffer value seeds
                 {
                     tag: '*',
                     command: 'CMD',
-                    // value is an object that is neither string/number/Buffer but has a numeric
-                    // length, so literalLength resolves to 10 while formatRespEntry(value, true)
+                    // value is an object that is neither string/number/Buffer, so the size
+                    // marker derives from the UTF-8 byte length of its stringified form
+                    // ('[object Object]', 15 bytes) while formatRespEntry(value, true)
                     // returns null -> the seeded resp falls back to [] (line 156 right side).
                     attributes: [{ type: 'LITERAL', value: { length: 10 } }]
                 },
@@ -125,7 +126,7 @@ module.exports['imap-compiler: synchronizing literal with non-buffer value seeds
         ).map(entry => entry.toString());
         // Only the header segment is emitted; the empty seeded data segment is dropped
         // because `if (resp.length)` is false at the end.
-        test.deepEqual(out, ['* CMD {10}\r\n']);
+        test.deepEqual(out, ['* CMD {15}\r\n']);
     });
 
 // STRING node with falsy value -> `(node.value || '')` right side (line 165).

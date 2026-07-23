@@ -919,6 +919,23 @@ module.exports['Search Compiler: Unicode skipped when UTF8=ACCEPT enabled'] = te
     test.done();
 };
 
+module.exports['Search Compiler: Unicode on rev2 without UTF8=ACCEPT still adds CHARSET UTF-8'] = test => {
+    // RFC 9051 6.4.4: rev2 servers MUST assume UTF-8 when CHARSET is absent, and
+    // sending CHARSET UTF-8 is "redundant" but explicitly "permitted for improved
+    // compatibility" - pin the compiler's choice to send it until UTF8=ACCEPT is
+    // actually ENABLEd
+    let connection = createMockConnection({
+        capabilities: [['IMAP4rev2', true]],
+        enabled: new Set()
+    });
+    let compiled = searchCompiler(connection, { subject: 'Sõnum' });
+
+    let charset = findAttr(compiled, 'CHARSET');
+    test.ok(charset, 'CHARSET prefix expected for a unicode search value');
+    test.ok(hasAttr(compiled, 'UTF-8'));
+    test.done();
+};
+
 module.exports['Search Compiler: GMRAW with Unicode adds CHARSET'] = test => {
     let connection = createMockConnection({
         capabilities: [['X-GM-EXT-1', true]],

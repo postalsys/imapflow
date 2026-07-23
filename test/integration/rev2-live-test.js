@@ -207,6 +207,131 @@ module.exports['Live rev2: returnOptions search is answered via a real ESEARCH r
     test.done();
 };
 
+module.exports['Live rev2: STATUS reports SIZE and DELETED'] = async test => {
+    const logs = [];
+    const client = await connectClient(null, logs);
+    try {
+        const raw = Buffer.from('Subject: sized\r\n\r\nsized body\r\n');
+        await client.append('INBOX', raw, ['\\Deleted']);
+        await client.append('INBOX', Buffer.from('Subject: kept\r\n\r\nkept body\r\n'));
+
+        const status = await client.status('INBOX', { messages: true, size: true, deleted: true });
+
+        test.ok(clientSent(logs, 'SIZE'), 'STATUS should request SIZE');
+        test.ok(clientSent(logs, 'DELETED'), 'STATUS should request DELETED');
+        test.equal(status.messages, 2);
+        test.equal(status.deleted, 1, 'one message carries the \\Deleted flag');
+        test.ok(Number.isSafeInteger(status.size) && status.size >= raw.length, 'mailbox size should cover at least the first appended message');
+    } finally {
+        await client.logout();
+    }
+    test.done();
+};
+
+module.exports['Live rev2: statusQuery returns SIZE and DELETED inline via LIST-STATUS'] = async test => {
+    const client = await connectClient();
+    try {
+        await client.append('INBOX', Buffer.from('Subject: probe\r\n\r\nprobe body\r\n'), ['\\Deleted']);
+
+        const folders = await client.list({ statusQuery: { messages: true, size: true, deleted: true } });
+        const inbox = folders.find(folder => folder.path === 'INBOX');
+        test.equal(inbox.status.messages, 1);
+        test.equal(inbox.status.deleted, 1);
+        test.ok(Number.isSafeInteger(inbox.status.size) && inbox.status.size > 0);
+    } finally {
+        await client.logout();
+    }
+    test.done();
+};
+
+module.exports['Live rev2: SELECT response carries an untagged LIST and re-select gets CLOSED'] = async test => {
+    const logs = [];
+    const client = await connectClient(null, logs);
+    try {
+        await client.mailboxCreate('Closer');
+        const mailbox = await client.mailboxOpen('INBOX');
+        test.equal(mailbox.path, 'INBOX');
+
+        // RFC 9051 6.3.1: the SELECT response includes an untagged LIST for the
+        // selected mailbox - the client must consume it without issue
+        test.ok(serverSentUntagged(logs, 'LIST'), 'rev2 SELECT should include an untagged LIST response');
+
+        // switching mailboxes must produce a CLOSED response code for the old one
+        await client.mailboxOpen('Closer');
+        const closed = wireLines(logs).some(entry => entry.src === 's' && entry.msg.includes('[CLOSED]'));
+        test.ok(closed, 're-select should carry a CLOSED response code');
+        test.equal(client.mailbox.path, 'Closer', 'client state should track the newly selected mailbox');
+
+        await client.mailboxClose();
+        await client.mailboxDelete('Closer');
+    } finally {
+        await client.logout();
+    }
+    test.done();
+};
+
+module.exports['Live rev2: binary fetch uses the folded-in FETCH BINARY'] = async test => {
+    const logs = [];
+    const client = await connectClient(null, logs);
+    try {
+        // BINARY sections only allow numeric part specifiers, so use a multipart
+        // message - part "1" of a single-part message would resolve to the TEXT
+        // section, which must stay a BODY fetch. The base64 encoding gives the
+        // server-side BINARY decoding something to undo.
+        const content = [
+            'Subject: bin',
+            'MIME-Version: 1.0',
+            'Content-Type: multipart/mixed; boundary=bb',
+            '',
+            '--bb',
+            'Content-Type: text/plain',
+            'Content-Transfer-Encoding: base64',
+            '',
+            Buffer.from('binary body').toString('base64'),
+            '--bb--',
+            ''
+        ].join('\r\n');
+        await client.append('INBOX', Buffer.from(content));
+
+        await client.mailboxOpen('INBOX');
+        const { content: downloadStream } = await client.download('1', '1', { binary: true });
+        const chunks = [];
+        for await (let chunk of downloadStream) {
+            chunks.push(chunk);
+        }
+
+        test.ok(clientSent(logs, 'BINARY.PEEK[1]'), 'client should issue a BINARY fetch for the numeric part on a rev2 session');
+        test.equal(Buffer.concat(chunks).toString().trim(), 'binary body', 'BINARY fetch should return the decoded content');
+    } finally {
+        await client.logout();
+    }
+    test.done();
+};
+
+module.exports['Live rev2: MOVE reports COPYUID from the untagged OK'] = async test => {
+    const client = await connectClient();
+    try {
+        await client.append('INBOX', Buffer.from('Subject: mover\r\n\r\nmover body\r\n'));
+        await client.mailboxCreate('Moved');
+
+        await client.mailboxOpen('INBOX');
+        const result = await client.messageMove('1', 'Moved');
+
+        // RFC 9051 6.4.8: the server is REQUIRED to send COPYUID in an untagged OK
+        // before the EXPUNGEs - verify the client captured it
+        test.ok(result, 'move should succeed');
+        test.equal(result.path, 'INBOX');
+        test.equal(result.destination, 'Moved');
+        test.ok(result.uidMap && result.uidMap.size === 1, 'COPYUID must be captured from the untagged OK');
+
+        await client.mailboxClose();
+        await client.mailboxDelete('Moved');
+    } finally {
+        await client.logout();
+    }
+    test.done();
+};
+
 module.exports['Live rev2: message lifecycle smoke test'] = async test => {
     const client = await connectClient();
     try {

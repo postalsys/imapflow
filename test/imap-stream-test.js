@@ -66,6 +66,52 @@ A LOGOUT
     writer().catch(err => test.ifError(err));
 };
 
+module.exports['Literal8 marker activates literal extraction'] = test => {
+    // RFC 9051 folds the FETCH side of BINARY into base IMAP4rev2 - servers answer
+    // BINARY fetches with literal8 syntax (~{n}) whose content may contain NULs.
+    // The stream must treat the trailing {n} as a literal marker regardless of the
+    // '~' prefix and hand the raw bytes over unmodified.
+    let input = Buffer.from('* 1 FETCH (BINARY[1] ~{5}\r\nhel\x00o)\r\n', 'binary');
+
+    let stream = new ImapStream();
+
+    let reading = false;
+    let reader = async () => {
+        let cmd;
+        while ((cmd = stream.read()) !== null) {
+            test.equal(cmd.payload.toString('binary'), '* 1 FETCH (BINARY[1] ~{5}\r\n)');
+            test.equal(cmd.literals.length, 1);
+            test.deepEqual(cmd.literals[0], Buffer.from('hel\x00o', 'binary'));
+
+            // and the parser consumes the literal8 into a LITERAL node with the NUL intact
+            let parsed = await parser(cmd.payload, { literals: cmd.literals });
+            test.deepEqual(parsed.attributes[1][1], { type: 'LITERAL', value: Buffer.from('hel\x00o', 'binary') });
+            cmd.next();
+        }
+    };
+
+    stream.on('readable', () => {
+        if (!reading) {
+            reading = true;
+            reader()
+                .catch(err => test.ifError(err))
+                .finally(() => {
+                    reading = false;
+                });
+        }
+    });
+
+    stream.on('error', err => {
+        test.ifError(err);
+    });
+
+    stream.on('end', () => {
+        test.done();
+    });
+
+    stream.end(input);
+};
+
 module.exports['Single byte'] = test => {
     let input = Buffer.from(
         `A CAPABILITY
