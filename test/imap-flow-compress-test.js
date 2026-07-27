@@ -143,11 +143,23 @@ module.exports['Compress: session negotiates DEFLATE and runs commands'] = async
     client.write(Buffer.alloc(128 * 1024, 0x61));
     await new Promise(r => setTimeout(r, 50));
 
+    // Each stream owns and reports its own lifecycle: the compression PassThrough used to proxy
+    // the raw socket's `destroyed` getter, which made close() skip destroying it.
+    let rawSocket = client.socket;
+    let passThrough = client.writeSocket;
+    test.notEqual(passThrough, rawSocket, 'compression replaced the write socket with a PassThrough');
+    test.equal(passThrough.destroyed, false, 'the PassThrough reports its own state while alive');
+
     await client.logout();
     client.close();
     // close() must tear down the compression streams
     test.ok(!client._deflate, 'deflate cleaned up after close');
     test.ok(!client._inflate, 'inflate cleaned up after close');
+    test.ok(passThrough.destroyed, 'the compression PassThrough was destroyed');
+    test.ok(rawSocket.destroyed, 'the raw socket was destroyed');
+
+    // Repeated close() stays idempotent
+    test.doesNotThrow(() => client.close());
 
     server.close();
     test.done();

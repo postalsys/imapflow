@@ -2,8 +2,6 @@
 
 'use strict';
 
-const proxyquire = require('proxyquire').noCallThru();
-
 const { parser, compiler } = require('../lib/handler/imap-handler');
 const { ImapStream } = require('../lib/handler/imap-stream');
 const { ParserInstance } = require('../lib/handler/parser-instance');
@@ -304,29 +302,6 @@ module.exports['search-compiler: keyword already present in mailbox flags is acc
 };
 
 // ============================================================================
-// proxy-connection.js
-// ============================================================================
-
-// attachEarlyErrorHandler guard (lines 23-25): the proxy client returns a truthy socket
-// that lacks an `.on` method, so the guard returns early.
-module.exports['proxy-connection: socket without .on skips early error handler attach'] = async test => {
-    let logger = { info: () => {}, error: () => {} };
-    let bareSocket = { write() {}, end() {} }; // truthy, but no .on
-    const { proxyConnection } = proxyquire('../lib/proxy-connection', {
-        'nodemailer/lib/smtp-connection/http-proxy-client': (url, port, host, cb) => {
-            cb(null, bareSocket);
-        },
-        socks: { SocksClient: {} },
-        dns: { promises: { resolve: async () => ['127.0.0.1'] } },
-        net: { isIP: () => true }
-    });
-
-    let socket = await proxyConnection(logger, 'http://proxy.example.com:8080', '192.168.1.1', 993);
-    test.equal(socket, bareSocket, 'socket returned unchanged');
-    test.ok(!('_earlyErrorHandler' in socket), 'no early error handler was attached to a socket without .on');
-    test.done();
-};
-
 // Sanity: untagged parse still round-trips, just to keep the parser import exercised.
 module.exports['sanity: parser/compiler round-trip'] = test =>
     asyncWrapper(test, async test => {

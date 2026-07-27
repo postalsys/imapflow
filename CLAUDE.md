@@ -28,7 +28,7 @@ npm as `imapflow` and ships TypeScript type definitions.
 - **Module system**: CommonJS (see Packaging Constraints below)
 - **Testing**: Grunt + grunt-contrib-nodeunit, ESLint via grunt-eslint
 - **Lint/format**: ESLint (`eslint.config.js`, flat config) + Prettier
-- **Key dependencies**: `@zone-eu/mailsplit`, `libmime`, `libqp`, `libbase64`, `iconv-lite`, `encoding-japanese`, `nodemailer`, `pino`, `socks`
+- **Key dependencies**: `@zone-eu/mailsplit`, `libmime`, `libqp`, `libbase64`, `iconv-lite`, `encoding-japanese`, `pino`, `socks`
 
 ## Development Commands
 

@@ -42,7 +42,22 @@ export interface ImapFlowOptions {
     verifyOnly?: boolean;
     /** If true and verifyOnly is set, lists mailboxes */
     includeMailboxes?: boolean;
-    /** Proxy URL. Supports HTTP CONNECT (http:, https:) and SOCKS (socks:, socks4:, socks5:) proxies */
+    /**
+     * Proxy URL. Supports HTTP CONNECT (http:, https:) and SOCKS (socks:, socks4:, socks4a:,
+     * socks5:) proxies. IPv6 proxy endpoints are given in URL form, e.g. `socks5://[2001:db8::1]:1080`.
+     *
+     * DNS behaviour depends on the proxy protocol:
+     *   - `http:`/`https:` - the destination hostname is sent to the proxy unresolved
+     *   - `socks4:` - destination hostnames are resolved locally to IPv4 (SOCKS4 has no IPv6
+     *     destination address type; IPv6 destinations are rejected)
+     *   - `socks4a:` - destination hostnames are sent to the proxy for remote DNS (IPv6
+     *     destinations are rejected)
+     *   - `socks:`/`socks5:` - destination hostnames are sent to the proxy for remote DNS, IPv4
+     *     and IPv6 literals are passed through
+     *
+     * The proxy endpoint itself is never resolved by ImapFlow; a hostname endpoint is handed to
+     * Node as-is. Proxy DNS and negotiation run inside `connectionTimeout`.
+     */
     proxy?: string;
     /** If true, then use QRESYNC instead of CONDSTORE. EXPUNGE notifications will include UID instead of sequence number */
     qresync?: boolean;
@@ -56,7 +71,11 @@ export interface ImapFlowOptions {
     disableAutoEnable?: boolean;
     /** If true, do not enable IMAP4rev2 mode even if the server supports it */
     disableIMAP4rev2?: boolean;
-    /** How long to wait for the connection to be established. Defaults to 90 seconds */
+    /**
+     * How long to wait for a usable transport, covering DNS resolution, proxy negotiation and the
+     * TCP/TLS handshake as a single budget. Defaults to 90 seconds. An expiry in any of those
+     * phases rejects with error code `CONNECT_TIMEOUT`.
+     */
     connectionTimeout?: number;
     /** How long to wait for the greeting. Defaults to 16 seconds */
     greetingTimeout?: number;
@@ -65,12 +84,17 @@ export interface ImapFlowOptions {
     /**
      * Maximum allowed length in bytes of a single response line (a response without a literal).
      * Guards against a malicious or broken server that never sends a line terminator. Defaults to
-     * 1GB.
+     * 1GB. The line terminator counts towards the limit and a line exactly at the limit is
+     * accepted. Exceeding it is terminal: the connection fails with error code `LineTooLarge` and
+     * no further input is parsed.
      */
     maxLineLength?: number;
     /**
      * Maximum allowed size in bytes of a single IMAP literal block. Bounds peak memory allocation
-     * against a malicious or broken server announcing an oversized literal. Defaults to 1GB.
+     * against a malicious or broken server announcing an oversized literal. Defaults to 1GB. A
+     * literal exactly at the limit is accepted. Exceeding it is terminal: the connection fails
+     * with error code `LiteralTooLarge`, and neither the marker line nor any byte of the rejected
+     * literal is interpreted as protocol.
      */
     maxLiteralSize?: number;
     /**

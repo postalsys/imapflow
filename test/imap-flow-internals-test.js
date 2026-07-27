@@ -38,13 +38,36 @@ module.exports['Internals: emitError routes to upgrade rejector while upgrading'
     client.socket = { destroyed: true, destroy: () => {} };
     client.upgrading = true;
     let rejected = null;
+    // Stands in for the upgrade's settle() helper, which owns clearing `upgrading`,
+    // the upgrade timer and the temporary handshake handlers.
     client._upgradeReject = err => {
         rejected = err;
+        client.upgrading = false;
     };
     let err = new Error('tls boom');
     client.emitError(err);
     test.equal(rejected, err);
+    test.equal(client._upgradeReject, null, 'the rejector is consumed exactly once');
     test.equal(client.upgrading, false);
+    test.done();
+};
+
+module.exports['Internals: emitError closes when an upgrade has no rejector'] = test => {
+    let client = makeClient();
+    client.socket = { destroyed: true, destroy: () => {} };
+    client.upgrading = true;
+    client._upgradeReject = null;
+
+    let emitted = false;
+    client.on('error', () => {
+        emitted = true;
+    });
+
+    client.emitError(new Error('tls boom'));
+
+    test.equal(client.upgrading, false, 'the upgrade flag is cleared');
+    test.equal(emitted, false, 'no duplicate error event while the upgrade owns reporting');
+    client.close();
     test.done();
 };
 

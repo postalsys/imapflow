@@ -7,6 +7,8 @@
 // Mock Connection Factory
 // ============================================
 
+const imapCommands = require('../lib/imap-commands.js');
+
 const createMockConnection = (overrides = {}) => {
     const states = {
         NOT_AUTHENTICATED: 1,
@@ -26,7 +28,7 @@ const createMockConnection = (overrides = {}) => {
         noModseq: false
     };
 
-    return {
+    const connection = {
         states,
         state: overrides.state || states.SELECTED,
         id: 'test-connection-id',
@@ -48,6 +50,9 @@ const createMockConnection = (overrides = {}) => {
         },
         close: overrides.close || (() => {}),
         emit: overrides.emit || (() => {}),
+        // A live transport: command implementations that guard against polling or writing on a
+        // dead connection (idle.js) need this to look established.
+        socket: overrides.socket || { destroyed: false },
         currentSelectCommand: false,
         skipListSubscribedArg: false,
         skipListStatusArgs: false,
@@ -55,6 +60,15 @@ const createMockConnection = (overrides = {}) => {
         skipLsub: false,
         messageFlagsAdd: overrides.messageFlagsAdd || (async () => {}),
         run: overrides.run || (async () => {}),
+        // Mirrors ImapFlow.runInternal(): dispatch through the command registry without the
+        // preCheck/auto-IDLE handshake that run() performs, so a fallback poll runs the real
+        // SELECT/STATUS implementation.
+        runInternal:
+            overrides.runInternal ||
+            (async (command, ...args) => {
+                let handler = imapCommands.get(command.toUpperCase());
+                return handler ? await handler(connection, ...args) : false;
+            }),
         exec:
             overrides.exec ||
             (async () => ({
@@ -63,6 +77,8 @@ const createMockConnection = (overrides = {}) => {
             })),
         ...overrides
     };
+
+    return connection;
 };
 
 // Decodes the base64 SASL payload that authenticate() hands to exec().
@@ -7312,10 +7328,14 @@ module.exports['Commands: idle NOOP fallback uses STATUS when configured'] = asy
 };
 
 module.exports['Commands: idle NOOP fallback uses SELECT when configured'] = async test => {
+    // SELECT polling goes through the real select implementation, so it applies the same
+    // mailbox state transitions as a caller-issued select instead of replaying wire arguments.
     let selectCalled = false;
     const connection = createMockConnection({
         state: 3,
         capabilities: new Map(),
+        // The mailbox is already open, so its folder metadata is cached (no LIST round trip)
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
         currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
         missingIdleCommand: 'SELECT',
         exec: async cmd => {
@@ -7325,12 +7345,14 @@ module.exports['Commands: idle NOOP fallback uses SELECT when configured'] = asy
                     await connection.preCheck();
                 }
             }
-            return { next: () => {} };
+            return { next: () => {}, response: { attributes: [{ value: 'OK' }] } };
         }
     });
 
     await idleCommand(connection);
     test.equal(selectCalled, true);
+    test.equal(connection.mailbox.path, 'INBOX', 'mailbox state was reapplied by the select implementation');
+    test.equal(connection.mailbox.delimiter, '/', 'cached folder metadata was merged in, as with a normal SELECT');
     test.done();
 };
 

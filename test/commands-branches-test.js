@@ -10,6 +10,8 @@
 // The mock connection factory mirrors the one in commands-integration-test.js.
 // ============================================================================
 
+const imapCommands = require('../lib/imap-commands.js');
+
 const createMockConnection = (overrides = {}) => {
     const states = {
         NOT_AUTHENTICATED: 1,
@@ -29,7 +31,7 @@ const createMockConnection = (overrides = {}) => {
         noModseq: false
     };
 
-    return {
+    const connection = {
         states,
         state: overrides.state || states.SELECTED,
         id: 'test-connection-id',
@@ -51,10 +53,22 @@ const createMockConnection = (overrides = {}) => {
         emit: overrides.emit || (() => {}),
         write: overrides.write || (() => {}),
         currentSelectCommand: false,
+        // A live transport: command implementations that guard against polling or writing on a
+        // dead connection (idle.js) need this to look established.
+        socket: overrides.socket || { destroyed: false },
         messageFlagsAdd: overrides.messageFlagsAdd || (async () => {}),
         messageCopy: overrides.messageCopy || (async () => {}),
         messageDelete: overrides.messageDelete || (async () => {}),
         run: overrides.run || (async () => {}),
+        // Mirrors ImapFlow.runInternal(): dispatch through the command registry without the
+        // preCheck/auto-IDLE handshake that run() performs, so a fallback poll runs the real
+        // SELECT/STATUS implementation.
+        runInternal:
+            overrides.runInternal ||
+            (async (command, ...args) => {
+                let handler = imapCommands.get(command.toUpperCase());
+                return handler ? await handler(connection, ...args) : false;
+            }),
         exec:
             overrides.exec ||
             (async () => ({
@@ -63,6 +77,8 @@ const createMockConnection = (overrides = {}) => {
             })),
         ...overrides
     };
+
+    return connection;
 };
 
 // ============================================================================

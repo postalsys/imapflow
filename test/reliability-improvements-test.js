@@ -380,6 +380,10 @@ module.exports['Reliability: decoder emit(error) does not crash when user has no
 const stubThrottleResponse = (client, backoffMs) => {
     let request = { tag: 'A001', command: 'FETCH', resolve: () => {}, reject: () => {} };
     client.requestTagMap = new Map([['A001', request]]);
+    // The tagged response may only complete a command that was actually written to the socket, so
+    // the stub has to present A001 as the active, already sent request - otherwise it is protocol
+    // desynchronization.
+    client.currentRequest = { tag: 'A001', command: 'FETCH', sent: true };
 
     let done = false;
     client.streamer.read = () => {
@@ -456,6 +460,89 @@ module.exports['Reliability: throttle back-off still rejects ETHROTTLE on normal
     test.equal(client._throttleTimer, null, 'throttle timer cleared after normal expiry');
 
     await readerDone;
+    client.close();
+    test.done();
+};
+
+// ---------------------------------------------------------------------------
+// reader(): the parser backpressure callback is a resource that must always be released
+// ---------------------------------------------------------------------------
+
+module.exports['Reliability: an unexpected response-handling failure releases the parser and fails closed'] = async test => {
+    // Several steps of response handling (log compilation, response shape assumptions, a handler
+    // bug) sit outside the parse try block. A throw there used to propagate out of the reader loop
+    // and leave ImapStream waiting on its backpressure callback forever - a silent permanent hang.
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        logger: false
+    });
+    client.socket = { destroyed: false, destroy: () => {} };
+    client.writeSocket = client.socket;
+
+    let rejected = null;
+    let request = { tag: 'A001', command: 'NOOP', resolve: () => {}, reject: err => (rejected = err) };
+    client.requestTagMap = new Map([['A001', request]]);
+    client.currentRequest = { tag: 'A001', command: 'NOOP', sent: true };
+
+    let errors = [];
+    client.on('error', err => errors.push(err));
+
+    let released = 0;
+    let served = false;
+    client.streamer.read = () => {
+        if (served) {
+            return null;
+        }
+        served = true;
+        return {
+            payload: Buffer.from('A001 OK NOOP done'),
+            literals: [],
+            next: () => released++
+        };
+    };
+
+    // Stand in for any unexpected failure during response handling
+    client.handleResponse = async () => {
+        throw new Error('handler blew up');
+    };
+
+    await client.reader();
+
+    test.equal(released, 1, 'the parser backpressure callback is released exactly once');
+    test.ok(rejected, 'the in-flight request is rejected instead of hanging');
+    test.equal(rejected.code, 'ResponseProcessingFailed');
+    test.ok(client.streamer.destroyed, 'the parser stream is destroyed, so nothing further is parsed');
+
+    await new Promise(resolve => setImmediate(resolve));
+    test.ok(
+        errors.some(err => err.code === 'ResponseProcessingFailed'),
+        'the failure is reported to the caller'
+    );
+
+    client.close();
+    test.done();
+};
+
+module.exports['Reliability: releaseStreamData is idempotent'] = async test => {
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        logger: false
+    });
+
+    let released = 0;
+    let data = { next: () => released++ };
+
+    client.releaseStreamData(data);
+    client.releaseStreamData(data);
+    client.releaseStreamData(data);
+
+    test.equal(released, 1, 'a readable item is only ever released once');
+    test.doesNotThrow(() => client.releaseStreamData(null), 'releasing nothing is a no-op');
+
     client.close();
     test.done();
 };

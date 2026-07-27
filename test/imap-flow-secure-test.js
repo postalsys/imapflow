@@ -135,6 +135,165 @@ module.exports['Secure: STARTTLS upgrade completes a session'] = async test => {
     test.done();
 };
 
+// Builds the STARTTLS happy-path server used by the watchdog and cleanup tests below.
+const createStartTlsServer = () =>
+    net.createServer(rawSocket => {
+        rawSocket.on('error', () => {});
+
+        let detachPlain;
+        detachPlain = lineReader(rawSocket, line => {
+            handleLine(rawSocket, line, () => {
+                detachPlain();
+                let tlsSocket = new tls.TLSSocket(rawSocket, { isServer: true, key, cert });
+                tlsSocket.on('error', () => {});
+                lineReader(tlsSocket, l => handleLine(tlsSocket, l, null, CAPS));
+            });
+        });
+
+        rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS] ready\r\n`);
+    });
+
+// Records every socket that went through configureSocket(), which is the single place the
+// transport options (keepalive + inactivity watchdog) are applied.
+const trackConfiguredSockets = client => {
+    let sockets = [];
+    let original = client.configureSocket.bind(client);
+    client.configureSocket = socket => {
+        sockets.push(socket);
+        return original(socket);
+    };
+    return sockets;
+};
+
+module.exports['Secure: STARTTLS session keeps the inactivity watchdog'] = async test => {
+    // Regression: the inactivity timer was armed on the plain socket only, while the timeout
+    // listener was attached to the TLS socket, so an upgraded session had no watchdog at all
+    // and a dead connection was never noticed.
+    let server = createStartTlsServer();
+    let port = await listen(server);
+    let client = new ImapFlow({
+        host: '127.0.0.1',
+        port,
+        secure: false,
+        doSTARTTLS: true,
+        servername: 'localhost',
+        tls: { rejectUnauthorized: false },
+        socketTimeout: 200,
+        disableAutoIdle: true,
+        disableCompression: true,
+        logger: false,
+        auth: { user: 'test', pass: 'secret' }
+    });
+
+    let errors = [];
+    client.on('error', err => errors.push(err));
+    let closed = new Promise(resolve => client.once('close', resolve));
+    let configured = trackConfiguredSockets(client);
+
+    await client.connect();
+    test.ok(client.secureConnection, 'connection upgraded to TLS');
+    test.equal(configured.length, 2, 'both the plain socket and the upgraded socket are configured');
+    test.equal(client.socket.timeout, 200, 'the upgraded socket carries the configured inactivity timeout');
+    test.equal(configured[0].timeout, 0, 'the superseded plain-socket timer is cleared, not left armed');
+
+    // No traffic from here on: the watchdog has to fire and take the connection down.
+    await closed;
+
+    test.ok(
+        errors.some(err => err.code === 'ETIMEOUT'),
+        'the inactivity watchdog reported a socket timeout'
+    );
+    test.ok(client.isClosed, 'the connection closed after the timeout');
+
+    client.close();
+    server.close();
+    test.done();
+};
+
+module.exports['Secure: STARTTLS leaves no upgrade state behind on success'] = async test => {
+    // Item 8: every terminal path of the upgrade runs through one settlement helper, so after
+    // a successful handshake no timer, rejector, flag or temporary handler survives.
+    let server = createStartTlsServer();
+    let port = await listen(server);
+    let client = new ImapFlow({
+        host: '127.0.0.1',
+        port,
+        secure: false,
+        doSTARTTLS: true,
+        servername: 'localhost',
+        tls: { rejectUnauthorized: false },
+        disableAutoIdle: true,
+        disableCompression: true,
+        logger: false,
+        auth: { user: 'test', pass: 'secret' }
+    });
+    client.on('error', () => {});
+
+    await client.connect();
+
+    test.equal(client.upgrading, false, 'upgrading flag cleared');
+    test.equal(client._upgradeReject, null, 'upgrade rejector cleared');
+    test.equal(client.upgradeTimeout, null, 'upgrade timer cleared');
+    // The handshake-only handler is gone, leaving the generic socket error handler as the single
+    // error path (during the handshake it is the other way round, which is what prevents a
+    // handshake error from firing two handlers at once).
+    test.equal(client.socket.listenerCount('error'), 1, 'the TLS socket keeps exactly one error path');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
+
+module.exports['Secure: close() during a STARTTLS upgrade settles the upgrade'] = async test => {
+    // The server acknowledges STARTTLS but never performs a handshake. close() has to settle
+    // the pending upgrade instead of leaving the session promise dangling forever.
+    let server = net.createServer(rawSocket => {
+        rawSocket.on('error', () => {});
+        let detach = lineReader(rawSocket, line => {
+            handleLine(rawSocket, line, () => {
+                detach(); // silence: no ServerHello, no data at all
+            });
+        });
+        rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS] ready\r\n`);
+    });
+    let port = await listen(server);
+    let client = new ImapFlow({
+        host: '127.0.0.1',
+        port,
+        secure: false,
+        doSTARTTLS: true,
+        servername: 'localhost',
+        tls: { rejectUnauthorized: false },
+        disableAutoIdle: true,
+        disableCompression: true,
+        logger: false,
+        auth: { user: 'test', pass: 'secret' }
+    });
+    client.on('error', () => {});
+
+    let connectResult = client.connect().then(
+        () => null,
+        err => err
+    );
+
+    // Wait until the upgrade is in flight, then close the connection under it.
+    while (!client.upgrading) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    client.close();
+
+    let err = await connectResult;
+    test.ok(err, 'connect rejected rather than hanging on the abandoned upgrade');
+    test.ok(['ClosedAfterConnectText', 'ClosedAfterConnectTLS', 'NoConnection'].includes(err.code), `connect rejected with ${err.code}`);
+    test.equal(client.upgrading, false, 'upgrading flag cleared');
+    test.equal(client._upgradeReject, null, 'upgrade rejector cleared');
+    test.equal(client.upgradeTimeout, null, 'upgrade timer cleared');
+
+    server.close();
+    test.done();
+};
+
 // ---------------------------------------------------------------------------
 // Direct TLS connection
 // ---------------------------------------------------------------------------

@@ -1103,6 +1103,155 @@ module.exports['Server: proxy connection failure rejects connect'] = async test 
     test.done();
 };
 
+module.exports['Server: close clears public session state'] = async test => {
+    // Callers inspect these properties in reconnect logic, so they must not keep describing a
+    // session that is gone.
+    let server = createServer();
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    let events = [];
+    client.on('mailboxClose', mailbox => events.push({ event: 'mailboxClose', path: mailbox.path }));
+    client.on('close', () => events.push({ event: 'close' }));
+
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+
+    test.ok(client.mailbox, 'a mailbox is selected');
+    test.ok(client.authenticated, 'the session is authenticated');
+    test.ok(client.currentSelectCommand, 'the select command is remembered for polling');
+
+    client.close();
+
+    test.equal(client.mailbox, false, 'mailbox state cleared');
+    test.equal(client.currentSelectCommand, false, 'saved select command cleared');
+    test.equal(client.authenticated, false, 'authentication state cleared');
+    test.equal(client.preCheck, false, 'preCheck cleared');
+    test.equal(client.usable, false, 'connection no longer usable');
+    test.equal(client.idling, false, 'idling cleared');
+    test.equal(client.state, client.states.LOGOUT, 'state is LOGOUT');
+
+    // The selected mailbox transitions to closed exactly once, before 'close'
+    test.deepEqual(events, [{ event: 'mailboxClose', path: 'INBOX' }, { event: 'close' }], 'mailboxClose is emitted once, ahead of close');
+
+    // Repeated close() is idempotent and emits nothing more
+    client.close();
+    client.close();
+    test.equal(events.length, 2, 'no duplicate events from repeated close()');
+
+    server.close();
+    test.done();
+};
+
+module.exports['Server: close without a selected mailbox emits no mailboxClose'] = async test => {
+    let server = createServer();
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    let mailboxCloseCount = 0;
+    client.on('mailboxClose', () => mailboxCloseCount++);
+
+    await client.connect();
+    client.close();
+
+    test.equal(mailboxCloseCount, 0, 'nothing to close, nothing emitted');
+    server.close();
+    test.done();
+};
+
+module.exports['Server: GETQUOTA fallback releases the parser'] = async test => {
+    // Regression: the GETQUOTA fallback never handed its response back to the reader, so the
+    // parser stayed blocked on its backpressure callback and every later command hung.
+    let server = createServer({
+        capabilities: 'IMAP4rev1 ID ENABLE NAMESPACE QUOTA',
+        handlers: {
+            GETQUOTAROOT(ctx) {
+                // root only, no inline QUOTA response - forces the fallback command
+                ctx.write('* QUOTAROOT "INBOX" "userquota"\r\n');
+                ctx.ok('GETQUOTAROOT completed');
+            },
+            GETQUOTA(ctx) {
+                ctx.write('* QUOTA "userquota" (STORAGE 512 1024)\r\n');
+                ctx.ok('GETQUOTA completed');
+            }
+        }
+    });
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    await client.connect();
+
+    let quota = await client.getQuota();
+    test.ok(quota, 'quota resolved');
+    test.equal(quota.quotaRoot, 'userquota', 'quota root from the first command');
+    test.equal(quota.storage.usage, 512 * 1024, 'quota usage from the fallback command');
+
+    // The parser must still be live: a following command has to complete.
+    let noopResponse = await client.exec('NOOP', false, {});
+    noopResponse.next();
+    test.ok(noopResponse.response, 'the connection still processes commands after the fallback');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
+
+module.exports['Server: oversized literal cannot inject protocol'] = async test => {
+    // Response-injection regression. With a lowered maxLiteralSize the parser rejects the
+    // literal, and everything after the marker line is ordinary message content chosen by a
+    // third party. None of it may be parsed: no untagged handler may fire and the forged
+    // tagged completion may not settle the in-flight request.
+    let server = createServer({
+        handlers: {
+            NOOP(ctx) {
+                ctx.write(
+                    `* 1 FETCH (BODY[] {5000}\r\n` + //
+                        `INNOCENT MESSAGE TEXT\r\n` +
+                        `* 9999 EXISTS\r\n` +
+                        `${ctx.tag} OK forged completion\r\n`
+                );
+            }
+        }
+    });
+    let port = await listen(server);
+    let client = makeClient(port, { maxLiteralSize: 1024 });
+
+    let errors = [];
+    let existsEvents = [];
+    client.on('error', err => errors.push(err));
+    client.on('exists', ev => existsEvents.push(ev));
+
+    await client.connect();
+    let mailbox = await client.mailboxOpen('INBOX');
+    test.equal(mailbox.exists, 3, 'mailbox opened with the server reported count');
+
+    let noopErr = null;
+    try {
+        // exec() surfaces the raw command outcome, so a forged tagged completion would show
+        // up here as a resolved request (client.noop() would swallow it into `false`).
+        await client.exec('NOOP', false, {});
+        test.ok(false, 'the forged tagged completion must not resolve the in-flight command');
+    } catch (err) {
+        noopErr = err;
+    }
+
+    test.ok(noopErr, 'the in-flight command rejected instead of accepting injected content');
+    test.deepEqual(existsEvents, [], 'the injected untagged EXISTS never reached an untagged handler');
+    test.ok(
+        errors.some(err => err.code === 'LiteralTooLarge'),
+        'the limit violation is surfaced to the caller'
+    );
+    test.ok(client.isClosed || !client.usable, 'the connection failed closed');
+
+    client.close();
+    server.close();
+    test.done();
+};
+
 module.exports['Server: socket close triggers close handling'] = async test => {
     let server = createServer();
     let port = await listen(server);

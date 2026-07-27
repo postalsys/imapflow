@@ -524,7 +524,7 @@ module.exports['Coverage: reader swallows a throwing untagged handler'] = async 
 module.exports['Coverage: reader swallows a throwing trySend after a tagged response'] = async test => {
     let client = makeClient();
     let resolved = false;
-    client.currentRequest = { tag: 'A1' };
+    client.currentRequest = { tag: 'A1', sent: true };
     client.requestTagMap.set('A1', {
         command: 'NOOP',
         attributes: [],
@@ -549,7 +549,7 @@ module.exports['Coverage: reader handles compiler failure when building executed
     let client = makeClient();
     let rejected = null;
     // A request whose attributes cannot be compiled -> the executedCommand try/catch is hit
-    client.currentRequest = { tag: 'A1' };
+    client.currentRequest = { tag: 'A1', sent: true };
     client.requestTagMap.set('A1', {
         command: 'NOOP',
         // a circular/odd attribute that makes the logging compiler throw
@@ -576,7 +576,7 @@ module.exports['Coverage: reader handles compiler failure when building executed
 module.exports['Coverage: reader caps very large throttle backoff'] = async test => {
     let client = makeClient();
     let rejected = null;
-    client.currentRequest = { tag: 'A1' };
+    client.currentRequest = { tag: 'A1', sent: true };
     client.requestTagMap.set('A1', {
         command: 'FETCH',
         attributes: [],
