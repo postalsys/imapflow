@@ -615,6 +615,43 @@ module.exports['Server: verifyOnly connect lists mailboxes and logs out'] = asyn
     test.done();
 };
 
+module.exports['Server: verifyOnly keeps the authentication result after logging out'] = async test => {
+    // The whole point of verifyOnly is to report whether the credentials work. The mode logs out
+    // before connect() resolves, so if close() cleared `authenticated` the caller would read false
+    // off a connection that had just authenticated, with no later moment to read the real answer.
+    let server = createServer();
+    let port = await listen(server);
+    let client = makeClient(port, { verifyOnly: true, includeMailboxes: true });
+    client.on('error', () => {});
+
+    await client.connect();
+    test.ok(client.authenticated, 'authentication result survives the verifyOnly logout');
+
+    client.close();
+    test.ok(client.authenticated, 'and survives an explicit close as well');
+
+    server.close();
+    test.done();
+};
+
+module.exports['Server: an ordinary session clears the authentication state on close'] = async test => {
+    // The counterpart: for a session that is not verifyOnly, `authenticated` describes live state
+    // and must not survive the connection, or reconnect logic reads it as still signed in.
+    let server = createServer();
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    await client.connect();
+    test.ok(client.authenticated, 'authenticated while the session is up');
+
+    client.close();
+    test.equal(client.authenticated, false, 'cleared once the session ends');
+
+    server.close();
+    test.done();
+};
+
 module.exports['Server: ID is re-requested after login when first response is sparse'] = async test => {
     let idCalls = 0;
     let server = createServer({
