@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/postalsys/imapflow/compare/v1.6.0...v1.6.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* keep the authentication result on a verifyOnly connection ([8665c64](https://github.com/postalsys/imapflow/commit/8665c642f16988c630a779fa796c5801532ffd4a))
+
 ## [1.6.0](https://github.com/postalsys/imapflow/compare/v1.5.0...v1.6.0) (2026-07-27)
 
 
