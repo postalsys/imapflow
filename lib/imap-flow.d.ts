@@ -208,6 +208,8 @@ export interface ListResponse {
     flags: Set<string>;
     /** One of special-use flags (if applicable) */
     specialUse?: string;
+    /** How specialUse was determined: "user" (from specialUseHints), "extension" (SPECIAL-USE or XLIST flag reported by the server) or "name" (matched against known localized folder names) */
+    specialUseSource?: 'user' | 'extension' | 'name';
     /** True if mailbox was found from the output of LIST command */
     listed: boolean;
     /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers */
@@ -246,6 +248,8 @@ export interface ListOptions {
         junk?: string;
         /** Path to "Drafts" folder */
         drafts?: string;
+        /** Path to "Archive" folder */
+        archive?: string;
     };
 }
 
@@ -899,7 +903,7 @@ export class ImapFlow extends EventEmitter {
     /** Mailbox was opened */
     on(event: 'mailboxOpen', listener: (mailbox: MailboxObject) => void): this;
 
-    /** Mailbox was closed */
+    /** Mailbox was closed, either explicitly or because the connection went away while a mailbox was still selected */
     on(event: 'mailboxClose', listener: (mailbox: MailboxObject) => void): this;
 
     /** Log event if emitLogs=true */
