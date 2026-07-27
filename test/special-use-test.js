@@ -169,6 +169,46 @@ module.exports['Special Use: strips whitespace and LTR marks before matching'] =
     test.done();
 };
 
+// Exchange and Outlook use a two word naming style ("Sent Items") that differs from
+// the one word style most webmail uses ("Sent"), and they never advertise SPECIAL-USE,
+// so these names have to resolve by name alone.
+module.exports['Special Use: Exchange and Outlook localized folder names'] = test => {
+    test.equal(byName('Sent Items'), '\\Sent');
+    test.equal(byName('Deleted Items'), '\\Trash');
+    test.equal(byName('Junk Email'), '\\Junk');
+    test.equal(byName('Gesendete Elemente'), '\\Sent');
+    test.equal(byName('Gelöschte Elemente'), '\\Trash');
+    test.equal(byName('Éléments envoyés'), '\\Sent');
+    test.equal(byName('Elementos eliminados'), '\\Trash');
+    test.equal(byName('Posta eliminata'), '\\Trash');
+    test.equal(byName('Verzonden items'), '\\Sent');
+    test.equal(byName('Elementy usunięte'), '\\Trash');
+    test.equal(byName('Elemente șterse'), '\\Trash');
+    test.equal(byName('Sendte elementer'), '\\Sent');
+    test.equal(byName('Gönderilmiş Öğeler'), '\\Sent');
+    test.equal(byName('Önemsiz E-posta'), '\\Junk');
+    test.equal(byName('送信済みアイテム'), '\\Sent');
+    test.equal(byName('削除済みアイテム'), '\\Trash');
+    test.equal(byName('보낸 편지함'), '\\Sent');
+    test.done();
+};
+
+// Names harvested from the localization catalogs of Roundcube, SOGo and Thunderbird.
+// These are the cases that motivated, and are now covered without, approximate matching.
+module.exports['Special Use: names taken from mail client localization catalogs'] = test => {
+    test.equal(byName('Gesendet'), '\\Sent'); // de, Thunderbird
+    test.equal(byName('Skickat'), '\\Sent'); // sv
+    test.equal(byName('Gelöscht'), '\\Trash'); // de, Roundcube
+    test.equal(byName('Poubelle'), '\\Trash'); // fr
+    test.equal(byName('Paperera'), '\\Trash'); // ca
+    test.equal(byName('Rämps'), '\\Junk'); // et
+    test.equal(byName('Skräp'), '\\Junk'); // sv
+    test.equal(byName('Ongewenst'), '\\Junk'); // nl
+    test.equal(byName('Basura'), '\\Junk'); // es
+    test.equal(byName('Arkisto'), '\\Archive'); // fi
+    test.done();
+};
+
 // ============================================
 // Relaxed matching (decorated names and morphological variants)
 // ============================================
@@ -200,6 +240,7 @@ module.exports['Special Use: names decorated with generic mail nouns'] = test =>
     test.equal(byName('Spam Messages'), '\\Junk');
     test.equal(byName('Черновики письма'), '\\Drafts');
     test.equal(byName('My Drafts'), '\\Drafts');
+    test.equal(byName('Saadetud e-kirjad'), '\\Sent'); // hyphenated "e-" family
     test.done();
 };
 
