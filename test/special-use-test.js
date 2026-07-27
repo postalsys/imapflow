@@ -1,6 +1,7 @@
 'use strict';
 
 const specialUse = require('../lib/special-use');
+const fs = require('fs');
 
 module.exports['Special Use: flags array'] = test => {
     test.ok(Array.isArray(specialUse.flags));
@@ -169,6 +170,105 @@ module.exports['Special Use: strips whitespace and LTR marks before matching'] =
 };
 
 // ============================================
+// Relaxed matching (decorated names and morphological variants)
+// ============================================
+
+const sourceOf = name => specialUse.specialUse(false, { flags: new Set(), name }).source;
+
+// Approximate matching is deliberately NOT done. A shared prefix is not enough
+// evidence: at five characters English "conceal" reaches Dutch "concepten" and
+// "article" reaches Romanian "articole", and a wrongly claimed Trash or Junk folder
+// makes a client delete into, or permanently expunge from, an ordinary folder.
+// Morphological variants belong in the tables as real entries instead.
+module.exports['Special Use: morphological variants are not guessed'] = test => {
+    test.equal(byName('Prügikast'), '\\Trash'); // exact table entry
+    test.equal(byName('Prügi'), null); // truncation, not matched
+    test.equal(byName('Prügikorv'), null); // different ending, not matched
+    test.equal(byName('Conceal'), null);
+    test.equal(byName('Article'), null);
+    test.equal(byName('Postal'), null);
+    test.equal(byName('Element'), null);
+    test.done();
+};
+
+// Known name decorated with a generic mail noun that carries no meaning of its own.
+module.exports['Special Use: names decorated with generic mail nouns'] = test => {
+    test.equal(byName('Sent Mail'), '\\Sent');
+    test.equal(byName('Отправленные письма'), '\\Sent');
+    test.equal(byName('Удаленные элементы'), '\\Trash');
+    test.equal(byName('Deleted Mail'), '\\Trash');
+    test.equal(byName('Spam Messages'), '\\Junk');
+    test.equal(byName('Черновики письма'), '\\Drafts');
+    test.equal(byName('My Drafts'), '\\Drafts');
+    test.done();
+};
+
+// Relaxed hits are a guess and must be reported as a distinct, lower priority source
+// so that an exactly named folder wins the slot when both exist in one mailbox.
+module.exports['Special Use: relaxed matches report a distinct source'] = test => {
+    test.equal(sourceOf('Prügikast'), 'name');
+    test.equal(sourceOf('Sent'), 'name');
+    test.equal(sourceOf('Отправленные письма'), 'name-guess');
+    test.equal(sourceOf('Sent Mail'), 'name-guess');
+    test.done();
+};
+
+// The precision guards. A wrongly flagged Trash or Junk folder is destructive, so
+// anything that leaves more than one meaningful word behind must be refused.
+module.exports['Special Use: user folders that merely contain a known word are refused'] = test => {
+    test.equal(byName('Sent to clients'), null);
+    test.equal(byName('Archive 2023'), null);
+    test.equal(byName('Junk food recipes'), null);
+    test.equal(byName('Drafts of my novel'), null);
+    test.equal(byName('Trash talk'), null);
+    test.equal(byName('Spam reports'), null);
+    test.equal(byName('Deleted scenes'), null);
+    test.equal(byName('Corbeilles de fruits'), null);
+    test.done();
+};
+
+// Ordinary words that share a prefix with an entry must never be classified.
+module.exports['Special Use: words sharing only a prefix do not match'] = test => {
+    test.equal(byName('Draftsman'), null);
+    test.equal(byName('Sentinel'), null);
+    test.equal(byName('Sentiments'), null);
+    test.equal(byName('Junkyard'), null);
+    test.equal(byName('Spammers'), null);
+    test.equal(byName('Binder'), null);
+    test.equal(byName('Postbox'), null);
+    test.equal(byName('Papers'), null);
+    test.done();
+};
+
+// Every source specialUse() can return has to be ranked by the conflict resolution in
+// lib/commands/list.js. A new tier added here without being added there would silently
+// sort ahead of an explicit user hint, so pin the vocabulary from this side.
+module.exports['Special Use: reports only sources that list.js ranks'] = test => {
+    const RANKED = ['user', 'extension', 'name', 'name-guess'];
+    const listSource = fs.readFileSync(`${__dirname}/../lib/commands/list.js`, 'utf8');
+    const declared = listSource.match(/const SOURCE_SORT_ORDER = \[([^\]]*)\]/);
+
+    test.ok(declared, 'SOURCE_SORT_ORDER not found in lib/commands/list.js');
+    test.deepEqual(
+        declared[1]
+            .split(',')
+            .map(part => part.trim().replace(/^'|'$/g, ''))
+            .filter(Boolean),
+        RANKED
+    );
+
+    // and every source this module actually emits is one of them
+    const emitted = new Set();
+    emitted.add(specialUse.specialUse(true, { flags: new Set(['\\Sent']), name: 'x' }).source);
+    emitted.add(specialUse.specialUse(false, { flags: new Set(), name: 'Sent' }).source);
+    emitted.add(specialUse.specialUse(false, { flags: new Set(), name: 'Sent Mail' }).source);
+    for (let source of emitted) {
+        test.ok(RANKED.includes(source), `unranked source: ${source}`);
+    }
+    test.done();
+};
+
+// ============================================
 // Structural guards for the name tables
 // ============================================
 
@@ -188,14 +288,14 @@ module.exports['Special Use: no folder name is claimed by two flags'] = test => 
     test.done();
 };
 
-// Lookups normalize the incoming name to NFC, so an entry stored in any other
+// Lookups normalize the incoming name to NFKC, so an entry stored in any other
 // normalization form can never match, however the server spells the folder.
-module.exports['Special Use: every name entry is stored in NFC form'] = test => {
+module.exports['Special Use: every name entry is stored in NFKC form'] = test => {
     let problems = [];
     for (let flag of Object.keys(specialUse.names)) {
         for (let name of specialUse.names[flag]) {
-            if (name !== name.normalize('NFC')) {
-                problems.push(`${flag}: not NFC: ${name}`);
+            if (name !== name.normalize('NFKC')) {
+                problems.push(`${flag}: not NFKC: ${name}`);
             }
         }
     }
@@ -209,7 +309,7 @@ module.exports['Special Use: matching is independent of Unicode normalization fo
     let mismatches = [];
     for (let flag of Object.keys(specialUse.names)) {
         for (let name of specialUse.names[flag]) {
-            for (let form of ['NFC', 'NFD']) {
+            for (let form of ['NFC', 'NFD', 'NFKC', 'NFKD']) {
                 let resolved = specialUse.specialUse(false, { flags: new Set(), name: name.normalize(form) }).flag;
                 if (resolved !== flag) {
                     mismatches.push(`${flag}: "${name}" as ${form} resolved to ${resolved}`);
@@ -218,6 +318,22 @@ module.exports['Special Use: matching is independent of Unicode normalization fo
         }
     }
     test.deepEqual(mismatches, []);
+    test.done();
+};
+
+// Compatibility folding is the reason lookups normalize with NFKC rather than NFC.
+// The Japanese Sent entry was stored with halfwidth katakana, which NFC does not
+// fold, so it never matched the fullwidth spelling that servers actually send.
+module.exports['Special Use: halfwidth and fullwidth forms fold onto the same entry'] = test => {
+    // U+FF92 U+FF70 U+FF99 halfwidth vs U+30E1 U+30FC U+30EB fullwidth katakana
+    const halfwidth = '送信済み' + String.fromCodePoint(0xff92, 0xff70, 0xff99);
+    const fullwidth = '送信済み' + String.fromCodePoint(0x30e1, 0x30fc, 0x30eb);
+
+    test.equal(byName(halfwidth), '\\Sent');
+    test.equal(byName(fullwidth), '\\Sent');
+    // Fullwidth Latin, which some CJK clients use for ASCII folder names
+    test.equal(byName('Ｓｅｎｔ'), '\\Sent');
+    test.equal(byName('Ｔｒａｓｈ'), '\\Trash');
     test.done();
 };
 
