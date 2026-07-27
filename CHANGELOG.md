@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.6.0](https://github.com/postalsys/imapflow/compare/v1.5.0...v1.6.0) (2026-07-27)
+
+
+### Features
+
+* expand localized special-use folder names from client localization catalogs ([e766c41](https://github.com/postalsys/imapflow/commit/e766c411a71bc2e6578017a9029050e5026ca9de))
+
+
+### Bug Fixes
+
+* add missing localized special-use folder names and normalize to NFC ([1951438](https://github.com/postalsys/imapflow/commit/19514381a05d519ced1ab52716aa2256f7be169a))
+* declare specialUseHints.archive and specialUseSource in the types ([a372a50](https://github.com/postalsys/imapflow/commit/a372a50a0365b202d1c8d144663f8280ee63214c))
+* harden response parsing, tag correlation, IDLE polling and proxy connection setup ([21fe354](https://github.com/postalsys/imapflow/commit/21fe3541e9eff24060f1ef61f668fdfb5ae18115))
+* match decorated folder names and normalize special use names to NFKC ([8f3bed6](https://github.com/postalsys/imapflow/commit/8f3bed6fcd0daca48ad4ab8446fc1581792fb754))
+
 ## [1.5.0](https://github.com/postalsys/imapflow/compare/v1.4.9...v1.5.0) (2026-07-23)
 
 
