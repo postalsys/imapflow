@@ -4168,7 +4168,7 @@ module.exports['Commands: list survives LSUB rejection'] = async test => {
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LSUB') {
                 lsubCalls++;
-                // e.g. Exchange in IMAP4rev2 mode responds "BAD Command Argument Error"
+                // e.g. Exchange responds "BAD Command Argument Error"
                 throw commandError('Command failed', 'BAD');
             }
             if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -4301,6 +4301,40 @@ module.exports['Commands: list retries with plain LIST when RETURN is rejected']
     test.ok(!connection.skipListStatusArgs);
     await listCommand(connection, '', '*');
     test.equal(listCalls, 4);
+    test.done();
+};
+
+module.exports['Commands: list never falls back to LSUB on a rev2 session'] = async test => {
+    let lsubCalled = false;
+    // An Exchange-alike that advertises both revisions and negotiates rev2 via ENABLE,
+    // having already proved it rejects RETURN (SUBSCRIBED). The listing therefore
+    // carries no subscription state - and the LSUB that rev1 would fall back to is not
+    // part of rev2, so asking anyway only risks upsetting the session.
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev2', true],
+            ['IMAP4rev1', true]
+        ]),
+        enabled: new Set(['IMAP4REV2']),
+        skipListSubscribedArg: true,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                lsubCalled = true;
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(lsubCalled, false);
+    // No subscription source was available, so nothing claims the folder is subscribed
+    test.ok(!result.find(entry => entry.path === 'Folder1').subscribed);
     test.done();
 };
 
