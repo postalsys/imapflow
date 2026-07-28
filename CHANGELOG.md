@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/postalsys/imapflow/compare/v1.6.2...v1.6.3) (2026-07-28)
+
+
+### Bug Fixes
+
+* assume folders are subscribed when the server reports no subscription state ([f576e3b](https://github.com/postalsys/imapflow/commit/f576e3b0eb34ee1340b34f66e389b8c29408d80a))
+
 ## [1.6.2](https://github.com/postalsys/imapflow/compare/v1.6.1...v1.6.2) (2026-07-28)
 
 
