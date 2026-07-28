@@ -129,7 +129,7 @@ export interface MailboxObject {
     specialUse?: string;
     /** True if mailbox was found from the output of LIST command */
     listed?: boolean;
-    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers */
+    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers. Servers that answer neither report no subscription state at all, and every mailbox is then assumed to be subscribed */
     subscribed?: boolean;
     /** A Set of flags available to use in this mailbox. If it is not set or includes special flag "\*" then any flag can be used */
     permanentFlags?: Set<string>;
@@ -212,7 +212,7 @@ export interface ListResponse {
     specialUseSource?: 'user' | 'extension' | 'name';
     /** True if mailbox was found from the output of LIST command */
     listed: boolean;
-    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers */
+    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers. Servers that answer neither report no subscription state at all, and every mailbox is then assumed to be subscribed */
     subscribed: boolean;
     /** If statusQuery was used, then this value includes the status response */
     status?: StatusObject;
@@ -268,7 +268,7 @@ export interface ListTreeResponse {
     specialUse?: string;
     /** True if mailbox was found from the output of LIST command */
     listed?: boolean;
-    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers */
+    /** True if the mailbox is subscribed - reported by LSUB or by LIST RETURN (SUBSCRIBED) on LIST-EXTENDED/IMAP4rev2 servers. Servers that answer neither report no subscription state at all, and every mailbox is then assumed to be subscribed */
     subscribed?: boolean;
     /** If true then this mailbox can not be selected in the UI */
     disabled?: boolean;

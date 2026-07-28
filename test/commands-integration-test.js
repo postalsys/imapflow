@@ -4189,11 +4189,115 @@ module.exports['Commands: list survives LSUB rejection'] = async test => {
     test.ok(inbox);
     // INBOX is always reported as subscribed even without LSUB data
     test.equal(inbox.subscribed, true);
+    // Nothing reported subscription state, so it is unknown rather than false - every
+    // folder is reported as subscribed instead of none of them
+    test.equal(result.find(e => e.path === 'Folder1').subscribed, true);
 
     // The rejection is remembered - a follow-up listing skips LSUB entirely
     test.equal(connection.skipLsub, true);
     await listCommand(connection, '', '*');
     test.equal(lsubCalls, 1);
+    test.done();
+};
+
+module.exports['Commands: list keeps a genuinely empty subscription set'] = async test => {
+    // LSUB answers, it just has nothing to report. That is a real "nothing is
+    // subscribed", not the unknown state, so it must not be overwritten
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.ok(!result.find(entry => entry.path === 'Folder1').subscribed);
+    test.done();
+};
+
+module.exports['Commands: list treats an ignored RETURN (SUBSCRIBED) plus a rejected LSUB as unknown'] = async test => {
+    // The server accepts the RETURN option but reports no \Subscribed at all, which is
+    // why the listing falls back to LSUB - and that is rejected too. Accepting the
+    // command is not the same as answering it, so this is the unknown state
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([
+            ['IMAP4rev1', true],
+            ['LIST-EXTENDED', true]
+        ]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LSUB') {
+                throw commandError('Command failed', 'BAD');
+            }
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(result.find(entry => entry.path === 'Folder1').subscribed, true);
+    test.done();
+};
+
+module.exports['Commands: list leaves phantom folders out of the assumed subscription'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        enabled: new Set(['IMAP4REV2']),
+        skipListSubscribedArg: true,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\NonExistent' }], { value: '/' }, { value: 'Ghost' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(result.find(entry => entry.path === 'Folder1').subscribed, true);
+    // A folder the server says does not exist is not claimed to be subscribed
+    test.ok(!result.find(entry => entry.path === 'Ghost').subscribed);
+    test.done();
+};
+
+module.exports['Commands: list keeps subscription flags volunteered by a plain LIST'] = async test => {
+    // No RETURN option was granted and LSUB is not available on rev2, but the server
+    // reported \Subscribed on its own - that is real state and must not be widened
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        enabled: new Set(['IMAP4REV2']),
+        skipListSubscribedArg: true,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder1' }]
+                });
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder2' }]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*');
+    test.equal(result.find(entry => entry.path === 'Folder1').subscribed, true);
+    test.ok(!result.find(entry => entry.path === 'Folder2').subscribed);
     test.done();
 };
 
@@ -4333,8 +4437,9 @@ module.exports['Commands: list never falls back to LSUB on a rev2 session'] = as
 
     const result = await listCommand(connection, '', '*');
     test.equal(lsubCalled, false);
-    // No subscription source was available, so nothing claims the folder is subscribed
-    test.ok(!result.find(entry => entry.path === 'Folder1').subscribed);
+    // Neither source could answer, so the folder is reported as subscribed rather than
+    // claiming the server said it is not
+    test.equal(result.find(entry => entry.path === 'Folder1').subscribed, true);
     test.done();
 };
 
