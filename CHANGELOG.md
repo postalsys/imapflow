@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/postalsys/imapflow/compare/v1.6.1...v1.6.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* never fall back to LSUB on an IMAP4rev2 session ([329f588](https://github.com/postalsys/imapflow/commit/329f58829592a3c9a9f69fa74387596a3e55eac3))
+
 ## [1.6.1](https://github.com/postalsys/imapflow/compare/v1.6.0...v1.6.1) (2026-07-27)
 
 
