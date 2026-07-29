@@ -471,3 +471,137 @@ module.exports['Internals: untaggedFetch includes modseq and flagColor'] = async
     test.equal(evt.flagColor, 'red');
     test.done();
 };
+
+// ============================================================================
+// runInternal dispatch guards
+// ============================================================================
+
+module.exports['Internals: runInternal returns false for unknown command'] = async test => {
+    let client = makeClient();
+    client.socket = { destroyed: false };
+    let res = await client.runInternal('NOT_A_COMMAND');
+    test.equal(res, false);
+    test.done();
+};
+
+module.exports['Internals: runInternal throws NoConnection when the socket is destroyed'] = async test => {
+    let client = makeClient();
+    client.socket = { destroyed: true };
+    let err = null;
+    try {
+        await client.runInternal('NOOP');
+    } catch (e) {
+        err = e;
+    }
+    test.ok(err);
+    test.equal(err.code, 'NoConnection');
+    test.done();
+};
+
+// ============================================================================
+// send() onSend error containment
+// ============================================================================
+
+module.exports['Internals: send contains a throwing onSend callback'] = async test => {
+    let client = makeClient();
+    let written = [];
+    let warnings = [];
+    client.socket = { destroyed: false };
+    client.writeSocket = { destroyed: false, write: chunk => written.push(chunk) };
+    client.state = client.states.AUTHENTICATED;
+    client.log.warn = entry => warnings.push(entry);
+    client.currentRequest = { tag: 'A1', sent: false };
+
+    // The command is already on the wire when onSend runs, so a throwing callback
+    // must be logged and swallowed instead of rejecting the request
+    await client.send({
+        tag: 'A1',
+        command: 'NOOP',
+        attributes: [],
+        options: {
+            onSend: () => {
+                throw new Error('onSend boom');
+            }
+        }
+    });
+
+    test.equal(written.length, 1, 'the command was written to the socket');
+    test.equal(written[0].toString(), 'A1 NOOP\r\n', 'the actual wire bytes went out before onSend ran');
+    test.equal(client.currentRequest.sent, true, 'the request is marked as sent');
+    test.ok(
+        warnings.some(entry => entry && entry.err && entry.err.message === 'onSend boom'),
+        'the callback error was logged'
+    );
+    test.done();
+};
+
+// ============================================================================
+// countUnknownTag teardown guard
+// ============================================================================
+
+module.exports['Internals: countUnknownTag ignores tags on a closed connection'] = test => {
+    let client = makeClient();
+    client.isClosed = true;
+    client.countUnknownTag('A1');
+    test.equal(client._unknownTagCount, 0, 'teardown crossover is not counted');
+    test.done();
+};
+
+// ============================================================================
+// rejectUnparsedCompletion
+// ============================================================================
+
+// Installs a command that is current and on the wire, returning a holder for
+// the rejection the reader loop would deliver to the caller
+const armInFlight = (client, tag) => {
+    let captured = { err: null };
+    client.currentRequest = { tag, sent: true };
+    client.requestTagMap.set(tag, {
+        tag,
+        reject: err => {
+            captured.err = err;
+        }
+    });
+    return captured;
+};
+
+module.exports['Internals: rejectUnparsedCompletion ignores lines without an in-flight command'] = test => {
+    let client = makeClient();
+
+    client.currentRequest = false;
+    client.rejectUnparsedCompletion(Buffer.from('A1 OK done'), new Error('parse fail'));
+    test.equal(client.currentRequest, false, 'no request to settle');
+
+    // A command that is current but not yet on the wire must not be settled either
+    client.currentRequest = { tag: 'A1', sent: false };
+    client.rejectUnparsedCompletion(Buffer.from('A1 OK done'), new Error('parse fail'));
+    test.ok(client.currentRequest, 'the unsent request is untouched');
+    test.done();
+};
+
+module.exports['Internals: rejectUnparsedCompletion recovers the tag from NUL-padded raw bytes'] = async test => {
+    let client = makeClient();
+    let captured = armInFlight(client, 'A1');
+
+    // The parser died before extracting a tag - the raw line carries the buggy-server
+    // NUL padding, so the fallback must skip it and stop at the first non-tag byte
+    let parserError = new Error('parse fail');
+    client.rejectUnparsedCompletion(Buffer.from('\x00\x00A1 \x07garbage'), parserError);
+
+    test.ok(captured.err, 'the in-flight command was failed');
+    test.equal(captured.err.code, 'ParserError');
+    test.equal(captured.err.parserError, parserError);
+    test.equal(client.currentRequest, false, 'the request slot was cleared');
+    test.done();
+};
+
+module.exports['Internals: rejectUnparsedCompletion ignores a mismatched raw tag'] = test => {
+    let client = makeClient();
+    let captured = armInFlight(client, 'A1');
+
+    client.rejectUnparsedCompletion(Buffer.from('A2 NO other'), new Error('parse fail'));
+
+    test.equal(captured.err, null, 'a line for another tag settles nothing');
+    test.ok(client.currentRequest, 'the in-flight request stays current');
+    test.done();
+};

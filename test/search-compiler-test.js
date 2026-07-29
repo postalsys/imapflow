@@ -106,6 +106,11 @@ module.exports['Search Compiler: SEQ passes invalid values through to the compil
         'a junk value must not be dropped'
     );
 
+    // Zero is not a valid IMAP sequence number but it is a valid filter value,
+    // so it must reach the compiler guard rather than be dropped as falsy
+    let zero = searchCompiler(connection, { seq: 0 });
+    test.equal(zero.find(a => a.type === 'SEQUENCE').value, '0', 'zero must not be dropped');
+
     test.done();
 };
 
@@ -116,6 +121,15 @@ module.exports['Search Compiler: SEQ array compiles to a single comma-joined set
     let seqAttr = compiled.find(a => a.type === 'SEQUENCE');
     test.ok(seqAttr, 'array must produce a sequence set');
     test.equal(seqAttr.value, '1,3');
+    test.done();
+};
+
+module.exports['Search Compiler: SEQ empty string compiles to nothing'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, { seq: '' });
+
+    test.ok(!compiled.find(a => a.type === 'SEQUENCE'), 'an empty set adds no SEQUENCE attribute');
+    test.equal(compiled.length, 0);
     test.done();
 };
 
@@ -531,6 +545,19 @@ module.exports['Search Compiler: LABELS not compiles to -label: via X-GM-RAW'] =
 
     test.ok(hasAttr(compiled, 'X-GM-RAW'));
     test.ok(hasAttr(compiled, '-label:Horizon'));
+    test.done();
+};
+
+module.exports['Search Compiler: LABELS with a non-object value is ignored'] = test => {
+    let connection = createMockConnection();
+
+    // Neither a falsy value nor a plain string is a { has, not } filter - both
+    // must compile to nothing even without the Gmail extension
+    let compiledNull = searchCompiler(connection, { labels: null });
+    test.equal(compiledNull.length, 0);
+
+    let compiledString = searchCompiler(connection, { labels: 'Horizon' });
+    test.equal(compiledString.length, 0);
     test.done();
 };
 
@@ -1034,6 +1061,20 @@ module.exports['Search Compiler: non-ASCII GMRAW adds CHARSET UTF-8'] = test => 
     let compiled = searchCompiler(connection, { gmraw: 'subject:café' });
     test.ok(hasAttr(compiled, 'CHARSET'));
     test.ok(hasAttr(compiled, 'X-GM-RAW'));
+    test.done();
+};
+
+module.exports['Search Compiler: non-ASCII LABELS adds CHARSET UTF-8'] = test => {
+    let connection = createMockConnection({
+        capabilities: [['X-GM-EXT-1', true]],
+        enabled: new Set()
+    });
+    // The label filter compiles into an X-GM-RAW query, and a non-ASCII label name
+    // must mark the compiled query as Unicode the same way a direct gmraw value does
+    let compiled = searchCompiler(connection, { labels: { has: ['Tähtis'] } });
+    test.ok(hasAttr(compiled, 'CHARSET'));
+    test.ok(hasAttr(compiled, 'X-GM-RAW'));
+    test.ok(hasAttr(compiled, 'label:Tähtis'));
     test.done();
 };
 

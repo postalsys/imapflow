@@ -347,3 +347,84 @@ module.exports['Polling: no polling session without a saved select command'] = a
     test.equal(connection.idling, false, 'idling untouched');
     test.done();
 };
+
+module.exports['Polling: a falsy STATUS result stops the loop as PollFailed'] = async test => {
+    await withFakeTimers(async timers => {
+        let warnings = [];
+        let connection = createConnection({
+            missingIdleCommand: 'STATUS',
+            // Only STATUS is ever polled; a failure without a NO status makes the
+            // real STATUS implementation swallow the error and return false
+            respond: async () => {
+                throw new Error('Command failed');
+            }
+        });
+        connection.log.warn = entry => warnings.push(entry);
+
+        let idlePromise = idleCommand(connection, 60000);
+        await timers.drain();
+        await idlePromise;
+
+        test.ok(
+            warnings.some(entry => entry && entry.err && entry.err.code === 'PollFailed'),
+            'the falsy STATUS result surfaced as a PollFailed error'
+        );
+        test.equal(connection.idling, false, 'idling reset after the failed poll');
+        test.equal(connection.preCheck, false, 'preCheck released');
+        test.equal(timers.count(), 0, 'polling stopped');
+        test.done();
+    });
+};
+
+module.exports['Polling: a repeated break call is a no-op'] = async test => {
+    await withFakeTimers(async timers => {
+        let connection = createConnection();
+
+        let idlePromise = idleCommand(connection, 60000);
+        await timers.drain();
+        test.deepEqual(connection.commands, ['NOOP'], 'the immediate first poll ran');
+
+        // A caller may hold on to the break function and invoke it more than once
+        let preCheck = connection.preCheck;
+        await preCheck();
+        await preCheck();
+        await idlePromise;
+
+        test.equal(connection.idling, false, 'idling reset');
+        test.equal(connection.preCheck, false, 'preCheck released');
+        test.equal(timers.count(), 0, 'no timer left armed');
+
+        await timers.fire();
+        test.deepEqual(connection.commands, ['NOOP'], 'no further poll after the duplicate break');
+        test.done();
+    });
+};
+
+module.exports['Polling: a break in the initiation tick prevents the first poll'] = async test => {
+    await withFakeTimers(async timers => {
+        let connection = createConnection();
+        // Simulate a break request (e.g. a command being queued) landing in the same
+        // tick the loop is initiated: trap the loop installing its own preCheck and
+        // break through it immediately, before the first poll has started
+        let installedPreCheck = connection.preCheck;
+        Object.defineProperty(connection, 'preCheck', {
+            get: () => installedPreCheck,
+            set: value => {
+                installedPreCheck = value;
+                if (typeof value === 'function') {
+                    value();
+                }
+            }
+        });
+
+        let idlePromise = idleCommand(connection, 60000);
+        await timers.drain();
+        await idlePromise;
+
+        test.deepEqual(connection.commands, [], 'the already-cancelled session never polled');
+        test.equal(connection.idling, false, 'idling reset');
+        test.equal(connection.preCheck, false, 'preCheck released');
+        test.equal(timers.count(), 0, 'no timer left armed');
+        test.done();
+    });
+};

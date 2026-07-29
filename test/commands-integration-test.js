@@ -3929,6 +3929,52 @@ module.exports['Commands: list runs separate INBOX query when using namespace'] 
     test.done();
 };
 
+module.exports['Commands: list INBOX fixup propagates non-reducible failures'] = async test => {
+    // Both sides of the fixup's retry guard: a NO on the extended call is an operational
+    // failure (not a RETURN options rejection), and a BAD on a call that already ran plain
+    // has no options left to reduce - neither may trigger the plain retry
+    for (let { capabilities, status } of [
+        {
+            capabilities: [
+                ['IMAP4rev1', true],
+                ['LIST-EXTENDED', true]
+            ],
+            status: 'NO'
+        },
+        { capabilities: [['IMAP4rev1', true]], status: 'BAD' }
+    ]) {
+        let listCalls = 0;
+        let lsubCalls = 0;
+        const connection = createMockConnection({
+            state: 3,
+            capabilities: new Map(capabilities),
+            exec: async (cmd, attrs) => {
+                if (cmd === 'LSUB') {
+                    lsubCalls++;
+                }
+                if (cmd === 'LIST') {
+                    listCalls++;
+                    if (attrs[1] === 'INBOX') {
+                        throw commandError('Command failed', status);
+                    }
+                }
+                return { next: () => {} };
+            }
+        });
+
+        try {
+            await listCommand(connection, 'Mail/', '*');
+            test.ok(false, 'Should have thrown');
+        } catch (err) {
+            test.equal(err.responseStatus, status);
+        }
+        // Main listing and the failed INBOX call - no plain retry, no LSUB merge
+        test.equal(listCalls, 2);
+        test.equal(lsubCalls, 0);
+    }
+    test.done();
+};
+
 module.exports['Commands: list handles LSUB merging'] = async test => {
     const connection = createMockConnection({
         state: 3,
@@ -4885,18 +4931,28 @@ module.exports['Commands: list discards partial results from a rejected INBOX fi
         state: 3,
         capabilities: new Map([
             ['IMAP4rev1', true],
-            ['LIST-EXTENDED', true]
+            ['LIST-EXTENDED', true],
+            ['SPECIAL-USE', true]
         ]),
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'LIST') {
                 listAttempts.push(JSON.stringify(attrs));
                 if (listAttempts.length === 1) {
                     await opts.untagged.LIST({
-                        attributes: [[{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }], { value: '.' }, { value: 'Prefix.Folder1' }]
+                        attributes: [
+                            [{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }, { value: '\\Sent' }],
+                            { value: '.' },
+                            { value: 'Prefix.Folder1' }
+                        ]
                     });
                 } else if (listAttempts.length === 2) {
-                    // The fixup attempt streams an untagged INBOX line and THEN gets
-                    // the tagged BAD - the partial line must not survive the retry
+                    // The fixup attempt streams untagged lines and THEN gets the tagged
+                    // BAD - the partial lines must not survive the retry. "Aliased" also
+                    // claims \Sent and sorts ahead of the main run's Prefix.Folder1, so
+                    // it would steal the special-use slot if it were not rolled back
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\Sent' }], { value: '.' }, { value: 'Aliased' }]
+                    });
                     await opts.untagged.LIST({
                         attributes: [[{ value: '\\HasNoChildren' }], { value: '.' }, { value: 'INBOX' }]
                     });
@@ -4915,7 +4971,9 @@ module.exports['Commands: list discards partial results from a rejected INBOX fi
     test.equal(listAttempts.length, 3);
     // Exactly one INBOX entry - the rejected attempt's partial line was discarded
     test.equal(result.filter(e => e.path === 'INBOX').length, 1);
-    test.ok(result.find(e => e.path === 'Prefix.Folder1'));
+    test.ok(!result.some(e => e.path === 'Aliased'), 'the rejected attempt entry is gone');
+    // The main run's special-use match survived the rollback of the rejected attempt
+    test.equal(result.find(e => e.path === 'Prefix.Folder1').specialUse, '\\Sent');
     test.done();
 };
 

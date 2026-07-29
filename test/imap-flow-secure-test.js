@@ -130,6 +130,13 @@ const makeStartTlsClient = (port, overrides = {}) =>
         ...overrides
     });
 
+// Every terminal upgrade path must leave no upgrade state behind
+const assertUpgradeSettled = (test, client) => {
+    test.equal(client.upgrading, false, 'upgrading flag cleared');
+    test.equal(client._upgradeReject, null, 'upgrade rejector cleared');
+    test.equal(client.upgradeTimeout, null, 'upgrade timer cleared');
+};
+
 // ---------------------------------------------------------------------------
 // STARTTLS happy path
 // ---------------------------------------------------------------------------
@@ -279,9 +286,7 @@ module.exports['Secure: STARTTLS leaves no upgrade state behind on success'] = a
 
     await client.connect();
 
-    test.equal(client.upgrading, false, 'upgrading flag cleared');
-    test.equal(client._upgradeReject, null, 'upgrade rejector cleared');
-    test.equal(client.upgradeTimeout, null, 'upgrade timer cleared');
+    assertUpgradeSettled(test, client);
     // The handshake-only handler is gone, leaving the generic socket error handler as the single
     // error path (during the handshake it is the other way round, which is what prevents a
     // handshake error from firing two handlers at once).
@@ -318,15 +323,46 @@ module.exports['Secure: close() during a STARTTLS upgrade settles the upgrade'] 
     while (!client.upgrading) {
         await new Promise(resolve => setTimeout(resolve, 10));
     }
+    // A late socket event would invoke the same settle helper the rejector exposes -
+    // capture it before close() consumes it
+    let settle = client._upgradeReject;
     client.close();
 
     let err = await connectResult;
     test.ok(err, 'connect rejected rather than hanging on the abandoned upgrade');
     test.ok(['ClosedAfterConnectText', 'ClosedAfterConnectTLS', 'NoConnection'].includes(err.code), `connect rejected with ${err.code}`);
-    test.equal(client.upgrading, false, 'upgrading flag cleared');
-    test.equal(client._upgradeReject, null, 'upgrade rejector cleared');
-    test.equal(client.upgradeTimeout, null, 'upgrade timer cleared');
+    assertUpgradeSettled(test, client);
 
+    // The late event lands after the upgrade already settled - it must be a no-op:
+    // a settled upgrade neither claims the error as a TLS failure nor re-arms any state
+    let lateErr = new Error('late socket error');
+    settle(lateErr);
+    test.ok(!lateErr.tlsFailed, 'the late error was not marked as a TLS upgrade failure');
+    assertUpgradeSettled(test, client);
+
+    server.close();
+    test.done();
+};
+
+module.exports['Secure: STARTTLS handshake failure rejects connect'] = async test => {
+    let server = createStartTlsServer();
+    let port = await listen(server);
+    // The tls option is erased entirely, not merely relaxed: certificate validation
+    // stays on, so the mock server's self-signed certificate must fail the handshake,
+    // and the upgrade builds its TLS options from the no-options fallback
+    let client = makeStartTlsClient(port, { tls: undefined });
+    client.on('error', () => {});
+
+    let err = await client.connect().then(
+        () => null,
+        connectErr => connectErr
+    );
+
+    test.ok(err, 'connect rejected on the failed handshake');
+    test.ok(err.tlsFailed, 'the error is marked as a TLS upgrade failure');
+    assertUpgradeSettled(test, client);
+
+    client.close();
     server.close();
     test.done();
 };
