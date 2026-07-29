@@ -87,13 +87,35 @@ module.exports['Search Compiler: SEQ with number'] = test => {
     test.done();
 };
 
-module.exports['Search Compiler: SEQ ignores invalid values'] = test => {
+module.exports['Search Compiler: SEQ passes invalid values through to the compiler guard'] = test => {
     let connection = createMockConnection();
 
-    // Whitespace in sequence is invalid
+    // An invalid sequence string used to be dropped silently here, which turned the
+    // filter into an unrestricted search matching every message. It is now emitted as
+    // a SEQUENCE token so the IMAP compiler rejects it with a coded error instead.
     let compiled = searchCompiler(connection, { seq: '1 2 3' });
-    test.equal(compiled.length, 0);
+    let seqAttr = compiled.find(a => a.type === 'SEQUENCE');
+    test.ok(seqAttr, 'the sequence value must not be dropped');
+    test.equal(seqAttr.value, '1 2 3');
 
+    // Junk values pass through too, so they fail loudly at the compiler instead of
+    // silently widening the search
+    let junk = searchCompiler(connection, { seq: {} });
+    test.ok(
+        junk.find(a => a.type === 'SEQUENCE'),
+        'a junk value must not be dropped'
+    );
+
+    test.done();
+};
+
+module.exports['Search Compiler: SEQ array compiles to a single comma-joined set'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, { seq: [1, 3] });
+
+    let seqAttr = compiled.find(a => a.type === 'SEQUENCE');
+    test.ok(seqAttr, 'array must produce a sequence set');
+    test.equal(seqAttr.value, '1,3');
     test.done();
 };
 
@@ -363,6 +385,30 @@ module.exports['Search Compiler: UID with number'] = test => {
 
     test.ok(hasAttr(compiled, 'UID'));
     test.ok(hasAttr(compiled, '12345'));
+    test.done();
+};
+
+module.exports['Search Compiler: UID array compiles to a single comma-joined set'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, { uid: [5, 7, 9] });
+
+    // Separate tokens ("UID 5 7 9") would be parsed by the server as extra
+    // sequence-number search keys ANDed to the query - the array means the set {5,7,9}
+    test.ok(hasAttr(compiled, 'UID'));
+    let uidValueAttr = compiled.find(a => a.value === '5,7,9');
+    test.ok(uidValueAttr, 'array must be joined into one sequence set');
+    test.equal(uidValueAttr.type, 'SEQUENCE');
+    test.done();
+};
+
+module.exports['Search Compiler: UID accepts the SEARCHRES $ marker'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, { uid: '$' });
+
+    test.ok(hasAttr(compiled, 'UID'));
+    let uidValueAttr = compiled.find(a => a.value === '$');
+    test.ok(uidValueAttr, 'the saved-result marker must pass through');
+    test.equal(uidValueAttr.type, 'SEQUENCE');
     test.done();
 };
 

@@ -642,10 +642,11 @@ module.exports['IMAP Compiler: partial range in SECTION'] = test =>
 
 // Returns the error a compile attempt raised, or undefined when it succeeded.
 // Several cases below assert that a token can never reach the wire, and the
-// try/catch is the only interesting part of each.
-const compileError = async attributes => {
+// try/catch is the only interesting part of each. Takes either an attributes
+// array (compiled under a default tag/command) or a full response object.
+const compileError = async input => {
     try {
-        await compiler({ tag: 'A', command: 'CMD', attributes });
+        await compiler(Array.isArray(input) ? { tag: 'A', command: 'CMD', attributes: input } : input);
     } catch (err) {
         return err;
     }
@@ -663,10 +664,50 @@ module.exports['IMAP Compiler: SEQUENCE rejects values that are not sequence set
 
 module.exports['IMAP Compiler: SEQUENCE accepts every valid sequence-set form'] = test =>
     asyncWrapper(test, async test => {
-        for (let value of ['1', '*', '1:*', '*:1', '1,3,5', '1:3,7,9:*', '4294967295']) {
+        // '$' is the RFC 5182 SEARCHRES saved-result marker, valid as the entire set
+        for (let value of ['1', '*', '1:*', '*:1', '1,3,5', '1:3,7,9:*', '4294967295', '$']) {
             const compiled = (await compiler({ tag: 'A', command: 'FETCH', attributes: [{ type: 'SEQUENCE', value }] })).toString();
             test.equal(compiled, `A FETCH ${value}`);
         }
+
+        // '$' only stands for the whole set, never an element of one
+        for (let value of ['$,1', '1,$', '$:2']) {
+            let err = await compileError([{ type: 'SEQUENCE', value }]);
+            test.equal(err && err.code, 'InvalidSequenceSet', `${JSON.stringify(value)} must be rejected`);
+        }
+    });
+
+module.exports['IMAP Compiler: SEQUENCE validation stays linear on huge valid sets'] = test =>
+    asyncWrapper(test, async test => {
+        // The regex this replaced overflowed the engine's backtrack stack with an
+        // uncoded RangeError at roughly a million comma-separated elements - a set
+        // a fetch over a large mailbox can legitimately produce
+        const huge = Array.from({ length: 1500000 }, (_, i) => i + 1).join(',');
+        const compiled = await compiler({ tag: 'A', command: 'FETCH', attributes: [{ type: 'SEQUENCE', value: huge }] });
+        test.ok(compiled.toString().endsWith(huge), 'the huge but valid set must compile');
+    });
+
+module.exports['IMAP Compiler: SEQUENCE validation is skipped when logging'] = test =>
+    asyncWrapper(test, async test => {
+        // The incoming token parser accepts sequence-shaped tokens the strict grammar
+        // rejects (an ESEARCH set like "1:2:3", a folder name like "12:30:00"). Every
+        // parsed server response is re-compiled for the log, so a throw here would let
+        // one quirky server line kill the whole connection.
+        for (let value of ['1:2:3', '12:30:00', '1,2:3:4']) {
+            const compiled = (await compiler({ tag: '*', command: 'OK', attributes: [{ type: 'SEQUENCE', value }] }, { isLogging: true })).toString();
+            test.equal(compiled, `* OK ${value}`, 'logging re-compile must pass the token through');
+        }
+    });
+
+module.exports['IMAP Compiler: tag and command cannot carry a line terminator'] = test =>
+    asyncWrapper(test, async test => {
+        // The tag/command preamble is written verbatim ahead of any token, so it goes
+        // through the same choke point as everything else
+        let err = await compileError({ tag: 'A\r\nZZ LOGOUT', command: 'NOOP' });
+        test.equal(err && err.code, 'InvalidTokenValue', 'CRLF in the tag must be rejected');
+
+        err = await compileError({ tag: 'A', command: 'NOOP\r\nZZ LOGOUT' });
+        test.equal(err && err.code, 'InvalidTokenValue', 'CRLF in the command must be rejected');
     });
 
 module.exports['IMAP Compiler: quoted strings use IMAP escaping, not JSON escaping'] = test =>
@@ -707,6 +748,23 @@ module.exports['IMAP Compiler: NUMBER coerces its value instead of writing it th
         test.equal((await compiler({ tag: 'A', command: 'CMD', attributes: [{ type: 'NUMBER', value: '42' }] })).toString(), 'A CMD 42');
     });
 
+module.exports['IMAP Compiler: numeric tokens clamp to bounded non-negative integers'] = test =>
+    asyncWrapper(test, async test => {
+        // Infinity, negatives and unsafe magnitudes would otherwise emit bytes outside
+        // the number alphabet ("Infinity", "-5", "1e+300") and get a server BAD blamed
+        // on the server instead of the caller
+        for (let [value, expected] of [
+            [Infinity, '0'],
+            ['Infinity', '0'],
+            [-5, '0'],
+            ['2e21', '0'],
+            [4.6, '5']
+        ]) {
+            const compiled = (await compiler({ tag: 'A', command: 'CMD', attributes: [{ type: 'NUMBER', value }] })).toString();
+            test.equal(compiled, `A CMD ${expected}`, `${JSON.stringify(value)} must clamp to ${expected}`);
+        }
+    });
+
 module.exports['IMAP Compiler: partial range coerces its elements'] = test =>
     asyncWrapper(test, async test => {
         // The partial range is the last token component written verbatim, so it is
@@ -719,6 +777,18 @@ module.exports['IMAP Compiler: partial range coerces its elements'] = test =>
             await compiler({ tag: 'A', command: 'FETCH', attributes: [{ type: 'ATOM', value: 'BODY.PEEK', section: [], partial: [0, 1024] }] })
         ).toString();
         test.equal(normal, 'A FETCH BODY.PEEK[]<0.1024>');
+
+        // Floats and unbounded numerics clamp the same way NUMBER tokens do, so no
+        // non-digit byte ("512.5", "Infinity") can appear inside the partial range
+        const float = (
+            await compiler({ tag: 'A', command: 'FETCH', attributes: [{ type: 'ATOM', value: 'BODY.PEEK', section: [], partial: [0, 512.5] }] })
+        ).toString();
+        test.equal(float, 'A FETCH BODY.PEEK[]<0.513>');
+
+        const unbounded = (
+            await compiler({ tag: 'A', command: 'FETCH', attributes: [{ type: 'ATOM', value: 'BODY.PEEK', section: [], partial: ['Infinity', '2e21'] }] })
+        ).toString();
+        test.equal(unbounded, 'A FETCH BODY.PEEK[]<0.0>');
     });
 
 module.exports['IMAP Compiler: logging output never throws on unsendable values'] = test =>

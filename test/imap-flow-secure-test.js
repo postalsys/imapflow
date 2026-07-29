@@ -75,37 +75,48 @@ const lineReader = (sock, onLine) => {
 
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
 
-// ---------------------------------------------------------------------------
-// STARTTLS happy path
-// ---------------------------------------------------------------------------
-
-module.exports['Secure: STARTTLS upgrade completes a session'] = async test => {
-    let server = net.createServer(rawSocket => {
+// Builds a STARTTLS mock server. Defaults give the happy path; options tweak a
+// phase without another copy of the upgrade scaffold:
+// - preTlsCaps / postTlsCaps: capability list advertised before / after the upgrade
+// - startTlsOk: tag => string, overrides the response line to the STARTTLS command
+// - onTlsLine: (tlsSocket, line) => boolean, intercepts post-upgrade lines; return
+//   true when the line was handled
+const createStartTlsServer = (opts = {}) =>
+    net.createServer(rawSocket => {
         rawSocket.on('error', () => {});
+
+        let preTlsCaps = opts.preTlsCaps || `${CAPS} STARTTLS`;
+        let postTlsCaps = opts.postTlsCaps || CAPS;
 
         let detachPlain;
         detachPlain = lineReader(rawSocket, line => {
-            handleLine(
-                rawSocket,
-                line,
-                () => {
-                    // Upgrade: stop reading plaintext, wrap the socket in TLS
-                    detachPlain();
-                    let tlsSocket = new tls.TLSSocket(rawSocket, { isServer: true, key, cert });
-                    tlsSocket.on('error', () => {});
-                    tlsSocket.on('secure', () => {});
-                    // post-TLS phase advertises a different capability set
-                    lineReader(tlsSocket, l => handleLine(tlsSocket, l, null, `${CAPS} POSTTLS-ONLY`));
-                },
-                `${CAPS} STARTTLS PRETLS-ONLY`
-            );
+            let parts = line.split(' ');
+            let tag = parts[0];
+            let cmd = (parts[1] || '').toUpperCase();
+
+            if (cmd === 'STARTTLS') {
+                rawSocket.write(opts.startTlsOk ? opts.startTlsOk(tag) : `${tag} OK Begin TLS\r\n`);
+                detachPlain();
+                let tlsSocket = new tls.TLSSocket(rawSocket, { isServer: true, key, cert });
+                tlsSocket.on('error', () => {});
+                lineReader(tlsSocket, l => {
+                    if (opts.onTlsLine && opts.onTlsLine(tlsSocket, l)) {
+                        return;
+                    }
+                    handleLine(tlsSocket, l, null, postTlsCaps);
+                });
+                return;
+            }
+
+            handleLine(rawSocket, line, null, preTlsCaps);
         });
 
-        rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS PRETLS-ONLY] ready\r\n`);
+        rawSocket.write(`* OK [CAPABILITY ${preTlsCaps}] ready\r\n`);
     });
 
-    let port = await listen(server);
-    let client = new ImapFlow({
+// The client options shared by every STARTTLS test.
+const makeStartTlsClient = (port, overrides = {}) =>
+    new ImapFlow({
         host: '127.0.0.1',
         port,
         secure: false,
@@ -115,8 +126,23 @@ module.exports['Secure: STARTTLS upgrade completes a session'] = async test => {
         disableAutoIdle: true,
         disableCompression: true,
         logger: false,
-        auth: { user: 'test', pass: 'secret' }
+        auth: { user: 'test', pass: 'secret' },
+        ...overrides
     });
+
+// ---------------------------------------------------------------------------
+// STARTTLS happy path
+// ---------------------------------------------------------------------------
+
+module.exports['Secure: STARTTLS upgrade completes a session'] = async test => {
+    // post-TLS phase advertises a different capability set
+    let server = createStartTlsServer({
+        preTlsCaps: `${CAPS} STARTTLS PRETLS-ONLY`,
+        postTlsCaps: `${CAPS} POSTTLS-ONLY`
+    });
+
+    let port = await listen(server);
+    let client = makeStartTlsClient(port);
     client.on('error', () => {});
 
     await client.connect();
@@ -141,43 +167,15 @@ module.exports['Secure: STARTTLS discards capabilities even when the OK carries 
     // a discard conditioned on "an update is still pending" would keep exactly the
     // pre-TLS list an attacker controls - the list that then chooses the AUTH
     // mechanism and answers LOGINDISABLED. RFC 9051 6.2.1 makes the discard mandatory.
-    let server = net.createServer(rawSocket => {
-        rawSocket.on('error', () => {});
-
-        let detachPlain;
-        detachPlain = lineReader(rawSocket, line => {
-            let parts = line.split(' ');
-            let tag = parts[0];
-            let cmd = (parts[1] || '').toUpperCase();
-
-            if (cmd === 'STARTTLS') {
-                rawSocket.write(`${tag} OK [CAPABILITY ${CAPS} PRETLS-ONLY] Begin TLS\r\n`);
-                detachPlain();
-                let tlsSocket = new tls.TLSSocket(rawSocket, { isServer: true, key, cert });
-                tlsSocket.on('error', () => {});
-                lineReader(tlsSocket, l => handleLine(tlsSocket, l, null, `${CAPS} POSTTLS-ONLY`));
-                return;
-            }
-
-            handleLine(rawSocket, line, null, `${CAPS} STARTTLS PRETLS-ONLY`);
-        });
-
-        rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS PRETLS-ONLY] ready\r\n`);
+    let server = createStartTlsServer({
+        preTlsCaps: `${CAPS} STARTTLS PRETLS-ONLY`,
+        postTlsCaps: `${CAPS} POSTTLS-ONLY`,
+        // the OK itself carries a (pre-TLS, attacker-rewritable) CAPABILITY code
+        startTlsOk: tag => `${tag} OK [CAPABILITY ${CAPS} PRETLS-ONLY] Begin TLS\r\n`
     });
 
     let port = await listen(server);
-    let client = new ImapFlow({
-        host: '127.0.0.1',
-        port,
-        secure: false,
-        doSTARTTLS: true,
-        servername: 'localhost',
-        tls: { rejectUnauthorized: false },
-        disableAutoIdle: true,
-        disableCompression: true,
-        logger: false,
-        auth: { user: 'test', pass: 'secret' }
-    });
+    let client = makeStartTlsClient(port);
     client.on('error', () => {});
 
     await client.connect();
@@ -191,23 +189,40 @@ module.exports['Secure: STARTTLS discards capabilities even when the OK carries 
     test.done();
 };
 
-// Builds the STARTTLS happy-path server used by the watchdog and cleanup tests below.
-const createStartTlsServer = () =>
-    net.createServer(rawSocket => {
-        rawSocket.on('error', () => {});
-
-        let detachPlain;
-        detachPlain = lineReader(rawSocket, line => {
-            handleLine(rawSocket, line, () => {
-                detachPlain();
-                let tlsSocket = new tls.TLSSocket(rawSocket, { isServer: true, key, cert });
-                tlsSocket.on('error', () => {});
-                lineReader(tlsSocket, l => handleLine(tlsSocket, l, null, CAPS));
-            });
-        });
-
-        rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS] ready\r\n`);
+module.exports['Secure: pre-TLS rawCapabilities do not survive a failed re-fetch'] = async test => {
+    // capabilities/authCapabilities are discarded at the upgrade, but rawCapabilities
+    // is public surface external consumers read. If the post-TLS CAPABILITY re-fetch
+    // fails, the pre-TLS list - the one an active attacker can rewrite - must not
+    // linger there either.
+    let server = createStartTlsServer({
+        preTlsCaps: `${CAPS} STARTTLS PRETLS-ONLY`,
+        postTlsCaps: `${CAPS} POSTTLS-ONLY`,
+        onTlsLine: (tlsSocket, line) => {
+            let parts = line.split(' ');
+            if ((parts[1] || '').toUpperCase() === 'CAPABILITY') {
+                // the re-fetch over TLS fails
+                tlsSocket.write(`${parts[0]} NO CAPABILITY not available\r\n`);
+                return true;
+            }
+            return false;
+        }
     });
+
+    let port = await listen(server);
+    let client = makeStartTlsClient(port);
+    client.on('error', () => {});
+
+    await client.connect();
+    test.ok(client.secureConnection, 'connection upgraded to TLS');
+    test.ok(!client.capabilities.has('PRETLS-ONLY'), 'pre-TLS capabilities were discarded');
+    let raw = [].concat(client.rawCapabilities || []);
+    test.ok(!raw.some(entry => entry && /PRETLS-ONLY/.test(entry.value || entry)), 'pre-TLS rawCapabilities were discarded');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
 
 // Records every socket that went through configureSocket(), which is the single place the
 // transport options (keepalive + inactivity watchdog) are applied.
@@ -227,19 +242,7 @@ module.exports['Secure: STARTTLS session keeps the inactivity watchdog'] = async
     // and a dead connection was never noticed.
     let server = createStartTlsServer();
     let port = await listen(server);
-    let client = new ImapFlow({
-        host: '127.0.0.1',
-        port,
-        secure: false,
-        doSTARTTLS: true,
-        servername: 'localhost',
-        tls: { rejectUnauthorized: false },
-        socketTimeout: 200,
-        disableAutoIdle: true,
-        disableCompression: true,
-        logger: false,
-        auth: { user: 'test', pass: 'secret' }
-    });
+    let client = makeStartTlsClient(port, { socketTimeout: 200 });
 
     let errors = [];
     client.on('error', err => errors.push(err));
@@ -271,18 +274,7 @@ module.exports['Secure: STARTTLS leaves no upgrade state behind on success'] = a
     // a successful handshake no timer, rejector, flag or temporary handler survives.
     let server = createStartTlsServer();
     let port = await listen(server);
-    let client = new ImapFlow({
-        host: '127.0.0.1',
-        port,
-        secure: false,
-        doSTARTTLS: true,
-        servername: 'localhost',
-        tls: { rejectUnauthorized: false },
-        disableAutoIdle: true,
-        disableCompression: true,
-        logger: false,
-        auth: { user: 'test', pass: 'secret' }
-    });
+    let client = makeStartTlsClient(port);
     client.on('error', () => {});
 
     await client.connect();
@@ -314,18 +306,7 @@ module.exports['Secure: close() during a STARTTLS upgrade settles the upgrade'] 
         rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS] ready\r\n`);
     });
     let port = await listen(server);
-    let client = new ImapFlow({
-        host: '127.0.0.1',
-        port,
-        secure: false,
-        doSTARTTLS: true,
-        servername: 'localhost',
-        tls: { rejectUnauthorized: false },
-        disableAutoIdle: true,
-        disableCompression: true,
-        logger: false,
-        auth: { user: 'test', pass: 'secret' }
-    });
+    let client = makeStartTlsClient(port);
     client.on('error', () => {});
 
     let connectResult = client.connect().then(

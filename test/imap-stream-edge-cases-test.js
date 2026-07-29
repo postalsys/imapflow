@@ -475,15 +475,39 @@ module.exports['Literal marker scan stays linear on a long digit run'] = test =>
     test.done();
 };
 
-module.exports['Literal marker rejects an oversized digit run without parsing it'] = test => {
+module.exports['Literal marker fails the stream on an oversized digit run'] = test => {
+    // An impossible size is still a syntactically valid marker. Treating it as an
+    // ordinary line instead would feed the announced literal body to the line parser
+    // and desynchronize the session, so the stream must end with LiteralTooLarge.
+    const stream = new ImapStream({ cid: 'test' });
+    let streamErr = null;
+    stream.on('error', err => {
+        streamErr = err;
+    });
+    stream.resume();
+
+    const line = Buffer.concat([Buffer.from('* OK {'), Buffer.from('1'.repeat(40)), Buffer.from('}\r\n')]);
+
+    test.equal(stream.checkLiteralMarker(line), false, 'an impossible size must not start literal mode');
+    test.ok(stream.destroyed, 'the stream must fail closed instead of continuing as if the marker were text');
+    setImmediate(() => {
+        test.ok(streamErr && streamErr.code === 'LiteralTooLarge', 'must fail with LiteralTooLarge');
+        test.done();
+    });
+};
+
+module.exports['Literal marker accepts a zero-padded size'] = test => {
+    // The RFC "number" production is 1*DIGIT, so leading zeros are legal - a long
+    // digit run can still denote a small size and must be consumed as a literal
     const stream = new ImapStream({ cid: 'test' });
     stream.on('error', () => {});
     stream.resume();
 
-    // Longer than any number64 can be, so it cannot be a valid marker
-    const line = Buffer.concat([Buffer.from('* OK {'), Buffer.from('1'.repeat(40)), Buffer.from('}\r\n')]);
+    const line = Buffer.from(`* 1 FETCH (BODY[] {${'0'.repeat(21)}123}\r\n`);
 
-    test.equal(stream.checkLiteralMarker(line), false, 'an impossible size must not start literal mode');
+    test.equal(stream.checkLiteralMarker(line), true, 'a zero-padded marker is a valid literal marker');
+    test.equal(stream.literalWaiting, 123, 'the padded size must parse to its numeric value');
+    stream.destroy();
     test.done();
 };
 

@@ -212,6 +212,36 @@ module.exports['Live rev2: returnOptions search is answered via a real ESEARCH r
     test.done();
 };
 
+module.exports['Live rev2: SEARCHRES saved result is usable as a sequence set'] = async test => {
+    // SEARCH RETURN (SAVE) stores the result server-side (RFC 5182) and '$'
+    // references it in later commands. '$' has to make it through the outgoing
+    // sequence-set validation for that to work at all.
+    const client = await connectClient();
+    try {
+        test.ok(client.capabilities.has('SEARCHRES'), 'Dovecot should advertise SEARCHRES');
+
+        await client.append('INBOX', Buffer.from('Subject: first\r\n\r\nfirst\r\n'));
+        await client.append('INBOX', Buffer.from('Subject: second\r\n\r\nsecond\r\n'));
+
+        await client.mailboxOpen('INBOX');
+        await client.search({ subject: 'second' }, { uid: true, returnOptions: ['SAVE'] });
+
+        let flagResult = await client.messageFlagsAdd('$', ['\\Flagged'], { uid: true });
+        test.ok(flagResult, 'STORE against the saved result must succeed');
+
+        let messages = [];
+        for await (let msg of client.fetch('$', { flags: true, envelope: true }, { uid: true })) {
+            messages.push(msg);
+        }
+        test.equal(messages.length, 1, 'the saved result references exactly the matched message');
+        test.equal(messages[0].envelope.subject, 'second');
+        test.ok(messages[0].flags.has('\\Flagged'), 'the flag change applied to the saved result');
+    } finally {
+        await client.logout();
+    }
+    test.done();
+};
+
 module.exports['Live rev2: MODSEQ search criterion surfaces modseq from the ESEARCH response'] = async test => {
     const client = await connectClient();
     try {

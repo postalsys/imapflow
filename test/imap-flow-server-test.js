@@ -1346,3 +1346,129 @@ module.exports['Server: an unparseable tagged completion fails the command inste
     server.close();
     test.done();
 };
+
+module.exports['Server: a NUL-padded unparseable completion still fails the command'] = async test => {
+    // Buggy servers pad lines with leading NUL bytes; the parser strips them before
+    // reading the tag. The unparsed-completion recovery has to see the same tag the
+    // parser saw, or the command hangs for exactly the server class the NUL
+    // workaround exists for.
+    let server = createServer({
+        handlers: {
+            SELECT(ctx) {
+                ctx.write(`\x00\x00${ctx.tag} OK [\x01BAD-CODE] SELECT completed\r\n`);
+            }
+        }
+    });
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    await client.connect();
+
+    let selectErr = null;
+    try {
+        await client.mailboxOpen('INBOX');
+    } catch (err) {
+        selectErr = err;
+    }
+    test.ok(selectErr, 'the command whose completion could not be parsed must reject');
+
+    let folders = await client.list();
+    test.ok(Array.isArray(folders) && folders.length, 'later commands still run');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
+
+module.exports['Server: a sequence-shaped token in a server response does not fail the connection'] = async test => {
+    // The incoming token parser accepts sequence-shaped tokens the strict outgoing
+    // grammar rejects ("1:2:3"). Every parsed response is re-compiled for the log, so
+    // that pass must skip the validation - one quirky but parseable server line would
+    // otherwise tear down the whole connection.
+    let server = createServer({
+        handlers: {
+            NOOP(ctx) {
+                ctx.write(`${ctx.tag} OK [XDATA 1:2:3] NOOP completed\r\n`);
+            }
+        }
+    });
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    await client.connect();
+    await client.noop();
+    test.ok(client.usable, 'connection must stay usable');
+
+    let folders = await client.list();
+    test.ok(Array.isArray(folders) && folders.length, 'later commands still run');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
+
+module.exports['Server: an invalid range rejects the command without wedging the queue'] = async test => {
+    // The compiler refuses invalid sequence sets before anything reaches the wire.
+    // The dispatch layer has to treat that as the command's own failure: the request
+    // must reject (even when queued behind an in-flight command) and the queue must
+    // keep moving instead of waiting forever on a response that can never arrive.
+    let server = createServer();
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+
+    let err = null;
+    try {
+        await client.fetchOne('1;2', { uid: true });
+    } catch (e) {
+        err = e;
+    }
+    test.ok(err, 'the invalid range must reject');
+    test.equal(err && err.code, 'InvalidSequenceSet');
+
+    // Queued variant: the invalid command sits behind an in-flight one; every promise
+    // must settle and the command behind the invalid one must still run
+    let results = await Promise.allSettled([client.noop(), client.fetchOne('3;4', { uid: true }), client.noop()]);
+    test.equal(results[0].status, 'fulfilled', 'command before the invalid one succeeds');
+    test.equal(results[1].status, 'rejected', 'queued invalid command must reject, not hang');
+    test.equal(results[2].status, 'fulfilled', 'command after the invalid one still runs');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
+
+module.exports['Server: a throwing response listener does not fail the command'] = async test => {
+    // 'response' is emitted after a tagged completion parses successfully. A listener
+    // throwing synchronously used to be caught by the parse-failure path, which
+    // rejected the in-flight command with a bogus ParserError even though the server
+    // had executed it.
+    let server = createServer();
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    await client.connect();
+    client.on('response', payload => {
+        if (payload.response === 'OK') {
+            throw new Error('listener bug');
+        }
+    });
+
+    await client.noop();
+    let mailbox = await client.mailboxOpen('INBOX');
+    test.ok(mailbox, 'commands succeed despite the throwing listener');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};

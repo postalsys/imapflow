@@ -1447,3 +1447,28 @@ module.exports['IMAP Parser: balanced brackets inside a response code are still 
         test.equal(text, 'Flags permitted.');
         test.equal(parsed.attributes[0].section[0].value, 'PERMANENTFLAGS');
     });
+
+module.exports['IMAP Parser: a parse failure after the tag exposes the parsed tag'] = test =>
+    asyncWrapper(test, async test => {
+        // The connection settles the in-flight command from an unparseable tagged
+        // completion using this tag - re-deriving it from the raw bytes instead would
+        // bypass the leading-NUL workaround and strand the command
+        let err = null;
+        try {
+            await parser(Buffer.from('A5 OK [\x01BAD-CODE] done', 'binary'));
+        } catch (e) {
+            err = e;
+        }
+        test.ok(err, 'the line must fail to parse');
+        test.equal(err && err.parsedTag, 'A5');
+
+        // The NUL-padding workaround is inherited: the exposed tag is the stripped one
+        err = null;
+        try {
+            await parser(Buffer.from('\x00\x00A6 OK [\x01BAD-CODE] done', 'binary'));
+        } catch (e) {
+            err = e;
+        }
+        test.ok(err, 'the padded line must fail to parse');
+        test.equal(err && err.parsedTag, 'A6');
+    });

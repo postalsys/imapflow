@@ -2910,6 +2910,40 @@ module.exports['Commands: compress handles error'] = async test => {
     test.done();
 };
 
+module.exports['Commands: compress fails the connection on trailing data'] = async test => {
+    // Per RFC 4978 the server switches to DEFLATE at its tagged OK, so data already
+    // buffered behind the OK was consumed as cleartext and the deflate stream is
+    // truncated. Declining the upgrade is not a protocol option at that point - the
+    // session is unrecoverable in both directions and must fail closed.
+    let closeAfterCalled = false;
+    let nextCalled = false;
+    const connection = createMockConnection({
+        capabilities: new Map([['COMPRESS=DEFLATE', true]]),
+        closeAfter: () => {
+            closeAfterCalled = true;
+        },
+        exec: async () => ({
+            hasTrailingData: true,
+            next: () => {
+                nextCalled = true;
+                test.ok(closeAfterCalled, 'teardown must be scheduled before parser backpressure is released');
+            }
+        })
+    });
+
+    let err = null;
+    try {
+        await compressCommand(connection);
+    } catch (e) {
+        err = e;
+    }
+    test.ok(err, 'compress must throw');
+    test.equal(err && err.code, 'COMPRESS_TRAILING_DATA');
+    test.ok(closeAfterCalled, 'the connection must be closed');
+    test.ok(nextCalled, 'parser backpressure must still be released');
+    test.done();
+};
+
 // ============================================
 // STARTTLS Command Tests
 // ============================================
