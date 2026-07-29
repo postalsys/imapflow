@@ -1310,3 +1310,39 @@ module.exports['Server: socket close triggers close handling'] = async test => {
     client.close();
     test.done();
 };
+
+module.exports['Server: an unparseable tagged completion fails the command instead of stalling'] = async test => {
+    // A tagged line the parser cannot make sense of used to be logged and dropped.
+    // currentRequest then stayed set forever, so trySend() stopped dispatching and
+    // every later command queued behind a promise that never settled.
+    let server = createServer({
+        handlers: {
+            SELECT(ctx) {
+                // A control character inside the response code is not parseable
+                ctx.write(`${ctx.tag} OK [\x01BAD-CODE] SELECT completed\r\n`);
+            }
+        }
+    });
+    let port = await listen(server);
+    let client = makeClient(port);
+    client.on('error', () => {});
+
+    await client.connect();
+
+    let selectErr = null;
+    try {
+        await client.mailboxOpen('INBOX');
+    } catch (err) {
+        selectErr = err;
+    }
+    test.ok(selectErr, 'the command whose completion could not be parsed must reject');
+
+    // The connection has to keep working: the next command still gets dispatched
+    let folders = await client.list();
+    test.ok(Array.isArray(folders) && folders.length, 'later commands still run');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};

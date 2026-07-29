@@ -639,3 +639,101 @@ module.exports['IMAP Compiler: partial range in SECTION'] = test =>
         ).toString();
         test.ok(compiled.includes('<0.50>'), 'should contain partial range <0.50>');
     });
+
+// Returns the error a compile attempt raised, or undefined when it succeeded.
+// Several cases below assert that a token can never reach the wire, and the
+// try/catch is the only interesting part of each.
+const compileError = async attributes => {
+    try {
+        await compiler({ tag: 'A', command: 'CMD', attributes });
+    } catch (err) {
+        return err;
+    }
+};
+
+module.exports['IMAP Compiler: SEQUENCE rejects values that are not sequence sets'] = test =>
+    asyncWrapper(test, async test => {
+        // Sequence sets are written verbatim, so a range string that reached the
+        // compiler unvalidated would put a second command on the wire
+        for (let value of ['1\r\nZZ1 LOGOUT', '1 2', '1;2', 'ALL', '1:2)', '1\t2', Buffer.from('1\r\nZZ NOOP')]) {
+            let err = await compileError([{ type: 'SEQUENCE', value }]);
+            test.equal(err && err.code, 'InvalidSequenceSet', `${JSON.stringify(value.toString())} must be rejected`);
+        }
+    });
+
+module.exports['IMAP Compiler: SEQUENCE accepts every valid sequence-set form'] = test =>
+    asyncWrapper(test, async test => {
+        for (let value of ['1', '*', '1:*', '*:1', '1,3,5', '1:3,7,9:*', '4294967295']) {
+            const compiled = (await compiler({ tag: 'A', command: 'FETCH', attributes: [{ type: 'SEQUENCE', value }] })).toString();
+            test.equal(compiled, `A FETCH ${value}`);
+        }
+    });
+
+module.exports['IMAP Compiler: quoted strings use IMAP escaping, not JSON escaping'] = test =>
+    asyncWrapper(test, async test => {
+        // Only DQUOTE and backslash have escapes in the IMAP grammar - a tab must
+        // survive as a raw byte rather than becoming a literal backslash-t
+        const compiled = (await compiler({ tag: 'A', command: 'CMD', attributes: [{ type: 'STRING', value: 'a\tb"c\\d' }] })).toString();
+        test.equal(compiled, 'A CMD "a\tb\\"c\\\\d"');
+    });
+
+module.exports['IMAP Compiler: quoted strings reject CR, LF and NUL'] = test =>
+    asyncWrapper(test, async test => {
+        for (let value of ['a\rb', 'a\nb', 'a\0b']) {
+            let err = await compileError([{ type: 'STRING', value }]);
+            test.equal(err && err.code, 'InvalidStringValue', `${JSON.stringify(value)} cannot be sent as a quoted string`);
+        }
+    });
+
+module.exports['IMAP Compiler: a mailbox name with CRLF cannot reach the wire'] = test =>
+    asyncWrapper(test, async test => {
+        // Paths travel as ATOM tokens and get quoted when they fall outside ATOM-CHAR
+        let err = await compileError([{ type: 'ATOM', value: 'INBOX\r\nZZ LOGOUT' }]);
+        test.equal(err && err.code, 'InvalidStringValue');
+    });
+
+module.exports['IMAP Compiler: response text cannot carry a line terminator'] = test =>
+    asyncWrapper(test, async test => {
+        // TEXT is written verbatim as well, so it gets the same guarantee even though
+        // only the parser produces it today
+        let err = await compileError([{ type: 'TEXT', value: 'oops\r\nZZ NOOP' }]);
+        test.equal(err && err.code, 'InvalidTextValue');
+    });
+
+module.exports['IMAP Compiler: NUMBER coerces its value instead of writing it through'] = test =>
+    asyncWrapper(test, async test => {
+        const compiled = (await compiler({ tag: 'A', command: 'CMD', attributes: [{ type: 'NUMBER', value: '1\r\nZZ NOOP' }] })).toString();
+        test.equal(compiled, 'A CMD 0', 'a non-numeric value must not reach the wire verbatim');
+        test.equal((await compiler({ tag: 'A', command: 'CMD', attributes: [{ type: 'NUMBER', value: '42' }] })).toString(), 'A CMD 42');
+    });
+
+module.exports['IMAP Compiler: partial range coerces its elements'] = test =>
+    asyncWrapper(test, async test => {
+        // The partial range is the last token component written verbatim, so it is
+        // coerced rather than joined as-is
+        const attributes = [{ type: 'ATOM', value: 'BODY.PEEK', section: [], partial: ['0>\r\nZZ NOOP'] }];
+        const compiled = (await compiler({ tag: 'A', command: 'FETCH', attributes })).toString();
+        test.equal(compiled, 'A FETCH BODY.PEEK[]<0>');
+
+        const normal = (
+            await compiler({ tag: 'A', command: 'FETCH', attributes: [{ type: 'ATOM', value: 'BODY.PEEK', section: [], partial: [0, 1024] }] })
+        ).toString();
+        test.equal(normal, 'A FETCH BODY.PEEK[]<0.1024>');
+    });
+
+module.exports['IMAP Compiler: logging output never throws on unsendable values'] = test =>
+    asyncWrapper(test, async test => {
+        // The logging pass must survive whatever the wire pass refuses, so a rejected
+        // command can still be logged
+        const compiled = (
+            await compiler(
+                {
+                    tag: 'A',
+                    command: 'LOGIN',
+                    attributes: [{ type: 'STRING', value: 'a\r\nb' }]
+                },
+                { isLogging: true }
+            )
+        ).toString();
+        test.ok(compiled.includes('\\r\\n'), 'control characters stay escaped for the log');
+    });

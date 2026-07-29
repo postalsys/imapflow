@@ -212,16 +212,45 @@ module.exports['ESEARCH: command path returns false on exec error'] = test => {
 };
 
 module.exports['ESEARCH: parseEsearchResponse ignores unknown keywords'] = test => {
-    // Dovecot with CONDSTORE may append MODSEQ to ESEARCH responses
+    // Unknown result keywords must be skipped with their value so the
+    // key/value stream stays aligned for the entries that follow
+    const attrs = [
+        { type: 'ATOM', value: 'RELEVANCY' },
+        { type: 'ATOM', value: '87' },
+        { type: 'ATOM', value: 'COUNT' },
+        { type: 'ATOM', value: '5' }
+    ];
+    const result = parseEsearchResponse(attrs);
+    test.equal(result.count, 5);
+    test.equal(result.relevancy, undefined, 'unknown keys should not appear in result');
+    test.done();
+};
+
+module.exports['ESEARCH: parseEsearchResponse parses MODSEQ as BigInt'] = test => {
+    // RFC 7162: CONDSTORE sessions append MODSEQ to ESEARCH responses when the
+    // search used a MODSEQ criterion
     const attrs = [
         { type: 'ATOM', value: 'COUNT' },
         { type: 'ATOM', value: '5' },
         { type: 'ATOM', value: 'MODSEQ' },
-        { type: 'ATOM', value: '12345' }
+        { type: 'ATOM', value: '9007199254740993' }
     ];
     const result = parseEsearchResponse(attrs);
     test.equal(result.count, 5);
-    test.equal(result.modseq, undefined, 'unknown keys should not appear in result');
+    test.strictEqual(result.modseq, 9007199254740993n, 'modseq should be an exact BigInt');
+    test.done();
+};
+
+module.exports['ESEARCH: parseEsearchResponse drops non-numeric MODSEQ'] = test => {
+    const attrs = [
+        { type: 'ATOM', value: 'MODSEQ' },
+        { type: 'ATOM', value: 'bogus' },
+        { type: 'ATOM', value: 'COUNT' },
+        { type: 'ATOM', value: '3' }
+    ];
+    const result = parseEsearchResponse(attrs);
+    test.equal(result.modseq, undefined, 'invalid modseq must be dropped');
+    test.equal(result.count, 3, 'stream must stay aligned after a dropped value');
     test.done();
 };
 

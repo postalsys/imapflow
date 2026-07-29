@@ -234,8 +234,23 @@ module.exports['Tools: hasCapability with advertised token'] = test => {
 
 module.exports['Tools: hasCapability folds extensions into active rev2'] = test => {
     let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
-    // RFC 9051 Appendix E folds these into base IMAP4rev2
-    for (let capability of ['UIDPLUS', 'MOVE', 'NAMESPACE', 'ESEARCH', 'LITERAL-', 'LIST-EXTENDED', 'LIST-STATUS', 'SPECIAL-USE', 'ENABLE']) {
+    // RFC 9051 Appendix E folds these into base IMAP4rev2 - the complete set
+    for (let capability of [
+        'ENABLE',
+        'ESEARCH',
+        'IDLE',
+        'LIST-EXTENDED',
+        'LIST-STATUS',
+        'LITERAL-',
+        'MOVE',
+        'NAMESPACE',
+        'SASL-IR',
+        'SEARCHRES',
+        'SPECIAL-USE',
+        'STATUS=SIZE',
+        'UIDPLUS',
+        'UNSELECT'
+    ]) {
         test.equal(tools.hasCapability(connection, capability), true, `${capability} should be folded into rev2`);
     }
     // BINARY is intentionally not folded
@@ -333,6 +348,17 @@ module.exports['Tools: getErrorText with valid response'] = async test => {
     };
     let result = await tools.getErrorText(response);
     test.ok(typeof result === 'string');
+    test.done();
+};
+
+module.exports['Tools: getErrorText survives a response that cannot be re-encoded'] = async test => {
+    // The parser tolerates stray bytes inside an OK/NO/BAD atom, and those have no
+    // valid IMAP string encoding. The error text is diagnostic, so it must still be
+    // produced rather than replacing the server's error with an encoding failure.
+    let response = await parser(Buffer.from('A1 NO [SERVERBUG\x00X] it failed', 'binary'));
+    let result = await tools.getErrorText(response);
+    test.ok(typeof result === 'string', 'error text should still be produced');
+    test.ok(result.includes('it failed'), 'the human-readable part must survive');
     test.done();
 };
 

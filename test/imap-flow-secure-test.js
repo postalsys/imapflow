@@ -135,6 +135,62 @@ module.exports['Secure: STARTTLS upgrade completes a session'] = async test => {
     test.done();
 };
 
+module.exports['Secure: STARTTLS discards capabilities even when the OK carries a CAPABILITY code'] = async test => {
+    // A server (or a MITM rewriting the plaintext stream) may stamp [CAPABILITY ...]
+    // on the STARTTLS OK itself. That marks the capability set as freshly updated, so
+    // a discard conditioned on "an update is still pending" would keep exactly the
+    // pre-TLS list an attacker controls - the list that then chooses the AUTH
+    // mechanism and answers LOGINDISABLED. RFC 9051 6.2.1 makes the discard mandatory.
+    let server = net.createServer(rawSocket => {
+        rawSocket.on('error', () => {});
+
+        let detachPlain;
+        detachPlain = lineReader(rawSocket, line => {
+            let parts = line.split(' ');
+            let tag = parts[0];
+            let cmd = (parts[1] || '').toUpperCase();
+
+            if (cmd === 'STARTTLS') {
+                rawSocket.write(`${tag} OK [CAPABILITY ${CAPS} PRETLS-ONLY] Begin TLS\r\n`);
+                detachPlain();
+                let tlsSocket = new tls.TLSSocket(rawSocket, { isServer: true, key, cert });
+                tlsSocket.on('error', () => {});
+                lineReader(tlsSocket, l => handleLine(tlsSocket, l, null, `${CAPS} POSTTLS-ONLY`));
+                return;
+            }
+
+            handleLine(rawSocket, line, null, `${CAPS} STARTTLS PRETLS-ONLY`);
+        });
+
+        rawSocket.write(`* OK [CAPABILITY ${CAPS} STARTTLS PRETLS-ONLY] ready\r\n`);
+    });
+
+    let port = await listen(server);
+    let client = new ImapFlow({
+        host: '127.0.0.1',
+        port,
+        secure: false,
+        doSTARTTLS: true,
+        servername: 'localhost',
+        tls: { rejectUnauthorized: false },
+        disableAutoIdle: true,
+        disableCompression: true,
+        logger: false,
+        auth: { user: 'test', pass: 'secret' }
+    });
+    client.on('error', () => {});
+
+    await client.connect();
+    test.ok(client.secureConnection, 'connection upgraded to TLS');
+    test.ok(client.capabilities.has('POSTTLS-ONLY'), 'post-TLS capabilities were re-fetched');
+    test.ok(!client.capabilities.has('PRETLS-ONLY'), 'pre-TLS capabilities were discarded');
+
+    await client.logout();
+    client.close();
+    server.close();
+    test.done();
+};
+
 // Builds the STARTTLS happy-path server used by the watchdog and cleanup tests below.
 const createStartTlsServer = () =>
     net.createServer(rawSocket => {

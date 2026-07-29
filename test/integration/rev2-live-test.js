@@ -150,7 +150,12 @@ module.exports['Live rev2: statusQuery is answered inline via LIST-STATUS'] = as
 
         const folders = await client.list({ statusQuery: { messages: true, unseen: true } });
 
-        test.ok(clientSent(logs, 'STATUS'), 'LIST should carry RETURN (STATUS ...)');
+        // Pin the inline LIST-STATUS behavior: the STATUS request must ride on the
+        // LIST command itself, and no standalone STATUS command may be issued -
+        // a plain substring check would also pass on the fallback path
+        const listLine = wireLines(logs).find(entry => entry.src === 'c' && /^\S+ LIST /.test(entry.msg));
+        test.ok(listLine && listLine.msg.includes('RETURN') && listLine.msg.includes('STATUS'), 'LIST should carry RETURN (STATUS ...)');
+        test.ok(!wireLines(logs).some(entry => entry.src === 'c' && /^\S+ STATUS /.test(entry.msg)), 'no standalone STATUS command should be needed');
         const inbox = folders.find(folder => folder.path === 'INBOX');
         test.equal(inbox.status.messages, 1, 'inline STATUS should report the appended message');
     } finally {
@@ -207,6 +212,26 @@ module.exports['Live rev2: returnOptions search is answered via a real ESEARCH r
     test.done();
 };
 
+module.exports['Live rev2: MODSEQ search criterion surfaces modseq from the ESEARCH response'] = async test => {
+    const client = await connectClient();
+    try {
+        await client.append('INBOX', Buffer.from('Subject: first\r\n\r\nfirst\r\n'));
+        await client.append('INBOX', Buffer.from('Subject: second\r\n\r\nsecond\r\n'));
+
+        await client.mailboxOpen('INBOX');
+        // RFC 7162: a MODSEQ criterion on a CONDSTORE session makes the server
+        // append MODSEQ to the ESEARCH response
+        const result = await client.search({ modseq: 1 }, { returnOptions: ['ALL', 'COUNT'] });
+
+        test.equal(result.count, 2);
+        test.equal(result.all, '1:2');
+        test.ok(typeof result.modseq === 'bigint' && result.modseq > 0n, 'modseq should surface as a positive BigInt');
+    } finally {
+        await client.logout();
+    }
+    test.done();
+};
+
 module.exports['Live rev2: STATUS reports SIZE and DELETED'] = async test => {
     const logs = [];
     const client = await connectClient(null, logs);
@@ -253,8 +278,17 @@ module.exports['Live rev2: SELECT response carries an untagged LIST and re-selec
         test.equal(mailbox.path, 'INBOX');
 
         // RFC 9051 6.3.1: the SELECT response includes an untagged LIST for the
-        // selected mailbox - the client must consume it without issue
-        test.ok(serverSentUntagged(logs, 'LIST'), 'rev2 SELECT should include an untagged LIST response');
+        // selected mailbox - the client must consume it without issue. Scoped to
+        // the SELECT exchange itself: mailboxOpen() also issues its own LIST
+        // command first, whose untagged replies would satisfy a global check
+        // even if the SELECT response omitted the LIST
+        const lines = wireLines(logs);
+        const selectIdx = lines.findIndex(entry => entry.src === 'c' && /^\S+ SELECT /.test(entry.msg));
+        test.ok(selectIdx >= 0, 'SELECT command should be on the wire');
+        const selectTag = lines[selectIdx].msg.split(' ')[0];
+        const doneIdx = lines.findIndex((entry, i) => i > selectIdx && entry.src === 's' && entry.msg.startsWith(`${selectTag} `));
+        const listInSelect = lines.some((entry, i) => i > selectIdx && i < doneIdx && entry.src === 's' && /^\* LIST( |$)/.test(entry.msg));
+        test.ok(listInSelect, 'rev2 SELECT response should include an untagged LIST response');
 
         // switching mailboxes must produce a CLOSED response code for the old one
         await client.mailboxOpen('Closer');

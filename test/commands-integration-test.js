@@ -606,6 +606,97 @@ module.exports['Commands: search drops * from ESEARCH UID results'] = async test
     test.done();
 };
 
+module.exports['Commands: search discards invalid single values in an ESEARCH ALL set'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        mailbox: { path: 'INBOX', exists: 5 },
+        exec: async (cmd, attrs, opts) => {
+            // '0' is not a valid nz-number and 'foo' is garbage - both single
+            // values must be dropped while the valid one survives
+            await opts.untagged.ESEARCH({
+                attributes: [
+                    { type: 'ATOM', value: 'ALL' },
+                    { type: 'ATOM', value: '0,foo,4' }
+                ]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, {});
+    test.deepEqual(result, [4]);
+    test.done();
+};
+
+module.exports['Commands: search truncates single-value ESEARCH ALL entries at the mailbox size'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        mailbox: { path: 'INBOX', exists: 2 },
+        exec: async (cmd, attrs, opts) => {
+            // More single values than the mailbox holds - the walk must stop at
+            // the EXISTS budget instead of collecting the excess
+            await opts.untagged.ESEARCH({
+                attributes: [
+                    { type: 'ATOM', value: 'ALL' },
+                    { type: 'ATOM', value: '1,2,3,4' }
+                ]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, {});
+    test.deepEqual(result, [1, 2]);
+    test.done();
+};
+
+module.exports['Commands: search ignores an ESEARCH reply without attributes on the plain path'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        exec: async (cmd, attrs, opts) => {
+            // A degenerate untagged ESEARCH with no attributes must not crash
+            // the collector or contribute results
+            await opts.untagged.ESEARCH({ attributes: null });
+            await opts.untagged.ESEARCH({
+                attributes: [
+                    { type: 'ATOM', value: 'ALL' },
+                    { type: 'ATOM', value: '2' }
+                ]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, {});
+    test.deepEqual(result, [2]);
+    test.done();
+};
+
+module.exports['Commands: search treats an ESEARCH ALL set without a mailbox size as empty'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['IMAP4rev2', true]]),
+        // No exists value at all - the budget is zero, nothing may be collected
+        mailbox: { path: 'INBOX' },
+        exec: async (cmd, attrs, opts) => {
+            await opts.untagged.ESEARCH({
+                attributes: [
+                    { type: 'ATOM', value: 'ALL' },
+                    { type: 'ATOM', value: '1:3' }
+                ]
+            });
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, true, {});
+    test.deepEqual(result, []);
+    test.done();
+};
+
 module.exports['Commands: search with UID option'] = async test => {
     let execCmd = null;
     const connection = createMockConnection({

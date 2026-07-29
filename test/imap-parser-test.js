@@ -1421,3 +1421,29 @@ module.exports['IMAP Parser, ATOM with <, [, ]'] = test =>
             ]
         });
     });
+
+module.exports['IMAP Parser: unbalanced bracket in a response code keeps the human-readable text'] = test =>
+    asyncWrapper(test, async test => {
+        // RFC 9051 lets a response code carry free text containing '[' but not ']'.
+        // Counting that '[' as a nested bracket loses the whole human-readable text,
+        // which is what NO/BAD error messages are built from.
+        const parsed = await parser('A1 NO [XFOO see bar[baz] mailbox is busy');
+        const text = (parsed.attributes || [])
+            .filter(entry => entry && entry.type === 'TEXT')
+            .map(entry => entry.value)
+            .join('');
+        test.equal(text, 'mailbox is busy');
+    });
+
+module.exports['IMAP Parser: balanced brackets inside a response code are still tolerated'] = test =>
+    asyncWrapper(test, async test => {
+        // Servers do put bracketed values inside a code, so a plain first-']' scan
+        // would cut the code in half
+        const parsed = await parser('* OK [PERMANENTFLAGS ([css3-page] \\*)] Flags permitted.');
+        const text = (parsed.attributes || [])
+            .filter(entry => entry && entry.type === 'TEXT')
+            .map(entry => entry.value)
+            .join('');
+        test.equal(text, 'Flags permitted.');
+        test.equal(parsed.attributes[0].section[0].value, 'PERMANENTFLAGS');
+    });

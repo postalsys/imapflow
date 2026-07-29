@@ -699,6 +699,8 @@ export interface ESearchResult {
         /** Matching UIDs in that range as compact sequence-set */
         messages: string;
     };
+    /** Highest mod-sequence of the matching messages (RFC 7162, present when the search used a modseq criterion on a CONDSTORE session) */
+    modseq?: bigint;
 }
 
 export class AuthenticationFailure extends Error {

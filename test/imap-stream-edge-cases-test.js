@@ -456,3 +456,51 @@ module.exports['ImapStream: _destroy drains pending input queue callbacks'] = te
         test.done();
     });
 };
+
+module.exports['Literal marker scan stays linear on a long digit run'] = test => {
+    // A backwards scan that accumulated digits one at a time cost O(n^2), so a few
+    // hundred KB of digits blocked the event loop for seconds before the size was
+    // even known - all inside the default line-length budget
+    const stream = new ImapStream({ cid: 'test' });
+    stream.on('error', () => {});
+    stream.resume();
+
+    const line = Buffer.concat([Buffer.from('* OK {'), Buffer.from('9'.repeat(200000)), Buffer.from('}\r\n')]);
+
+    const started = process.hrtime.bigint();
+    stream.checkLiteralMarker(line);
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+    test.ok(elapsedMs < 250, `scan should stay cheap, took ${elapsedMs.toFixed(1)}ms`);
+    test.done();
+};
+
+module.exports['Literal marker rejects an oversized digit run without parsing it'] = test => {
+    const stream = new ImapStream({ cid: 'test' });
+    stream.on('error', () => {});
+    stream.resume();
+
+    // Longer than any number64 can be, so it cannot be a valid marker
+    const line = Buffer.concat([Buffer.from('* OK {'), Buffer.from('1'.repeat(40)), Buffer.from('}\r\n')]);
+
+    test.equal(stream.checkLiteralMarker(line), false, 'an impossible size must not start literal mode');
+    test.done();
+};
+
+module.exports['Literal marker still accepts sizes at the digit-length bound'] = test => {
+    const stream = new ImapStream({ cid: 'test', maxLiteralSize: Number.MAX_SAFE_INTEGER });
+    stream.on('error', () => {});
+    stream.resume();
+
+    // 19 digits is the widest a number64 gets, so it must still be recognized
+    const line = Buffer.from(`* OK {${'9'.repeat(19)}}\r\n`);
+
+    test.equal(stream.checkLiteralMarker(line), false, 'a size beyond the configured maximum fails the stream rather than parsing');
+
+    const ok = new ImapStream({ cid: 'test' });
+    ok.on('error', () => {});
+    ok.resume();
+    test.equal(ok.checkLiteralMarker(Buffer.from('* OK {1024}\r\n')), true);
+    test.equal(ok.literalWaiting, 1024);
+    test.done();
+};
