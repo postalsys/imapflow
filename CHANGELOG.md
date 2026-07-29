@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.4](https://github.com/postalsys/imapflow/compare/v1.6.3...v1.6.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* block IMAP command injection and harden rev2 protocol handling ([e107292](https://github.com/postalsys/imapflow/commit/e107292bc907b29d94b0d810dc01e9680f820bfa))
+
 ## [1.6.3](https://github.com/postalsys/imapflow/compare/v1.6.2...v1.6.3) (2026-07-28)
 
 
