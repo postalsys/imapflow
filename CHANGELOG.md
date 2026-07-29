@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.5](https://github.com/postalsys/imapflow/compare/v1.6.4...v1.6.5) (2026-07-29)
+
+
+### Bug Fixes
+
+* resolve regressions from the rev2 hardening commit and harden further ([0739df9](https://github.com/postalsys/imapflow/commit/0739df93709d2c7d572e977c2b37b6d219e69e30))
+
 ## [1.6.4](https://github.com/postalsys/imapflow/compare/v1.6.3...v1.6.4) (2026-07-29)
 
 
