@@ -528,3 +528,139 @@ module.exports['Literal marker still accepts sizes at the digit-length bound'] =
     test.equal(ok.literalWaiting, 1024);
     test.done();
 };
+
+module.exports['Response assembly enforces the cumulative size cap'] = test => {
+    // The per-line and per-literal caps alone cannot stop a response spread across many
+    // tokens: under a 40-byte response budget, a 25-byte marker line plus a declared
+    // 10-byte literal fits (35), but the next marker line (16 bytes + 10 declared) must
+    // trip the cap - before the second literal's bytes are even read
+    const stream = new ImapStream({ cid: 'test', maxResponseSize: 40 });
+    let streamErr = null;
+    stream.on('error', err => {
+        streamErr = err;
+    });
+    stream.resume();
+
+    stream.write(Buffer.from('* 1 FETCH (BODY[1] {10}\r\n'));
+    stream.write(Buffer.from('0123456789'));
+    stream.write(Buffer.from(' BODY[2] {10}\r\n0123456789)\r\n'));
+
+    setTimeout(() => {
+        test.ok(streamErr, 'an oversized cumulative response must fail the stream');
+        test.equal(streamErr && streamErr.code, 'ResponseTooLarge');
+        test.ok(stream.destroyed, 'the stream must fail closed instead of parsing the rejected payload');
+        test.done();
+    }, 100);
+};
+
+// Resolves once the stream has settled - on its first 'error', or on 'end' when it is
+// consumed to completion. Waiting for the real signal keeps these tests off fixed sleeps.
+const settle = stream =>
+    new Promise(resolve => {
+        stream.once('error', err => resolve(err));
+        stream.once('end', () => resolve(null));
+    });
+
+module.exports['Response size budget resets between responses'] = async test => {
+    // The counter tracks a single response, not the whole session. Each response here fits
+    // the 40-byte budget on its own but the two together do not, so a counter that failed to
+    // reset would trip the cap on the second one - which is what makes this test detect the
+    // regression rather than merely pass alongside it.
+    const line = '* OK ' + 'a'.repeat(23) + '\r\n'; // 30 bytes, two of them exceed the budget
+    const stream = new ImapStream({ cid: 'test', maxResponseSize: 40 });
+    let streamErr = null;
+    let count = 0;
+    stream.on('error', err => {
+        streamErr = err;
+    });
+    stream.on('data', cmd => {
+        count++;
+        cmd.next();
+    });
+
+    test.ok(line.length <= 40 && line.length * 2 > 40, 'each response fits the budget, the pair does not');
+
+    stream.write(Buffer.from(line + line));
+    stream.end();
+
+    await settle(stream);
+    test.ifError(streamErr);
+    test.equal(count, 2);
+    test.done();
+};
+
+module.exports['Response size cap defaults above the literal cap'] = test => {
+    // The response total also carries the literal marker line and the rest of the framing, so
+    // a default equal to the literal cap would make a literal of exactly the maximum permitted
+    // size impossible to receive
+    const stream = new ImapStream({ cid: 'test' });
+    test.equal(stream.maxResponseSize, 2 * 1024 * 1024 * 1024);
+    test.ok(stream.maxResponseSize > stream.maxLiteralSize, 'the response cap must leave headroom above the literal cap');
+    test.done();
+};
+
+module.exports['A literal of exactly maxLiteralSize is accepted when the response cap leaves headroom'] = async test => {
+    const stream = new ImapStream({ cid: 'test', maxLiteralSize: 100, maxResponseSize: 200 });
+    let streamErr = null;
+    let received = null;
+    stream.on('error', err => {
+        streamErr = err;
+    });
+    stream.on('data', cmd => {
+        received = cmd;
+        cmd.next();
+    });
+
+    stream.write(Buffer.from('* 1 FETCH (BODY[] {100}\r\n'));
+    stream.write(Buffer.from('x'.repeat(100)));
+    stream.write(Buffer.from(')\r\n'));
+    stream.end();
+
+    await settle(stream);
+    test.ifError(streamErr);
+    test.ok(received, 'a literal at exactly the configured maximum must be delivered');
+    test.equal(received.literals.length, 1);
+    test.equal(received.literals[0].length, 100);
+    test.done();
+};
+
+module.exports['An unterminated line is bounded by the response budget'] = async test => {
+    // maxResponseSize is only committed when a line completes, so an in-progress line has to
+    // be measured against the remaining budget separately - otherwise a response cap lowered
+    // to bound parser memory buys nothing while a server streams a line that never ends
+    const stream = new ImapStream({ cid: 'test', maxResponseSize: 64 });
+    stream.resume();
+
+    stream.write(Buffer.from('x'.repeat(1024))); // no line terminator anywhere
+
+    let err = await settle(stream);
+    test.ok(err, 'an unterminated line beyond the response budget must fail the stream');
+    test.equal(err.code, 'ResponseTooLarge');
+    test.ok(stream.lineBytes <= 64, 'no more than the budget may stay buffered');
+    test.done();
+};
+
+module.exports['Infinity disables a parser size cap'] = test => {
+    // A cap that cannot be disabled forces a caller who knows their server onto the default
+    const stream = new ImapStream({ cid: 'test', maxResponseSize: Infinity, maxLiteralSize: Infinity, maxLineLength: Infinity });
+    test.equal(stream.maxResponseSize, Infinity);
+    test.equal(stream.maxLiteralSize, Infinity);
+    test.equal(stream.maxLineLength, Infinity);
+    test.done();
+};
+
+module.exports['A marker line that fits the budget can still be refused for its literal'] = async test => {
+    // The line is measured against the budget as it is assembled, but the declared literal is
+    // only charged once the marker line completes - so the cap has to be enforced in both places
+    const stream = new ImapStream({ cid: 'test', maxResponseSize: 40 });
+    stream.resume();
+
+    // 25-byte marker line fits on its own; the 30 declared literal bytes push the total past 40
+    stream.write(Buffer.from('* 1 FETCH (BODY[1] {30}\r\n'));
+
+    let err = await settle(stream);
+    test.ok(err, 'the declared literal must be charged before its bytes arrive');
+    test.equal(err.code, 'ResponseTooLarge');
+    test.equal(err.responseSize, 55);
+    test.done();
+};

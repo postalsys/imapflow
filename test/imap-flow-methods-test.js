@@ -795,3 +795,95 @@ module.exports['Methods: autoEnable does not retry when disableIMAP4rev2 already
     test.equal(calls.length, 1);
     test.done();
 };
+
+module.exports['Methods: untaggedExpunge refuses an unusable sequence number'] = async test => {
+    // Same bound untaggedExists() applies: an overflowing or non-decimal value must not
+    // decrement the live message count
+    let client = makeClient();
+    client.mailbox.exists = 10;
+    let events = [];
+    client.on('expunge', e => events.push(e));
+
+    await client.untaggedExpunge(false);
+    for (let bad of ['9'.repeat(400), '1e5', '0', 'abc', '']) {
+        await client.untaggedExpunge({ command: bad });
+    }
+    test.equal(client.mailbox.exists, 10, 'the live message count must be left alone');
+    test.equal(events.length, 0);
+
+    await client.untaggedExpunge({ command: '3' });
+    test.equal(client.mailbox.exists, 9, 'a usable sequence number is still applied');
+    test.equal(events.length, 1);
+    test.equal(events[0].seq, 3);
+    test.done();
+};
+
+module.exports['Methods: untaggedVanished survives a malformed response'] = async test => {
+    // "* VANISHED (EARLIER)" leaves no sequence set at all. Throwing here would abort the
+    // handler for the whole response, and handleResponse only warns - so every expunge the
+    // response did carry would be dropped and the client's mailbox view would go stale.
+    let client = makeClient();
+    let events = [];
+    client.on('expunge', e => events.push(e));
+
+    await client.untaggedVanished({ attributes: [[{ value: 'EARLIER' }]] });
+    await client.untaggedVanished({ attributes: [] });
+    await client.untaggedVanished({});
+    await client.untaggedVanished({ attributes: [[{ value: 'EARLIER' }], null] });
+
+    test.equal(events.length, 0, 'nothing to report, and nothing thrown');
+
+    // a well-formed response still works after the malformed ones
+    await client.untaggedVanished({ attributes: [[{ value: 'EARLIER' }], { value: '5:6' }] });
+    test.equal(events.length, 2);
+    test.equal(events[0].uid, 5);
+    test.equal(events[0].earlier, true);
+    test.done();
+};
+
+module.exports['Methods: untaggedExists refuses an overflowing count'] = async test => {
+    // Number('9'.repeat(400)) is Infinity: resolveRange('*') would then compile the literal
+    // string "Infinity" and every range-based command would fail until the next SELECT
+    let client = makeClient();
+    client.mailbox = { path: 'INBOX', exists: 5 };
+    let events = [];
+    client.on('exists', e => events.push(e));
+
+    await client.untaggedExists(false);
+    await client.untaggedExists({});
+    for (let bad of ['9'.repeat(400), '1e5', '-1', 'abc', '1.5', '']) {
+        await client.untaggedExists({ command: bad });
+    }
+    test.equal(client.mailbox.exists, 5, 'the live message count must be left alone');
+    test.equal(events.length, 0);
+
+    await client.untaggedExists({ command: '7' });
+    test.equal(client.mailbox.exists, 7, 'a usable count is still applied');
+    test.equal(events.length, 1);
+    test.done();
+};
+
+module.exports['Methods: throttleWait caps the delay and close() aborts it'] = async test => {
+    let client = makeClient();
+
+    // A server hint is unbounded; the wait may never outlive the client either
+    let started = Date.now();
+    let pending = client.throttleWait(7 * 24 * 3600 * 1000);
+    test.equal(client._throttleWaits.size, 1, 'the wait is tracked so close() can reach it');
+
+    client.close();
+    test.equal(await pending, true, 'an aborted wait reports true');
+    test.equal(client._throttleWaits.size, 0, 'the tracked wait is released');
+    test.ok(Date.now() - started < 5000, 'close() must not wait out the delay');
+
+    // normal expiry reports false and releases the entry. The back-off timer is deliberately
+    // unref'd, so the test has to hold the event loop open itself - in a real session the
+    // socket does that.
+    let client2 = makeClient();
+    let keepAlive = setTimeout(() => {}, 1000);
+    test.equal(await client2.throttleWait(1), false);
+    clearTimeout(keepAlive);
+    test.equal(client2._throttleWaits.size, 0);
+    client2.close();
+    test.done();
+};

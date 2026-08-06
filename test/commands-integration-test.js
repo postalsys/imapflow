@@ -59,6 +59,10 @@ const createMockConnection = (overrides = {}) => {
         skipListAuxArgs: false,
         skipLsub: false,
         messageFlagsAdd: overrides.messageFlagsAdd || (async () => {}),
+        // Mirrors ImapFlow.throttleWait(): resolves false on normal expiry, true when close()
+        // aborted the wait. The mock resolves immediately so throttle retries stay fast.
+        throttleWait: overrides.throttleWait || (async () => false),
+        createNoConnectionError: overrides.createNoConnectionError || (() => Object.assign(new Error('Connection not available'), { code: 'NoConnection' })),
         run: overrides.run || (async () => {}),
         // Mirrors ImapFlow.runInternal(): dispatch through the command registry without the
         // preCheck/auto-IDLE handshake that run() performs, so a fallback poll runs the real
@@ -10437,5 +10441,532 @@ module.exports['Commands: downloadMany with fetchOne returning null'] = async te
 
     let result = await client.downloadMany('1', ['2', '3']);
     test.equal(result.response, false);
+    test.done();
+};
+
+// ============================================
+// Security regression tests: hostile server input
+// ============================================
+
+module.exports['Commands: quota ignores prototype-chain and fixed-field resource names'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, args, opts) => {
+            if (opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [
+                        { value: '' },
+                        [
+                            { value: '__PROTO__' },
+                            { value: '10' },
+                            { value: '100' },
+                            { value: 'CONSTRUCTOR' },
+                            { value: '1' },
+                            { value: '2' },
+                            { value: 'PATH' },
+                            { value: '3' },
+                            { value: '4' },
+                            { value: 'STORAGE' },
+                            { value: '250' },
+                            { value: '500' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    // Capture before cleaning up: deleting first would erase exactly the evidence the
+    // assertion looks for, and the test would then pass with the guard removed. The cleanup
+    // still has to happen so a regression cannot leak into the rest of the suite.
+    let leaked = ['usage', 'limit', 'status'].filter(key => Object.hasOwn(Object.prototype, key));
+    delete Object.prototype.usage;
+    delete Object.prototype.limit;
+    delete Object.prototype.status;
+    test.deepEqual(leaked, [], 'Object.prototype must stay clean');
+    test.equal(result.path, 'INBOX', 'the fixed path field must not be overwritten');
+    test.ok(!Object.prototype.hasOwnProperty.call(result, 'constructor'));
+    test.equal(result.storage.usage, 250 * 1024);
+    test.equal(result.storage.limit, 500 * 1024);
+    test.done();
+};
+
+module.exports['Commands: select ignores unknown response codes on the mailbox object'] = async test => {
+    const connection = createMockConnection({
+        state: 2, // AUTHENTICATED
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged) {
+                if (opts.untagged.OK) {
+                    // A response code the client does not know must not become a mailbox
+                    // property: "PATH" would otherwise overwrite mailbox.path (defeating the
+                    // DELETE/RENAME guards), and "__PROTO__" with a list value would replace
+                    // the object's prototype
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'PATH' }, { value: 'INBOX.evil' }] }]
+                    });
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: '__PROTO__' }, [{ value: 'polluted' }]] }]
+                    });
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'UIDNEXT' }, { value: '1000' }] }]
+                    });
+                    // malformed codes must not crash the handler or corrupt state either:
+                    // a NIL key, a NIL value, and a UIDNEXT digit run that overflows to Infinity
+                    await opts.untagged.OK({
+                        attributes: [{ section: [null] }]
+                    });
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'UIDNEXT' }, null] }]
+                    });
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'UIDNEXT' }, { value: '9'.repeat(400) }] }]
+                    });
+                }
+                if (opts.untagged.EXISTS) {
+                    // an overflowing count must be ignored, not stored as Infinity
+                    await opts.untagged.EXISTS({ command: '9'.repeat(400) });
+                }
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.equal(result.path, 'INBOX', 'a PATH response code must not overwrite mailbox.path');
+    test.equal(result.uidNext, 1000, 'malformed UIDNEXT values must not replace a good one');
+    test.equal(result.exists, undefined, 'an overflowing EXISTS count must be ignored');
+    test.equal(result.polluted, undefined);
+    // A "__proto__" key with a list value replaces the object's prototype rather than creating
+    // an own property, so the own-property check alone would hold with the guard removed too -
+    // the prototype identity is what actually detects it
+    test.equal(Object.getPrototypeOf(result), Object.prototype, 'the mailbox object must keep its prototype');
+    test.ok(!Object.prototype.hasOwnProperty.call(result, '__proto__'));
+    test.done();
+};
+
+module.exports['Commands: downloadMany ignores prototype-chain part keys'] = async test => {
+    // The server chooses the BODY[...] keys in its FETCH answers: without a guard a
+    // "__proto__" key wrote attacker-controlled content onto Object.prototype
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' }
+    });
+    client.mailbox = { path: 'INBOX' };
+    client.fetchOne = async () => ({
+        bodyParts: new Map([
+            ['__proto__', Buffer.from('polluted')],
+            ['2.mime', Buffer.from('Content-Type: text/plain\r\n\r\n')],
+            ['2', Buffer.from('real content')]
+        ])
+    });
+
+    let result = await client.downloadMany('1', ['2']);
+    // Capture before cleaning up: deleting first would erase exactly the evidence the
+    // assertion looks for, and the test would then pass with the guard removed
+    let leaked = Object.hasOwn(Object.prototype, 'content') || Object.hasOwn(Object.prototype, 'meta');
+    delete Object.prototype.content;
+    delete Object.prototype.meta;
+    test.equal(leaked, false, 'Object.prototype must stay clean');
+    test.ok(result['2']);
+    test.equal(result['2'].content.toString(), 'real content');
+    test.equal(result['2'].meta.contentType, 'text/plain');
+    test.done();
+};
+
+// ============================================
+// Untrusted response value handling
+// ============================================
+// Servers control every value in these responses. Each test below pins a value the client
+// must refuse to store, or a malformed shape it must survive without losing the response.
+
+const { canUseFlag } = require('../lib/tools.js');
+
+const selectWithOkCodes = sections =>
+    createMockConnection({
+        state: 2, // AUTHENTICATED
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.OK) {
+                for (let section of sections) {
+                    await opts.untagged.OK({ attributes: [{ section }] });
+                }
+            }
+            return {
+                next: () => {},
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            };
+        },
+        emit: () => {}
+    });
+
+module.exports['Commands: select leaves permanentFlags unset for a NIL PERMANENTFLAGS'] = async test => {
+    // An empty Set is not the same as "unset": canUseFlag() treats unset as permissive and an
+    // empty set as deny-all, which would silently turn every later flag update into a no-op
+    const result = await selectCommand(selectWithOkCodes([[{ type: 'ATOM', value: 'PERMANENTFLAGS' }, null]]), 'INBOX');
+    test.equal(result.permanentFlags, undefined, 'a NIL value must not produce an empty flag set');
+    test.ok(canUseFlag(result, '\\Seen'), 'flag updates must stay permitted');
+    test.done();
+};
+
+module.exports['Commands: select ignores an unparenthesized PERMANENTFLAGS value'] = async test => {
+    // new Set('\\Seen') would be a set of the individual characters
+    const result = await selectCommand(selectWithOkCodes([[{ type: 'ATOM', value: 'PERMANENTFLAGS' }, { value: '\\Seen' }]]), 'INBOX');
+    test.equal(result.permanentFlags, undefined);
+    test.ok(canUseFlag(result, '\\Seen'));
+    test.done();
+};
+
+module.exports['Commands: select survives NIL entries inside a PERMANENTFLAGS list'] = async test => {
+    const result = await selectCommand(
+        selectWithOkCodes([[{ type: 'ATOM', value: 'PERMANENTFLAGS' }, [{ value: '\\Seen' }, null, { value: '\\Draft' }]]]),
+        'INBOX'
+    );
+    test.deepEqual(Array.from(result.permanentFlags), ['\\Seen', '\\Draft']);
+    test.done();
+};
+
+module.exports['Commands: select survives NIL entries inside a FLAGS response'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.FLAGS) {
+                await opts.untagged.FLAGS({ attributes: [[{ value: '\\Seen' }, null, { value: '\\Flagged' }]] });
+            }
+            return { next: () => {}, response: { attributes: [] } };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.deepEqual(Array.from(result.flags), ['\\Seen', '\\Flagged'], 'a NIL entry must not cost the whole flag list');
+    test.done();
+};
+
+module.exports['Commands: select handles a tagged OK carrying no response text'] = async test => {
+    // "A1 OK" parses to an object with no `attributes` property at all. Reading through it in
+    // the command body would land in the outer catch, which tears down the mailbox state the
+    // server has actually selected and rejects the caller with a TypeError.
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        run: async () => [],
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.EXISTS) {
+                await opts.untagged.EXISTS({ command: '42' });
+            }
+            return { next: () => {}, response: { tag: 'A1', command: 'OK' } };
+        },
+        emit: () => {}
+    });
+
+    const result = await selectCommand(connection, 'INBOX');
+    test.equal(result.path, 'INBOX');
+    test.equal(result.exists, 42, 'collected mailbox data must survive');
+    test.equal(result.readOnly, undefined);
+    test.equal(connection.state, connection.states.SELECTED, 'the mailbox must stay selected');
+    test.done();
+};
+
+module.exports['Commands: select exposes UNSEEN and APPENDLIMIT'] = async test => {
+    const result = await selectCommand(
+        selectWithOkCodes([
+            [{ type: 'ATOM', value: 'UNSEEN' }, { value: '12' }],
+            [{ type: 'ATOM', value: 'APPENDLIMIT' }, { value: '35651584' }]
+        ]),
+        'INBOX'
+    );
+    test.equal(result.unseen, 12);
+    test.equal(result.appendlimit, 35651584);
+    test.done();
+};
+
+module.exports['Commands: select drops an unusable HIGHESTMODSEQ instead of storing it raw'] = async test => {
+    // A non-numeric string stored in a BigInt field compares false in both directions, so the
+    // value could never advance again and CONDSTORE/QRESYNC delta sync would stop for good
+    for (let bad of ['none', '1e5', '-1', '', '9'.repeat(20)]) {
+        const result = await selectCommand(selectWithOkCodes([[{ type: 'ATOM', value: 'HIGHESTMODSEQ' }, { value: bad }]]), 'INBOX');
+        test.equal(result.highestModseq, undefined, `HIGHESTMODSEQ ${JSON.stringify(bad)} must be dropped`);
+    }
+
+    const good = await selectCommand(selectWithOkCodes([[{ type: 'ATOM', value: 'HIGHESTMODSEQ' }, { value: '9122' }]]), 'INBOX');
+    test.equal(good.highestModseq, 9122n);
+    test.done();
+};
+
+module.exports['Commands: select accepts only decimal UIDNEXT values'] = async test => {
+    for (let bad of ['0x10', '1e3', '  12  ', '-5', '1.5']) {
+        const result = await selectCommand(selectWithOkCodes([[{ type: 'ATOM', value: 'UIDNEXT' }, { value: bad }]]), 'INBOX');
+        test.equal(result.uidNext, undefined, `UIDNEXT ${JSON.stringify(bad)} must be dropped`);
+    }
+
+    const good = await selectCommand(selectWithOkCodes([[{ type: 'ATOM', value: 'UIDNEXT' }, { value: '1000' }]]), 'INBOX');
+    test.equal(good.uidNext, 1000);
+    test.done();
+};
+
+module.exports['Commands: append survives a malformed APPENDUID'] = async test => {
+    // BigInt('1e5') throws where isNaN('1e5') passes, and append rethrows - the message is
+    // already stored at that point, so a retrying caller would duplicate it
+    const connection = createMockConnection({
+        state: 2,
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [
+                    {
+                        section: [{ type: 'ATOM', value: 'APPENDUID' }, { value: '1e5' }, { value: '7' }]
+                    }
+                ]
+            }
+        })
+    });
+
+    const result = await appendCommand(connection, 'INBOX', Buffer.from('test'));
+    test.ok(result, 'append must not reject on an unusable APPENDUID');
+    test.equal(result.uidValidity, undefined, 'the unusable uidValidity is dropped');
+    test.equal(result.uid, 7, 'the usable uid is still reported');
+    test.done();
+};
+
+module.exports['Commands: append ignores an overflowing EXISTS count'] = async test => {
+    // Number('9'.repeat(400)) is Infinity, and resolveRange('*') would then compile the literal
+    // string "Infinity" into every later range-based command
+    let emitted = [];
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 5, flags: new Set(), permanentFlags: new Set(['\\*']) },
+        folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+        emit: (name, payload) => emitted.push([name, payload]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.EXISTS) {
+                await opts.untagged.EXISTS({ command: '9'.repeat(400) });
+            }
+            return { next: () => {}, response: { attributes: [] } };
+        }
+    });
+
+    await appendCommand(connection, 'INBOX', Buffer.from('test'));
+    test.equal(connection.mailbox.exists, 5, 'the live message count must be left alone');
+    test.equal(emitted.filter(entry => entry[0] === 'exists').length, 0, 'no exists event may be emitted for an unusable count');
+    test.done();
+};
+
+module.exports['Commands: expunge survives a malformed HIGHESTMODSEQ'] = async test => {
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', highestModseq: 100n },
+        exec: async () => ({
+            next: () => {},
+            response: {
+                attributes: [{ section: [{ type: 'ATOM', value: 'HIGHESTMODSEQ' }, { value: '1e5' }] }]
+            }
+        })
+    });
+
+    const result = await expungeCommand(connection, '1:*', {});
+    test.equal(result, true, 'the expunge did happen, so it must not be reported as failed');
+    test.equal(connection.mailbox.highestModseq, 100n, 'the unusable value is not stored');
+    test.done();
+};
+
+module.exports['Commands: status skips one malformed field and keeps the rest'] = async test => {
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [{ value: 'MESSAGES' }, { value: '1e5' }, { value: 'UIDNEXT' }, { value: '10' }, { value: 'UIDVALIDITY' }, { value: '99' }]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true, uidNext: true, uidValidity: true });
+    test.equal(result.messages, undefined, 'the unusable field is dropped');
+    test.equal(result.uidNext, 10, 'later fields must still be parsed');
+    test.equal(result.uidValidity, 99n);
+    test.done();
+};
+
+module.exports['Commands: status ignores an overflowing MESSAGES count for the selected mailbox'] = async test => {
+    let emitted = [];
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 5 },
+        emit: (name, payload) => emitted.push([name, payload]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [{ value: 'INBOX' }, [{ value: 'MESSAGES' }, { value: '9'.repeat(400) }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true });
+    test.equal(result.messages, undefined);
+    test.equal(connection.mailbox.exists, 5, 'the live message count must be left alone');
+    test.equal(emitted.filter(entry => entry[0] === 'exists').length, 0);
+    test.done();
+};
+
+module.exports['Commands: search drops out-of-range values from an untagged SEARCH'] = async test => {
+    // isNaN() passes '1e400' (Infinity), '-3' and '2.5'; a single one of those makes the
+    // sequence set compiled from this result invalid and fails the caller's follow-up command
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.SEARCH) {
+                await opts.untagged.SEARCH({
+                    attributes: [
+                        { value: '1e400' },
+                        { value: '-3' },
+                        { value: '2.5' },
+                        { value: '0' },
+                        null, // a parsed NIL
+                        { value: ['1'] }, // a parenthesized value where a number belongs
+                        { value: '2' },
+                        { value: '7' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, { all: true }, {});
+    test.deepEqual(result, [2, 7], 'only valid nz-numbers may enter the result set');
+    test.done();
+};
+
+module.exports['Commands: downloadMany yields a part that arrived without its MIME headers'] = async test => {
+    // A server may legally answer with fewer items than were requested. One part missing its
+    // companion BODY[<part>.MIME] must not cost the caller the whole download.
+    let client = new ImapFlow({
+        host: 'imap.example.com',
+        port: 993,
+        auth: { user: 'test', pass: 'test' },
+        logger: false
+    });
+    client.mailbox = { path: 'INBOX' };
+    client.fetchOne = async () => ({
+        bodyParts: new Map([['2', Buffer.from('real content')]])
+    });
+
+    let result = await client.downloadMany('1', ['2']);
+    test.equal(result['2'].content.toString(), 'real content');
+    test.deepEqual(result['2'].meta, {}, 'a part with no MIME headers still gets a meta object');
+    test.done();
+};
+
+module.exports['Commands: list keeps a LIST-STATUS block when one field is malformed'] = async test => {
+    // BigInt('1e5') throws where isNaN('1e5') passes, and the throw happened before the block
+    // was stored - so one bad field made the whole mailbox's status vanish from the listing
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['LIST-STATUS', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST') {
+                if (opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                    });
+                }
+                if (opts && opts.untagged && opts.untagged.STATUS) {
+                    await opts.untagged.STATUS({
+                        attributes: [
+                            { value: 'INBOX' },
+                            [{ value: 'HIGHESTMODSEQ' }, { value: '1e5' }, { value: 'MESSAGES' }, { value: '10' }, { value: 'UNSEEN' }, { value: '5' }]
+                        ]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', { statusQuery: { messages: true, unseen: true, highestModseq: true } });
+    const inbox = result.find(entry => entry.path === 'INBOX');
+    test.ok(inbox && inbox.status, 'the status block must survive one unusable field');
+    test.equal(inbox.status.highestModseq, undefined, 'the unusable field is dropped');
+    test.equal(inbox.status.messages, 10);
+    test.equal(inbox.status.unseen, 5);
+    test.done();
+};
+
+module.exports['Commands: fetch stops retrying a throttled request once the client closes'] = async test => {
+    // The retry used to wait on a bare setTimeout that close() could not abort: a short-lived
+    // process stayed alive for up to five minutes after close(), still holding the retry
+    let calls = 0;
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 1, flags: new Set(), permanentFlags: new Set(), noModseq: true },
+        // the wait reports aborted, which is what close() does to every tracked back-off
+        throttleWait: async () => true,
+        exec: async () => {
+            calls++;
+            const err = new Error('throttled');
+            err.code = 'ETHROTTLE';
+            err.throttleReset = 60000;
+            err.responseText = 'throttled';
+            throw err;
+        }
+    });
+
+    let failure = null;
+    try {
+        await fetchCommand(connection, '1:*', { uid: true }, { uid: true });
+    } catch (err) {
+        failure = err;
+    }
+
+    test.ok(failure, 'the caller is told the fetch did not happen');
+    test.equal(failure.code, 'NoConnection', 'an aborted back-off means the connection is gone');
+    test.equal(calls, 1, 'no retry may be issued on a closed connection');
+    test.done();
+};
+
+module.exports['Commands: select accepts an unparenthesized MAILBOXID'] = async test => {
+    // RFC 8474 sends the id as a parenthesized list, but servers in the wild send it bare too
+    const result = await selectCommand(selectWithOkCodes([[{ type: 'ATOM', value: 'MAILBOXID' }, { value: 'abc123' }]]), 'INBOX');
+    test.equal(result.mailboxId, 'abc123');
+    test.done();
+};
+
+module.exports['Commands: quota ignores a NIL resource value'] = async test => {
+    // A parsed NIL is null, which must not be recorded as a usage of 0
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'GETQUOTAROOT' && opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [{ value: 'root' }, [{ value: 'STORAGE' }, null, { value: '500' }]]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.equal(result.storage, undefined, 'a NIL usage must not record a zero');
     test.done();
 };

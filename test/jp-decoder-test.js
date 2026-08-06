@@ -245,3 +245,60 @@ module.exports['JPDecoder: handles EUC-JP charset'] = async test => {
     test.ok(result.length > 0);
     test.done();
 };
+
+// ============================================
+// maxBytes buffering bound
+// ============================================
+
+module.exports['JPDecoder: buffers at most maxBytes'] = test => {
+    // The whole-input buffering must honor the caller's download limit: without the
+    // bound a server could defeat maxBytes just by labelling a part with a Japanese
+    // charset, since nothing is emitted (and limited) until _flush
+    let decoder = new JPDecoder('iso-2022-jp', 8);
+    decoder.resume();
+
+    decoder.write(Buffer.from('hello '));
+    decoder.write(Buffer.from('world'));
+
+    test.equal(decoder.chunklen, 8);
+    test.equal(Buffer.concat(decoder.chunks).toString(), 'hello wo');
+    decoder.end();
+    test.done();
+};
+
+module.exports['JPDecoder: a fractional maxBytes still bounds the decoder'] = test => {
+    // A computed limit (a percentage of a budget, say) is not an integer, and silently turning
+    // that into "no limit at all" is exactly the exposure the bound exists to close
+    const decoder = new JPDecoder('sjis', 512.5);
+    test.equal(decoder.maxBytes, 512, 'a fractional bound is floored to a whole byte count');
+    decoder.resume();
+    decoder.write(Buffer.alloc(1024, 0x61));
+    test.equal(decoder.chunklen, 512, 'nothing beyond the bound is buffered');
+    test.equal(decoder.limited, true, 'the decoder reports that it is full');
+    decoder.end();
+    test.done();
+};
+
+module.exports['JPDecoder: a non-numeric maxBytes leaves the decoder unbounded'] = test => {
+    test.equal(new JPDecoder('sjis').maxBytes, Infinity);
+    test.equal(new JPDecoder('sjis', Infinity).maxBytes, Infinity);
+    test.equal(new JPDecoder('sjis', 'lots').maxBytes, Infinity);
+    test.equal(new JPDecoder('sjis', -1).maxBytes, Infinity);
+    test.equal(new JPDecoder('sjis').limited, false);
+    test.done();
+};
+
+module.exports['JPDecoder: reports limited once the bound is reached'] = test => {
+    // The decoder emits nothing until _flush, so a limiter downstream cannot tell that it is
+    // full - the download loop reads this flag instead to stop pulling from the server
+    const decoder = new JPDecoder('sjis', 10);
+    decoder.resume();
+    test.equal(decoder.limited, false);
+    decoder.write(Buffer.alloc(4, 0x61));
+    test.equal(decoder.limited, false, 'not full yet');
+    decoder.write(Buffer.alloc(6, 0x61));
+    test.equal(decoder.limited, true);
+    test.equal(decoder.chunklen, 10);
+    decoder.end();
+    test.done();
+};

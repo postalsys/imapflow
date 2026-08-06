@@ -208,7 +208,7 @@ module.exports['Timers: the throttle back-off timer is unrefd and cleared'] = as
 
         // history() returns snapshots, so re-read it after close()
         test.ok(timers.history().find(timer => timer.id === backoff.id).cleared, 'close() clears the back-off timer');
-        test.equal(client._throttleTimer, null);
+        test.equal(client._throttleWaits.size, 0);
         test.done();
     });
 };

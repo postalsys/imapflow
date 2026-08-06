@@ -852,3 +852,29 @@ module.exports['DownloadMany: decodes base64 and quoted-printable parts'] = asyn
     test.equal(res['3'].meta.disposition, 'attachment');
     test.done();
 };
+
+module.exports['Download: a buffering transform cannot defeat maxBytes'] = async test => {
+    // format=flowed unwrapping and the Japanese charset decoder both hold their whole input
+    // before emitting anything, so the limiter at the tail of the pipeline reports
+    // `limited === false` however much the server sends. Without a bound of their own the fetch
+    // loop would keep pulling the entire part.
+    for (let contentType of ['text/plain; format=flowed', 'text/plain; charset=iso-2022-jp']) {
+        let client = makeClient();
+        let mime = Buffer.from(`Content-Type: ${contentType}\r\nContent-Disposition: inline\r\n\r\n`);
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            let bodyParts = new Map();
+            bodyParts.set('2.mime', mime);
+            // full-size chunks keep hasMore true; the loop must stop on its own, not run dry
+            bodyParts.set('2', calls <= 40 ? Buffer.alloc(1024, 0x61) : Buffer.alloc(1));
+            return { uid: 1, size: 1024 * 1024, bodyParts };
+        };
+
+        let { content } = await client.download('1', '2', { chunkSize: 1024, maxBytes: 512 });
+        let data = await collect(content);
+        test.ok(data.length <= 512, `${contentType}: delivered ${data.length} bytes, expected no more than 512`);
+        test.ok(calls <= 3, `${contentType}: the fetch loop must stop at the bound, made ${calls} calls`);
+    }
+    test.done();
+};

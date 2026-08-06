@@ -422,14 +422,14 @@ module.exports['Reliability: throttle back-off aborts promptly on close()'] = as
 
     // Let reader() reach the (tracked) back-off wait.
     await new Promise(r => setTimeout(r, 50));
-    test.ok(client._throttleTimer, 'back-off timer is tracked while waiting');
+    test.equal(client._throttleWaits.size, 1, 'back-off wait is tracked while waiting');
 
     client.close();
     await new Promise(r => setImmediate(r));
 
     test.ok(rejected, 'request rejected promptly after close()');
     test.equal(rejected.code, 'NoConnection', 'rejected with connection error, not ETHROTTLE');
-    test.equal(client._throttleTimer, null, 'throttle timer cleared on close()');
+    test.equal(client._throttleWaits.size, 0, 'throttle wait cleared on close()');
     test.ok(Date.now() - start < 5000, 'settled well under the 5-minute cap');
 
     await readerDone;
@@ -457,7 +457,7 @@ module.exports['Reliability: throttle back-off still rejects ETHROTTLE on normal
     test.ok(rejected, 'request rejected after the back-off elapses');
     test.equal(rejected.code, 'ETHROTTLE', 'normal expiry still rejects ETHROTTLE');
     test.equal(rejected.throttleReset, 50, 'throttleReset preserved');
-    test.equal(client._throttleTimer, null, 'throttle timer cleared after normal expiry');
+    test.equal(client._throttleWaits.size, 0, 'throttle wait cleared after normal expiry');
 
     await readerDone;
     client.close();

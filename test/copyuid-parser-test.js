@@ -151,3 +151,23 @@ module.exports['CopyUID Parser: uidValidity zero is stored as BigInt(0)'] = test
     test.equal(map.uidMap.get(1), 100);
     test.done();
 };
+
+// ============================================
+// Hostile server input
+// ============================================
+
+module.exports['CopyUID Parser: non-decimal uidValidity is ignored, uidMap still parsed'] = test => {
+    // isNaN() passed values like "1e5" and "Infinity" through, and BigInt() then threw,
+    // losing the whole COPYUID result
+    let map = {};
+    parseCopyUid(makeResponse([{ value: 'COPYUID' }, { value: '1e5' }, { value: '1' }, { value: '100' }]), map);
+    test.equal(map.uidValidity, undefined);
+    test.ok(map.uidMap instanceof Map);
+    test.equal(map.uidMap.get(1), 100);
+
+    let map2 = {};
+    parseCopyUid(makeResponse([{ value: 'COPYUID' }, { value: 'Infinity' }, { value: '1' }, { value: '100' }]), map2);
+    test.equal(map2.uidValidity, undefined);
+    test.equal(map2.uidMap.get(1), 100);
+    test.done();
+};

@@ -85,18 +85,34 @@ export interface ImapFlowOptions {
      * Maximum allowed length in bytes of a single response line (a response without a literal).
      * Guards against a malicious or broken server that never sends a line terminator. Defaults to
      * 1GB. The line terminator counts towards the limit and a line exactly at the limit is
-     * accepted. Exceeding it is terminal: the connection fails with error code `LineTooLarge` and
+     * accepted. `Infinity` disables the limit. An in-progress line is additionally bounded by
+     * whatever is left of `maxResponseSize`, so lowering that also bounds line buffering.
+     * Exceeding it is terminal: the connection fails with error code `LineTooLarge` and
      * no further input is parsed.
      */
     maxLineLength?: number;
     /**
      * Maximum allowed size in bytes of a single IMAP literal block. Bounds peak memory allocation
      * against a malicious or broken server announcing an oversized literal. Defaults to 1GB. A
-     * literal exactly at the limit is accepted. Exceeding it is terminal: the connection fails
+     * literal exactly at the limit is accepted, provided `maxResponseSize` leaves room for the
+     * marker line as the defaults do. `Infinity` disables the limit. Exceeding it is terminal: the connection fails
      * with error code `LiteralTooLarge`, and neither the marker line nor any byte of the rejected
      * literal is interpreted as protocol.
      */
     maxLiteralSize?: number;
+    /**
+     * Maximum allowed total size in bytes of a single assembled IMAP response (every line
+     * segment and literal of one response combined). Bounds peak memory allocation against
+     * a malicious or broken server that spreads response data across an unbounded number of
+     * tokens, which the per-line and per-literal caps alone cannot stop. Defaults to 2GB,
+     * which is above the default literal cap on purpose: the total also carries the literal
+     * marker line and the rest of the response framing, so a value equal to `maxLiteralSize`
+     * would make a literal of exactly the maximum permitted size impossible to receive. Set
+     * this above `maxLiteralSize` when configuring both. `Infinity` disables the limit.
+     * Exceeding it is terminal: the connection fails with error code `ResponseTooLarge` and
+     * no further input is parsed.
+     */
+    maxResponseSize?: number;
     /**
      * Threshold in milliseconds for warning that a mailbox lock has been held
      * for a long time (diagnostic for forgotten release() calls). Defaults to
@@ -145,6 +161,10 @@ export interface MailboxObject {
     uidNext: number;
     /** Messages in this folder */
     exists: number;
+    /** Sequence number of the first unseen message, if the server reported [UNSEEN] on SELECT. Not a count of unseen messages - use mailboxStatus() with {unseen: true} for that */
+    unseen?: number;
+    /** Largest message size in octets the server accepts for APPEND into this mailbox, if it reported [APPENDLIMIT] (RFC 7889) */
+    appendlimit?: number;
     /** Read-only state */
     readOnly?: boolean;
 }

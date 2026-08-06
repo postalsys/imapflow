@@ -56,6 +56,10 @@ const createMockConnection = (overrides = {}) => {
         // A live transport: command implementations that guard against polling or writing on a
         // dead connection (idle.js) need this to look established.
         socket: overrides.socket || { destroyed: false },
+        // Mirrors ImapFlow.throttleWait(): resolves false on normal expiry, true when close()
+        // aborted the wait. The mock resolves immediately so throttle retries stay fast.
+        throttleWait: overrides.throttleWait || (async () => false),
+        createNoConnectionError: overrides.createNoConnectionError || (() => Object.assign(new Error('Connection not available'), { code: 'NoConnection' })),
         messageFlagsAdd: overrides.messageFlagsAdd || (async () => {}),
         messageCopy: overrides.messageCopy || (async () => {}),
         messageDelete: overrides.messageDelete || (async () => {}),

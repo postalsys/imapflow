@@ -591,9 +591,11 @@ module.exports['Coverage: reader caps very large throttle backoff'] = async test
     let readerPromise = runReaderWith(client, ['A1 BAD Request is throttled. Suggested Backoff Time: 999999999 milliseconds']);
     // give the reader a tick to register the throttle timer, then abort it
     await drain();
-    if (typeof client._throttleAbort === 'function') {
-        client._throttleAbort(true);
+    for (let entry of client._throttleWaits) {
+        clearTimeout(entry.timer);
+        entry.resolve(true);
     }
+    client._throttleWaits.clear();
     await readerPromise;
     test.ok(rejected);
     test.done();

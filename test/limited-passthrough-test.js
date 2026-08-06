@@ -273,3 +273,27 @@ module.exports['LimitedPassthrough: single byte writes'] = async test => {
     test.equal(result.toString(), 'abc');
     test.done();
 };
+
+module.exports['LimitedPassthrough: a fractional maxBytes is floored so limited is reachable'] = async test => {
+    // With a fractional bound `processed` can only ever reach its floor, so `limited` would
+    // never flip - and the download loop polls exactly that flag to stop pulling
+    let stream = new LimitedPassthrough({ maxBytes: 512.5 });
+    test.equal(stream.maxBytes, 512);
+
+    let chunks = [];
+    stream.on('data', chunk => chunks.push(chunk));
+    stream.write(Buffer.alloc(1024, 0x61));
+    stream.end();
+    await new Promise(resolve => stream.on('end', resolve));
+
+    test.equal(Buffer.concat(chunks).length, 512);
+    test.equal(stream.limited, true, 'the limiter must report that it is full');
+    test.done();
+};
+
+module.exports['LimitedPassthrough: a numeric-string maxBytes is honored'] = test => {
+    test.equal(new LimitedPassthrough({ maxBytes: '100' }).maxBytes, 100);
+    test.equal(new LimitedPassthrough({ maxBytes: 'lots' }).maxBytes, Infinity);
+    test.equal(new LimitedPassthrough({ maxBytes: -5 }).maxBytes, Infinity);
+    test.done();
+};

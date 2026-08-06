@@ -1503,8 +1503,9 @@ module.exports['Tools: formatMessageResponse handles NIL, Buffer and unknown key
         literals: [Buffer.from('999')]
     });
     let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' });
-    test.equal(r.uid, 0); // NIL value -> getString returns false -> Number(false) = 0
-    test.equal(r.size, 0);
+    test.equal(r.uid, undefined); // a NIL UID is left unset rather than reported as UID 0
+    test.equal(r.size, 0); // size keeps its 0 default
+
     test.equal(r.emailId, '999'); // Buffer literal value -> getString stringifies it
     test.equal(r.source, false); // BODY[] NIL -> getBuffer returns false
     test.done();
@@ -1747,5 +1748,153 @@ module.exports['Tools: packMessageRange dedupes duplicate values'] = test => {
     test.equal(tools.packMessageRange([1, 1, 2, 3]), '1:3');
     test.equal(tools.packMessageRange([3, 1, 2, 2, 5]), '1:3,5');
     test.equal(tools.packMessageRange([5, 5, 5]), '5');
+    test.done();
+};
+
+// ============================================
+// Security regression tests: hostile server input
+// ============================================
+
+module.exports['Tools: getStructuredParams drops __proto__ continuation parameters'] = test => {
+    // A parameter named "__proto__*0*" groups under "__proto__": without a guard the
+    // grouping wrote attacker-controlled values onto Object.prototype (and then threw)
+    let result = tools.getStructuredParams([{ value: '__proto__*0*' }, { value: "utf-8''polluted" }]);
+    test.deepEqual(result, {});
+    test.equal({}.charset, undefined, 'Object.prototype must stay clean');
+    test.done();
+};
+
+module.exports['Tools: getStructuredParams drops a plain __proto__ parameter'] = test => {
+    // A plain "__proto__" parameter never reaches the output and never touches the prototype.
+    // The string value alone cannot pollute (the __proto__ setter ignores primitives) - the
+    // object-valued continuation form above is the case the live guard covers - so this
+    // pins the output contract: the parameter is dropped, the rest of the list survives.
+    let result = tools.getStructuredParams([{ value: '__proto__' }, { value: 'polluted' }, { value: 'a' }, { value: 'b' }]);
+    test.deepEqual(result, { a: 'b' });
+    test.ok(!Object.prototype.hasOwnProperty.call(result, '__proto__'), 'no own __proto__ property is created');
+    test.equal(Object.getPrototypeOf(result), Object.prototype, 'the prototype must stay untouched');
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse ignores a non-numeric MODSEQ'] = async test => {
+    // BigInt() throws on garbage, and the throw used to drop the whole message
+    // from the result set - a malformed MODSEQ must be skipped instead
+    let untagged = await parser('* 1 FETCH (UID 1 MODSEQ (abc) FLAGS (\\Seen))');
+    let result = await tools.formatMessageResponse(untagged, {});
+    test.equal(result.uid, 1);
+    test.equal(result.modseq, undefined);
+    test.ok(result.flags.has('\\Seen'));
+
+    // an unparenthesized MODSEQ yields no usable value either
+    let untagged2 = await parser('* 1 FETCH (UID 1 MODSEQ 123)');
+    let result2 = await tools.formatMessageResponse(untagged2, {});
+    test.equal(result2.uid, 1);
+    test.equal(result2.modseq, undefined);
+    test.done();
+};
+
+module.exports['Tools: parseEnvelope skips NIL address entries'] = test => {
+    // A NIL inside an address list used to throw on the dereference, dropping the message
+    let entry = [
+        null, // date
+        null, // subject
+        [null, [{ value: 'Name' }, null, { value: 'user' }, { value: 'example.com' }]], // from: NIL entry + valid entry
+        [], // sender
+        [], // reply-to
+        [], // to
+        [], // cc
+        [], // bcc
+        null, // in-reply-to
+        null // message-id
+    ];
+
+    let result = tools.parseEnvelope(entry);
+    test.equal(result.from.length, 1);
+    test.equal(result.from[0].address, 'user@example.com');
+    test.done();
+};
+
+// ============================================
+// Bounded parsing of untrusted numeric values
+// ============================================
+
+module.exports['Tools: expandRange returns nothing for a non-string range'] = test => {
+    // untaggedVanished() leaves the sequence set as `false` when the response carries only the
+    // (EARLIER) tag, and throwing here would abort the handler for the rest of the response
+    test.deepEqual(tools.expandRange(false), []);
+    test.deepEqual(tools.expandRange(undefined), []);
+    test.deepEqual(tools.expandRange(null), []);
+    test.deepEqual(tools.expandRange(123), []);
+    test.deepEqual(tools.expandRange(['1:3']), []);
+    test.deepEqual(tools.expandRange('1:3'), [1, 2, 3], 'a real range still expands');
+    test.done();
+};
+
+module.exports['Tools: isDecimalString accepts only bounded digit runs'] = test => {
+    test.equal(tools.isDecimalString('12', 10), true);
+    test.equal(tools.isDecimalString('1234567890', 10), true);
+    test.equal(tools.isDecimalString('12345678901', 10), false, 'one digit past the bound is rejected');
+    test.equal(tools.isDecimalString('', 10), false);
+    test.equal(tools.isDecimalString('1e5', 10), false);
+    test.equal(tools.isDecimalString(' 12 ', 10), false);
+    test.equal(tools.isDecimalString('0x10', 10), false);
+    test.equal(tools.isDecimalString('-1', 10), false);
+    test.equal(tools.isDecimalString('1.5', 10), false);
+    test.equal(tools.isDecimalString(12, 10), false, 'only strings are accepted');
+    test.equal(tools.isDecimalString(null, 10), false);
+    test.done();
+};
+
+module.exports['Tools: parseBigIntValue rejects everything BigInt would throw on'] = test => {
+    // isNaN() passes '1e5', ' 12 ' and 'Infinity'; BigInt() throws on all three, and the throw
+    // propagates out of a response handler that was only trying to read one field
+    test.equal(tools.parseBigIntValue('9122'), 9122n);
+    for (let bad of ['1e5', ' 12 ', 'Infinity', 'none', '', '-1', '1.5', null, undefined, 12, ['1']]) {
+        test.equal(tools.parseBigIntValue(bad), false, `${JSON.stringify(bad)} must be rejected`);
+    }
+    test.done();
+};
+
+module.exports['Tools: parseBigIntValue bounds the digit count before converting'] = test => {
+    // BigInt() on a multi-megabyte digit run costs hundreds of milliseconds of non-yielding
+    // CPU, and a response line may carry up to maxLineLength digits
+    test.equal(tools.parseBigIntValue('9'.repeat(19)), BigInt('9'.repeat(19)), '63-bit values still fit the default bound');
+    test.equal(tools.parseBigIntValue('9'.repeat(20)), false);
+    test.equal(tools.parseBigIntValue('9'.repeat(400000)), false);
+    test.equal(tools.parseBigIntValue('12345678901', tools.MAX_UINT32_DIGITS), false, 'a tighter bound can be requested');
+    test.done();
+};
+
+module.exports['Tools: parseUintValue rejects values outside the safe integer range'] = test => {
+    test.equal(tools.parseUintValue('1000'), 1000);
+    test.equal(tools.parseUintValue('0'), 0);
+    test.equal(tools.parseUintValue('9'.repeat(19)), false, 'a value past 2^53-1 is refused, not rounded');
+    test.equal(tools.parseUintValue('9'.repeat(400)), false, 'a digit run that would coerce to Infinity is refused');
+    for (let bad of ['1e3', '0x10', ' 12 ', '-5', '1.5', '']) {
+        test.equal(tools.parseUintValue(bad), false, `${JSON.stringify(bad)} must be rejected`);
+    }
+    test.done();
+};
+
+module.exports['Tools: expandRange caps the total expansion, not just each range'] = test => {
+    // A per-range bound alone is multiplied by an unbounded number of ranges. With the budget
+    // already spent inside the second range, the two after it must be abandoned rather than
+    // expanded on top of it.
+    let result = tools.expandRange('1:16777215,16777215:16777220,1:5,7');
+    test.equal(result.length, tools.EXPANDED_RANGE_LIMIT);
+    test.equal(result[0], 1);
+    // the second range gets the single remaining entry, and the two after it never start
+    test.equal(result[result.length - 1], 16777215);
+    test.done();
+};
+
+module.exports['Tools: formatMessageResponse drops an unusable sequence number'] = async test => {
+    // Number('9'.repeat(400)) is Infinity, and a seq of Infinity indexes into nothing
+    let untagged = await parser('* 1 FETCH (UID 5)');
+    let ok = await tools.formatMessageResponse(untagged, { path: 'INBOX' });
+    test.equal(ok.seq, 1);
+
+    let overflowing = await tools.formatMessageResponse({ command: '9'.repeat(400), attributes: [] }, { path: 'INBOX' });
+    test.equal(overflowing.seq, undefined);
     test.done();
 };
