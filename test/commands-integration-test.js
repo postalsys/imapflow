@@ -10956,6 +10956,7 @@ module.exports['Commands: quota ignores a NIL resource value'] = async test => {
     // A parsed NIL is null, which must not be recorded as a usage of 0
     const connection = createMockConnection({
         state: 2,
+        capabilities: new Map([['QUOTA', true]]),
         exec: async (cmd, attrs, opts) => {
             if (cmd === 'GETQUOTAROOT' && opts && opts.untagged && opts.untagged.QUOTA) {
                 await opts.untagged.QUOTA({
@@ -10967,6 +10968,157 @@ module.exports['Commands: quota ignores a NIL resource value'] = async test => {
     });
 
     const result = await quotaCommand(connection, 'INBOX');
-    test.equal(result.storage, undefined, 'a NIL usage must not record a zero');
+    test.ok(result, 'the command must actually run');
+    test.equal(result.storage.usage, undefined, 'a NIL usage must not record a zero');
+    test.equal(result.storage.limit, 500 * 1024, 'the limit that did parse is still reported');
+    test.done();
+};
+
+module.exports['Commands: status matches item names case-insensitively without reaching the prototype'] = async test => {
+    // The item name is server-controlled and is used as a lookup key. Uppercasing it before the
+    // lookup is what keeps a name like "constructor" from resolving to an inherited member, so
+    // the matching has to stay case-insensitive AND prototype-safe at the same time.
+    const connection = createMockConnection({
+        state: 2,
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'INBOX' },
+                        [
+                            { value: 'constructor' },
+                            { value: '1' },
+                            { value: '__proto__' },
+                            { value: '2' },
+                            { value: 'toString' },
+                            { value: '3' },
+                            { value: 'messages' }, // lowercase: servers send uppercase, but be liberal
+                            { value: '10' }
+                        ]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'INBOX', { messages: true });
+    test.equal(result.messages, 10, 'a lowercase item name must still be recognized');
+    test.equal(Object.getPrototypeOf(result), Object.prototype, 'the status object must keep its prototype');
+    test.deepEqual(Object.keys(result).sort(), ['messages', 'path'], 'no prototype-chain name may become a field');
+    test.done();
+};
+
+module.exports['Commands: status does not touch live mailbox state for another mailbox'] = async test => {
+    // The updaters exist to keep the selected mailbox current. Running them for a STATUS of a
+    // different mailbox would overwrite exists/uidNext/highestModseq with another folder's counts.
+    let emitted = [];
+    const connection = createMockConnection({
+        state: 3,
+        mailbox: { path: 'INBOX', exists: 5, uidNext: 100, highestModseq: 7n },
+        emit: (name, payload) => emitted.push([name, payload]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.STATUS) {
+                await opts.untagged.STATUS({
+                    attributes: [
+                        { value: 'Archive' },
+                        [{ value: 'MESSAGES' }, { value: '999' }, { value: 'UIDNEXT' }, { value: '888' }, { value: 'HIGHESTMODSEQ' }, { value: '777' }]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await statusCommand(connection, 'Archive', { messages: true, uidNext: true, highestModseq: true });
+    test.equal(result.messages, 999, 'the queried mailbox is still reported');
+    test.equal(connection.mailbox.exists, 5, 'the selected mailbox count must be untouched');
+    test.equal(connection.mailbox.uidNext, 100);
+    test.equal(connection.mailbox.highestModseq, 7n);
+    test.equal(emitted.filter(entry => entry[0] === 'exists').length, 0, 'no exists event for another mailbox');
+    test.done();
+};
+
+module.exports['Commands: search drops unusable ESEARCH COUNT, MIN and MAX values'] = async test => {
+    // isNaN() passes '1e400' (Infinity) and '-1'; a COUNT of Infinity or a negative MIN is not a
+    // usable answer and must not reach the caller
+    const connection = createMockConnection({
+        state: 3,
+        capabilities: new Map([['ESEARCH', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (opts && opts.untagged && opts.untagged.ESEARCH) {
+                await opts.untagged.ESEARCH({
+                    attributes: [
+                        [{ type: 'ATOM', value: 'TAG' }, { value: 'A1' }],
+                        { type: 'ATOM', value: 'COUNT' },
+                        { value: '1e400' },
+                        { type: 'ATOM', value: 'MIN' },
+                        { value: '-1' },
+                        { type: 'ATOM', value: 'MAX' },
+                        { value: '42' }
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await searchCommand(connection, { all: true }, { returnOptions: ['COUNT', 'MIN', 'MAX'] });
+    test.equal(result.count, undefined, 'an overflowing COUNT must be dropped');
+    test.equal(result.min, undefined, 'a negative MIN must be dropped');
+    test.equal(result.max, 42, 'a usable MAX is still reported');
+    test.done();
+};
+
+module.exports['Commands: quota drops unusable resource values'] = async test => {
+    // isNaN() passes '1e5' and ' 12 '; neither is a usable octet count
+    const connection = createMockConnection({
+        state: 2,
+        capabilities: new Map([['QUOTA', true]]),
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'GETQUOTAROOT' && opts && opts.untagged && opts.untagged.QUOTA) {
+                await opts.untagged.QUOTA({
+                    attributes: [
+                        { value: 'root' },
+                        [{ value: 'STORAGE' }, { value: '1e5' }, { value: '500' }, { value: 'MESSAGE' }, { value: '10' }, { value: '20' }]
+                    ]
+                });
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await quotaCommand(connection, 'INBOX');
+    test.ok(result, 'the command must actually run');
+    test.equal(result.storage.usage, undefined, 'an unusable usage must not be recorded');
+    test.equal(result.message.usage, 10, 'a usable resource is still reported');
+    test.equal(result.message.limit, 20);
+    test.done();
+};
+
+module.exports['Commands: list does not invent a special-use from a prototype-named mailbox'] = async test => {
+    // The special-use hint map is keyed by server-supplied mailbox paths. On a plain object a
+    // mailbox literally named "constructor" resolves to Object.prototype.constructor - truthy -
+    // and the client would attach a special-use flag the server never sent.
+    const connection = createMockConnection({
+        state: 3,
+        exec: async (cmd, attrs, opts) => {
+            if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                for (let path of ['constructor', 'toString', '__proto__']) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: path }]
+                    });
+                }
+            }
+            return { next: () => {} };
+        }
+    });
+
+    const result = await listCommand(connection, '', '*', {});
+    for (let path of ['constructor', 'toString', '__proto__']) {
+        const entry = result.find(item => item.path === path);
+        test.ok(entry, `${path} must still be listed`);
+        test.equal(entry.specialUse, undefined, `${path} must not gain a special-use flag`);
+    }
     test.done();
 };

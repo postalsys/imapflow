@@ -9,6 +9,7 @@
 
 const { ImapStream } = require('../lib/handler/imap-stream');
 const { parser } = require('../lib/handler/imap-handler');
+const { MAX_LINE_SIZE, MAX_LITERAL_SIZE, MAX_RESPONSE_SIZE } = require('../lib/handler/limits');
 
 // Collects every emitted command payload and the first stream error. `error` resolves once the
 // stream fails; `settled` resolves once processing has quiesced (error or writable end).
@@ -270,5 +271,22 @@ module.exports['Parser limits: maxLiteralSize 0 rejects any non-empty inline lit
     test.ok(err, 'an explicit 0 cap is honored, not swallowed into the default');
     test.equal(err.code, 'LiteralTooLarge');
     test.equal(err.maxSize, 0);
+    test.done();
+};
+
+module.exports['Parser limits: a junk limit falls back to the default'] = test => {
+    // Without validation an unusable value is honored as-is, and every comparison against it is
+    // false - so a caller who mistypes a limit silently gets no bound at all, or (for a negative
+    // value) a bound that rejects everything
+    for (let junk of ['4096', 'abc', 1.5, -1, -Infinity, null, {}, [], NaN, true]) {
+        const stream = new ImapStream({ cid: 'test', maxLineLength: junk, maxLiteralSize: junk, maxResponseSize: junk });
+        test.equal(stream.maxLineLength, MAX_LINE_SIZE, `maxLineLength ${JSON.stringify(junk)} must fall back`);
+        test.equal(stream.maxLiteralSize, MAX_LITERAL_SIZE, `maxLiteralSize ${JSON.stringify(junk)} must fall back`);
+        test.equal(stream.maxResponseSize, MAX_RESPONSE_SIZE, `maxResponseSize ${JSON.stringify(junk)} must fall back`);
+    }
+
+    // an explicit 0 is a real limit, not a missing one, and must not be swallowed
+    const zero = new ImapStream({ cid: 'test', maxLiteralSize: 0 });
+    test.equal(zero.maxLiteralSize, 0);
     test.done();
 };

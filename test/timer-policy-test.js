@@ -212,3 +212,29 @@ module.exports['Timers: the throttle back-off timer is unrefd and cleared'] = as
         test.done();
     });
 };
+
+module.exports['Timers: throttleWait caps a server-suggested back-off'] = async test => {
+    // The delay comes straight from a server hint (a Microsoft 365 "Suggested Backoff Time"),
+    // which is unbounded. Asserted on the armed timer rather than by waiting it out.
+    await withFakeTimers(async timers => {
+        let client = makeClient({ port: 1 });
+
+        let pending = client.throttleWait(7 * 24 * 3600 * 1000); // a week
+        let armed = timers.history()[timers.history().length - 1];
+        test.equal(armed.delay, 5 * 60 * 1000, 'the back-off is capped at five minutes');
+        test.ok(armed.unrefd, 'the back-off timer must not keep the process alive');
+
+        client.close();
+        test.equal(await pending, true, 'close() aborts the wait');
+        test.ok(timers.history().find(timer => timer.id === armed.id).cleared, 'close() clears the timer');
+
+        // a delay under the cap is honored as given, and junk becomes an immediate wait
+        let client2 = makeClient({ port: 1 });
+        client2.throttleWait(1500);
+        test.equal(timers.history()[timers.history().length - 1].delay, 1500);
+        client2.throttleWait('nonsense');
+        test.equal(timers.history()[timers.history().length - 1].delay, 0);
+        client2.close();
+        test.done();
+    });
+};
