@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.6](https://github.com/postalsys/imapflow/compare/v1.6.5...v1.6.6) (2026-08-07)
+
+
+### Bug Fixes
+
+* harden parsing of untrusted server response values ([1560424](https://github.com/postalsys/imapflow/commit/15604240b5fe5f7ec57514db17f41123140b53fe))
+
 ## [1.6.5](https://github.com/postalsys/imapflow/compare/v1.6.4...v1.6.5) (2026-07-29)
 
 
