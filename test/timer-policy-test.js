@@ -107,7 +107,7 @@ module.exports['Timers: the auto-IDLE timer is unrefd and cleared on close'] = a
 
         let armed = timers.pending();
         test.equal(armed.length, 1, 'exactly one auto-IDLE timer is armed');
-        test.equal(armed[0].delay, 15 * 1000);
+        test.equal(armed[0].delay, client.autoIdleDelay);
         test.ok(armed[0].unrefd, 'the background auto-IDLE timer does not keep the process alive');
 
         client.close();

@@ -428,3 +428,39 @@ module.exports['Polling: a break in the initiation tick prevents the first poll'
         test.done();
     });
 };
+
+module.exports['Polling: a restarted session resumes the schedule instead of polling again'] = async test => {
+    await withFakeTimers(async timers => {
+        let connection = createConnection();
+
+        let first = idleCommand(connection, 60000);
+        await timers.drain();
+        test.deepEqual(connection.commands, ['NOOP'], 'the first session polls immediately');
+
+        await connection.preCheck();
+        await first;
+
+        // Auto-IDLE restarts the loop after every caller command. An unconditional first poll here
+        // would tie the poll rate to how often the caller runs commands instead of to the poll
+        // interval - with a short autoIdleDelay, a command every few seconds means a poll every
+        // few seconds.
+        let second = idleCommand(connection, 60000);
+        await timers.drain();
+        test.deepEqual(connection.commands, ['NOOP'], 'the restarted session does not poll again');
+        test.equal(timers.count(), 1, 'it waits out the remainder of the interval instead');
+        test.ok(timers.pending()[0].delay <= 60000, 'and never longer than a full interval');
+
+        await connection.preCheck();
+        await second;
+
+        // Once a full interval has elapsed, a fresh session polls at once again
+        connection._lastPollAt = Date.now() - 61000;
+        let third = idleCommand(connection, 60000);
+        await timers.drain();
+        test.deepEqual(connection.commands, ['NOOP', 'NOOP'], 'a session starting after the interval polls right away');
+
+        await connection.preCheck();
+        await third;
+        test.done();
+    });
+};

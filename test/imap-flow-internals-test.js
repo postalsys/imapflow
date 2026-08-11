@@ -6,6 +6,7 @@
 // and the untaggedFetch flag/modseq branches.
 
 const { ImapFlow } = require('../lib/imap-flow');
+const { withFakeTimers } = require('./fixtures/fake-timers');
 
 const makeClient = (overrides = {}) => {
     let client = new ImapFlow({
@@ -275,29 +276,21 @@ module.exports['Internals: autoidle does nothing when not selected'] = test => {
     test.done();
 };
 
-module.exports['Internals: autoidle schedules idle when selected'] = test => {
-    let client = makeClient();
-    client.state = client.states.SELECTED;
+module.exports['Internals: autoidle schedules idle when selected'] = async test => {
+    await withFakeTimers(async timers => {
+        let client = makeClient();
+        client.state = client.states.SELECTED;
 
-    let realSetTimeout = global.setTimeout;
-    let idleCalled = false;
-    client.idle = async () => {
-        idleCalled = true;
-    };
-    // Intercept the 15s idle timer and fire it synchronously
-    global.setTimeout = (fn, ms) => {
-        if (ms === 15 * 1000) {
-            fn();
-            return { unref() {} };
-        }
-        return realSetTimeout(fn, ms);
-    };
-    try {
+        let idleCalled = false;
+        client.idle = async () => {
+            idleCalled = true;
+        };
+
         client.autoidle();
-    } finally {
-        global.setTimeout = realSetTimeout;
-    }
-    test.ok(idleCalled);
+        await timers.fire();
+
+        test.ok(idleCalled);
+    });
     test.done();
 };
 

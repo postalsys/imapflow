@@ -30,7 +30,16 @@ export interface ImapFlowOptions {
     clientInfo?: IdInfoObject;
     /** If true, then do not start IDLE when connection is established */
     disableAutoIdle?: boolean;
-    /** How long (in ms) the connection has to be inactive before IDLE is started automatically.  Make it at least ca. 500ms or 1000ms, otherwise successive commands will be interleaved with a pointless IDLE, adding unnecessary round-trips and server load. Default: 15000 ms. */
+    /**
+     * How long (in ms) the connection has to be inactive before IDLE is started automatically.
+     * Keep it above the pause your own code usually leaves between two commands, otherwise every
+     * command is followed by an IDLE that the next command has to break, costing two extra
+     * round-trips per command. To turn auto-IDLE off use `disableAutoIdle` rather than a very
+     * large delay: the value is capped below `socketTimeout`, because auto-IDLE has to start
+     * before the inactivity watchdog fires. On servers without IDLE support this controls when
+     * the polling fallback starts, not how often it polls - the poll interval is `maxIdleTime`,
+     * capped at 2 minutes. Default: 15000 ms.
+     */
     autoIdleDelay?: number;
     /** Additional TLS options (see Node.js TLS documentation) */
     tls?: ConnectionOptions;
