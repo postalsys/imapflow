@@ -30,6 +30,8 @@ export interface ImapFlowOptions {
     clientInfo?: IdInfoObject;
     /** If true, then do not start IDLE when connection is established */
     disableAutoIdle?: boolean;
+    /** How long (in ms) the connection has to be inactive before IDLE is started automatically.  Make it at least ca. 500ms or 1000ms, otherwise successive commands will be interleaved with a pointless IDLE, adding unnecessary round-trips and server load. Default: 15000 ms. */
+    autoIdleDelay?: number;
     /** Additional TLS options (see Node.js TLS documentation) */
     tls?: ConnectionOptions;
     /** Custom logger instance. Set to false to disable logging */
