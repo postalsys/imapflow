@@ -254,7 +254,9 @@ module.exports['Connection Edge: Socket timeout during IDLE'] = test => {
     // Give async operations time to complete
     setTimeout(() => {
         test.ok(noopCalled, 'NOOP should be called to recover from IDLE timeout');
-        test.ok(idleCalled, 'Should return to IDLE after NOOP');
+        // Returning to IDLE is autoidle()'s decision once the NOOP settles (run() re-arms it);
+        // the watchdog handler itself must not bypass the busy guard by calling idle() directly
+        test.equal(idleCalled, false, 'the timeout handler does not restart IDLE by itself');
         test.done();
     }, 100);
 };

@@ -7,17 +7,7 @@
 
 const { ImapFlow } = require('../lib/imap-flow');
 const { withFakeTimers } = require('./fixtures/fake-timers');
-
-const makeClient = (overrides = {}) => {
-    let client = new ImapFlow({
-        host: 'imap.example.com',
-        port: 993,
-        auth: { user: 'test', pass: 'test' },
-        logger: false,
-        ...overrides
-    });
-    return client;
-};
+const { makeClient, makeIdleReadyClient } = require('./fixtures/test-client');
 
 // ============================================================================
 // emitError
@@ -278,8 +268,7 @@ module.exports['Internals: autoidle does nothing when not selected'] = test => {
 
 module.exports['Internals: autoidle schedules idle when selected'] = async test => {
     await withFakeTimers(async timers => {
-        let client = makeClient();
-        client.state = client.states.SELECTED;
+        let client = makeIdleReadyClient();
 
         let idleCalled = false;
         client.idle = async () => {

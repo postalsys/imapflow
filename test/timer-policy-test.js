@@ -9,9 +9,9 @@
 // Asserted through timer identity and cleanup rather than wall-clock sleeps.
 
 const net = require('net');
-const { ImapFlow } = require('../lib/imap-flow');
 const idleCommand = require('../lib/commands/idle.js');
 const { withFakeTimers } = require('./fixtures/fake-timers');
+const { makeClient, makeIdleReadyClient } = require('./fixtures/test-client');
 
 const CAPS = 'IMAP4rev1 ID ENABLE NAMESPACE IDLE';
 
@@ -52,15 +52,6 @@ const createServer = () =>
 
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
 
-const makeClient = (overrides = {}) =>
-    new ImapFlow({
-        host: '127.0.0.1',
-        port: 993,
-        logger: false,
-        auth: { user: 'test', pass: 'secret' },
-        ...overrides
-    });
-
 module.exports['Timers: connection and greeting deadlines keep the process alive'] = async test => {
     let server = createServer();
     let port = await listen(server);
@@ -99,9 +90,7 @@ module.exports['Timers: connection and greeting deadlines keep the process alive
 
 module.exports['Timers: the auto-IDLE timer is unrefd and cleared on close'] = async test => {
     await withFakeTimers(async timers => {
-        let client = makeClient();
-        client.state = client.states.SELECTED;
-        client.idle = async () => {};
+        let client = makeIdleReadyClient();
 
         client.autoidle();
 
@@ -119,9 +108,7 @@ module.exports['Timers: the auto-IDLE timer is unrefd and cleared on close'] = a
 
 module.exports['Timers: a restarted auto-IDLE timer replaces the previous one'] = async test => {
     await withFakeTimers(async timers => {
-        let client = makeClient();
-        client.state = client.states.SELECTED;
-        client.idle = async () => {};
+        let client = makeIdleReadyClient();
 
         client.autoidle();
         client.autoidle();

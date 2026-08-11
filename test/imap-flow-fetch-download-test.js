@@ -9,6 +9,7 @@ const libbase64 = require('libbase64');
 const libqp = require('libqp');
 const libmime = require('libmime');
 const { Writable, finished } = require('stream');
+const { chunkedFetchOne } = require('./fixtures/test-client');
 
 const makeClient = (overrides = {}) => {
     let client = new ImapFlow({
@@ -217,11 +218,7 @@ module.exports['Download: returns empty object without mailbox'] = async test =>
 module.exports['Download: full message in multiple chunks'] = async test => {
     let client = makeClient();
     let body = Buffer.from('A'.repeat(10));
-    client.fetchOne = async (range, query) => {
-        let start = query.source.start;
-        let maxLength = query.source.maxLength;
-        return { uid: 1, size: body.length, source: body.slice(start, start + maxLength) };
-    };
+    client.fetchOne = chunkedFetchOne(body);
     let { meta, content } = await client.download('1', false, { chunkSize: 4 });
     test.equal(meta.contentType, 'message/rfc822');
     test.equal(meta.expectedSize, 10);
@@ -233,11 +230,7 @@ module.exports['Download: full message in multiple chunks'] = async test => {
 module.exports['Download: falls back to default chunkSize/maxBytes when zero'] = async test => {
     let client = makeClient();
     let body = Buffer.from('tiny');
-    client.fetchOne = async (range, query) => {
-        let start = query.source.start;
-        let maxLength = query.source.maxLength;
-        return { uid: 1, size: body.length, source: body.slice(start, start + maxLength) };
-    };
+    client.fetchOne = chunkedFetchOne(body);
     // zero values are falsy -> the (|| default) fallbacks kick in
     let { content } = await client.download('1', false, { chunkSize: 0, maxBytes: 0 });
     let data = await collect(content);

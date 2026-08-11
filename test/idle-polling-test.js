@@ -464,3 +464,55 @@ module.exports['Polling: a restarted session resumes the schedule instead of pol
         test.done();
     });
 };
+
+module.exports['Polling: a failed poll does not defer the next session'] = async test => {
+    await withFakeTimers(async timers => {
+        let failNext = true;
+        let connection = createConnection({
+            exec: async command => {
+                connection.commands.push(command);
+                if (failNext) {
+                    failNext = false;
+                    throw new Error('poll failed');
+                }
+                return { next: () => {} };
+            }
+        });
+
+        // The failing poll cancels its own session. The attempt checked nothing, so it must not
+        // count as a poll: only a completed poll moves the schedule stamp forward.
+        let first = idleCommand(connection, 60000);
+        await timers.drain();
+        await first;
+        test.deepEqual(connection.commands, ['NOOP'], 'the first poll ran and failed');
+
+        let second = idleCommand(connection, 60000);
+        await timers.drain();
+        test.deepEqual(connection.commands, ['NOOP', 'NOOP'], 'the next session retries immediately instead of waiting out an interval');
+
+        await connection.preCheck();
+        await second;
+        test.done();
+    });
+};
+
+module.exports['Polling: a backward clock step never defers the next poll past one interval'] = async test => {
+    await withFakeTimers(async timers => {
+        let connection = createConnection();
+
+        // A last-poll stamp in the future is what an NTP step or a VM clock sync leaves behind.
+        // Without the clamp the remainder math would schedule the next poll a full clock jump
+        // plus one interval away.
+        connection._lastPollAt = Date.now() + 60 * 60 * 1000;
+
+        let idlePromise = idleCommand(connection, 60000);
+        await timers.drain();
+        test.deepEqual(connection.commands, [], 'no immediate poll - the schedule is resumed');
+        test.equal(timers.count(), 1, 'a poll timer is armed');
+        test.ok(timers.pending()[0].delay <= 60000, 'and it is never more than one interval away');
+
+        await connection.preCheck();
+        await idlePromise;
+        test.done();
+    });
+};

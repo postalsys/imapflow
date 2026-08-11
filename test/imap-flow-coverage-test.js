@@ -5,6 +5,7 @@
 // reader/handler error branches.
 
 const { ImapFlow } = require('../lib/imap-flow');
+const { makeSocketStub } = require('./fixtures/test-client');
 
 const makeClient = (overrides = {}) => {
     let client = new ImapFlow({
@@ -293,15 +294,6 @@ module.exports['Coverage: authenticate throws when run yields falsy auth result'
 // Socket event handlers (built by setSocketHandlers)
 // ============================================================================
 
-// Minimal socket stub that records listeners so handlers can be invoked directly.
-const makeSocketStub = () => ({
-    destroyed: false,
-    once() {},
-    on() {},
-    removeListener() {},
-    destroy() {}
-});
-
 module.exports['Coverage: setSocketHandlers removes a lingering connect error handler'] = test => {
     let client = makeClient();
     let removed = null;
@@ -389,7 +381,9 @@ module.exports['Coverage: _socketTimeout recovers an IDLE connection with NOOP']
     await drain();
     await drain();
     test.ok(noopRun, 'NOOP issued to recover IDLE');
-    test.ok(idleResumed, 'IDLE resumed after NOOP');
+    // Restarting IDLE is autoidle()'s decision once the NOOP settles (run() re-arms it);
+    // the watchdog handler itself must not bypass the busy guard by calling idle() directly.
+    test.equal(idleResumed, false, 'the handler does not restart IDLE by itself');
     test.done();
 };
 
