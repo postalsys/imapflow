@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/postalsys/imapflow/compare/v1.6.6...v1.7.0) (2026-08-11)
+
+
+### Features
+
+* **idle:** make the auto-IDLE delay configurable ([311fe0c](https://github.com/postalsys/imapflow/commit/311fe0ccb0d75d4ddbe797bf5bc755df5bf0485f))
+
+
+### Bug Fixes
+
+* **idle:** align the socket watchdog with the auto-IDLE busy guard ([d5e7191](https://github.com/postalsys/imapflow/commit/d5e71915ac7a1829b7e1340da6195a5e3e9984b2))
+* **idle:** validate autoIdleDelay and keep auto-IDLE off a busy connection ([aeafdf6](https://github.com/postalsys/imapflow/commit/aeafdf62fab3b29cd488d9b8cbdffc8896107d6e))
+
 ## [1.6.6](https://github.com/postalsys/imapflow/compare/v1.6.5...v1.6.6) (2026-08-07)
 
 
