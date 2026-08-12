@@ -5,7 +5,7 @@ Modern and easy-to-use IMAP client library for Node.js.
 [![npm](https://img.shields.io/npm/v/imapflow)](https://www.npmjs.com/package/imapflow)
 [![license](https://img.shields.io/npm/l/imapflow)](https://github.com/postalsys/imapflow/blob/master/LICENSE)
 
-ImapFlow provides a clean, promise-based API for working with IMAP, so you don't need in-depth knowledge of the protocol. IMAP extensions are detected and handled automatically. You write the same code regardless of server capabilities, and ImapFlow adapts behind the scenes.
+ImapFlow provides a clean, promise-based API for working with IMAP, so you don't need in-depth knowledge of the protocol. IMAP extensions are detected and handled automatically. You write the same code regardless of server capabilities, and ImapFlow adapts behind the scenes. ImapFlow is the IMAP engine that powers [EmailEngine](https://emailengine.app/?utm_source=imapflow-readme&utm_medium=readme&utm_campaign=oss-docs&utm_content=intro), a self-hosted email API built by the same team.
 
 ## Features
 
@@ -77,8 +77,7 @@ Full documentation is available at **[imapflow.com](https://imapflow.com/docs/)*
 - [Mailbox Management](https://imapflow.com/docs/guides/mailbox-management) - creating, renaming, and deleting mailboxes
 - [API Reference](https://imapflow.com/docs/api/imapflow-client) - complete method and event documentation
 
-> [!NOTE]
-> If you are looking for a complete email integration solution, ImapFlow was built for [EmailEngine](https://emailengine.app/), a self-hosted email gateway that provides REST API access to IMAP and SMTP accounts.
+> ImapFlow was built for **[EmailEngine](https://emailengine.app/?utm_source=imapflow-readme&utm_medium=readme&utm_campaign=oss-docs&utm_content=note)**, a self-hosted email API that turns Gmail, Microsoft 365, and IMAP accounts into REST endpoints, with managed OAuth2 and webhooks for incoming mail. If you need a production email integration rather than an IMAP client, start there.
 
 ## License
 
