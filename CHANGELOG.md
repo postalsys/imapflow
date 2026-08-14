@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/postalsys/imapflow/compare/v1.7.0...v1.7.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* **logging:** mask credential frames in the raw log and keep error detail ([2d6563b](https://github.com/postalsys/imapflow/commit/2d6563b75410a2cd9d4fbca08a76230589b60079))
+
 ## [1.7.0](https://github.com/postalsys/imapflow/compare/v1.6.6...v1.7.0) (2026-08-11)
 
 
