@@ -170,24 +170,76 @@ module.exports['Internals: write returns false for non-string non-buffer'] = tes
     test.done();
 };
 
-module.exports['Internals: write logs raw data when logRaw enabled'] = test => {
+// A writable client whose raw traffic log is captured, for the two logRaw branches
+const makeRawLogClient = rawSensitiveCommand => {
     let logs = [];
+    let written = [];
     let client = makeClient({ logRaw: true });
-    client.log = {
-        trace: o => logs.push(o),
-        debug: () => {},
-        warn: () => {},
-        error: () => {},
-        info: () => {}
-    };
+    client.log = { trace: o => logs.push(o), debug: () => {}, warn: () => {}, error: () => {}, info: () => {} };
+    client.socket = { destroyed: false };
+    client.writeSocket = { destroyed: false, write: c => written.push(c) };
+    client.rawSensitiveCommand = rawSensitiveCommand;
+    return { client, logs, written };
+};
+
+module.exports['Internals: write logs raw data when logRaw enabled'] = test => {
+    let { client, logs, written } = makeRawLogClient(false);
+    client.write('A NOOP');
+    let entry = logs.find(l => l.src === 'c' && l.msg === 'write to socket');
+    test.ok(entry);
+    test.equal(Buffer.from(entry.data, 'base64').toString(), 'A NOOP\r\n');
+    test.ok(!entry.hidden);
+    test.equal(written.length, 1);
+    test.done();
+};
+
+module.exports['Internals: write withholds raw data for a credential-bearing command'] = test => {
+    // send() sets this for LOGIN/AUTHENTICATE before the first frame reaches the socket
+    let { client, logs, written } = makeRawLogClient(true);
+    client.write('A1 LOGIN "user" "hunter2"');
+    let entry = logs.find(l => l.src === 'c' && l.msg === 'write to socket');
+    test.ok(entry);
+    test.ok(entry.hidden);
+    // The placeholder is fixed width, so the entry cannot disclose the password length
+    test.equal(Buffer.from(entry.data, 'base64').toString(), '(* value hidden *)\r\n');
+    // The frame itself is still written to the socket unchanged
+    test.equal(written[0].toString(), 'A1 LOGIN "user" "hunter2"\r\n');
+    test.done();
+};
+
+module.exports['Internals: send marks credential-bearing commands for the raw log'] = async test => {
+    let client = makeClient();
     let written = [];
     client.socket = { destroyed: false };
     client.writeSocket = { destroyed: false, write: c => written.push(c) };
-    client.state = client.states.AUTHENTICATED;
-    client.commandParts = [];
-    client.write('A NOOP');
-    test.ok(logs.some(l => l.src === 'c' && l.msg === 'write to socket'));
-    test.equal(written.length, 1);
+
+    // Lower case on purpose: the wire protocol is case-insensitive and exec() passes the
+    // caller's spelling through unchanged, so the classification must normalize it
+    await client.send({
+        tag: 'A1',
+        command: 'login',
+        attributes: [
+            { type: 'STRING', value: 'user' },
+            { type: 'STRING', value: 'hunter2', sensitive: true }
+        ],
+        options: {}
+    });
+    test.equal(client.rawSensitiveCommand, true);
+
+    await client.send({ tag: 'A2', command: 'NOOP', attributes: [], options: {} });
+    test.equal(client.rawSensitiveCommand, false);
+
+    // A command outside the list still masks if it marks an attribute sensitive, so the
+    // declarative marker alone is enough to keep a new command out of the raw log. Nested
+    // because the command compiler honors the marker at any depth.
+    await client.send({
+        tag: 'A3',
+        command: 'SETMETADATA',
+        attributes: [{ type: 'ATOM', value: 'INBOX' }, [{ type: 'STRING', value: 'token', sensitive: true }]],
+        options: {}
+    });
+    test.equal(client.rawSensitiveCommand, true);
+
     test.done();
 };
 
@@ -304,7 +356,7 @@ module.exports['Internals: getLogger uses provided logger object'] = test => {
 };
 
 module.exports['Internals: getLogger falls back to console for missing fatal/error level'] = test => {
-    // Logger object missing the 'error' method -> falls through to console.log
+    // Logger object missing the 'error' method -> falls through to console.error
     let partial = {
         trace() {},
         debug() {},
@@ -313,15 +365,99 @@ module.exports['Internals: getLogger falls back to console for missing fatal/err
         // no error, no fatal
     };
     let client = makeClient({ logger: partial });
-    let origConsoleLog = console.log;
+    let origConsoleError = console.error;
     let logged = [];
-    console.log = (...args) => logged.push(args);
+    console.error = (...args) => logged.push(args);
     try {
-        client.log.error({ msg: 'boom' });
+        let err = new Error('boom failure');
+        err.code = 'XBOOM';
+        // The answer is often one level down: this library attaches the underlying failure
+        // as an enumerable `_err`
+        err._err = Object.assign(new Error('inner failure'), { code: 'ECONNREFUSED' });
+        client.log.error({ msg: 'boom', err });
+        // A circular structure must not throw out of the log call, and must not be dropped
+        let circular = { msg: 'loop' };
+        circular.self = circular;
+        client.log.error(circular);
     } finally {
-        console.log = origConsoleLog;
+        console.error = origConsoleError;
     }
-    test.ok(logged.length >= 1);
+    test.equal(logged.length, 2);
+    // The Error was flattened, so message, stack and enumerable fields survive stringify
+    let entry = JSON.parse(logged[0][0]);
+    test.equal(entry.msg, 'boom');
+    test.equal(entry.err.message, 'boom failure');
+    test.equal(entry.err.code, 'XBOOM');
+    test.ok(entry.err.stack);
+    test.equal(entry.err._err.message, 'inner failure');
+    test.equal(entry.err._err.code, 'ECONNREFUSED');
+    // Unserializable entries still reach console.error, just not as JSON
+    test.equal(logged[1][0].msg, 'loop');
+    test.done();
+};
+
+module.exports['Internals: getLogger keeps cause and AggregateError members'] = test => {
+    let client = makeClient({ emitLogs: true });
+    let entries = [];
+    client.on('log', entry => entries.push(entry));
+
+    let inner = Object.assign(new Error('inner failure'), { code: 'ECONNREFUSED' });
+    client.log.error({ msg: 'wrapped', err: new Error('outer failure', { cause: inner }) });
+    // Node reports a multi-address connect failure as an AggregateError
+    client.log.error({ msg: 'aggregate', err: new AggregateError([inner], 'all attempts failed') });
+
+    test.equal(entries[0].err.cause.message, 'inner failure');
+    test.equal(entries[0].err.cause.code, 'ECONNREFUSED');
+    test.equal(entries[1].err.errors.length, 1);
+    test.equal(entries[1].err.errors[0].message, 'inner failure');
+    test.done();
+};
+
+module.exports['Internals: getLogger bounds a looping and a deep error chain'] = test => {
+    let client = makeClient({ emitLogs: true });
+    let entries = [];
+    client.on('log', entry => entries.push(entry));
+
+    // A chain that loops back must terminate rather than recurse forever
+    let looping = new Error('looping failure');
+    looping._err = looping;
+    client.log.error({ msg: 'loop', err: looping });
+    test.equal(entries[0].err.message, 'looping failure');
+    test.equal(entries[0].err._err, 'looping failure');
+
+    // A chain longer than the depth cap is truncated rather than walked to the end
+    let deep = new Error('level 0');
+    for (let i = 1; i <= 6; i++) {
+        deep = Object.assign(new Error(`level ${i}`), { _err: deep });
+    }
+    client.log.error({ msg: 'deep', err: deep });
+    test.equal(entries[1].err._err._err._err.message, 'level 3');
+    // Past the cap the chain collapses to messages instead of being walked to the end
+    test.equal(entries[1].err._err._err._err._err, 'level 2');
+
+    test.done();
+};
+
+module.exports['Internals: getLogger never throws out of a log call'] = test => {
+    let client = makeClient({ emitLogs: true });
+    let entries = [];
+    client.on('log', entry => entries.push(entry));
+
+    // A throwing property getter on the logged error must not escape
+    let hostile = {
+        get message() {
+            throw new Error('getter blew up');
+        },
+        stack: 'x'
+    };
+    test.doesNotThrow(() => client.log.warn({ msg: 'hostile', err: hostile }));
+
+    // Neither must a throwing 'log' listener
+    client.on('log', () => {
+        throw new Error('listener blew up');
+    });
+    test.doesNotThrow(() => client.log.warn({ msg: 'still fine' }));
+
     test.done();
 };
 

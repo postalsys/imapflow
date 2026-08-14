@@ -45,7 +45,10 @@ export interface ImapFlowOptions {
     tls?: ConnectionOptions;
     /** Custom logger instance. Set to false to disable logging */
     logger?: Logger | false;
-    /** If true, log data read and written to socket encoded in base64 */
+    /**
+     * If true, log data read and written to socket encoded in base64. Client frames that carry
+     * credentials are replaced with a fixed placeholder and marked with `hidden: true`.
+     */
     logRaw?: boolean;
     /** If true, emit 'log' events */
     emitLogs?: boolean;
