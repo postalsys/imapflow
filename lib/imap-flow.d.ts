@@ -787,7 +787,7 @@ export class ImapFlow extends EventEmitter {
     close(): void;
 
     /** Returns current quota */
-    getQuota(path?: string): Promise<QuotaResponse | false>;
+    getQuota(path?: string | string[]): Promise<QuotaResponse | false>;
 
     /** Lists available mailboxes as an Array */
     list(options?: ListOptions): Promise<ListResponse[]>;
@@ -821,7 +821,7 @@ export class ImapFlow extends EventEmitter {
 
     /** Requests the status of the indicated mailbox */
     status(
-        path: string,
+        path: string | string[],
         query: {
             messages?: boolean;
             recent?: boolean;
@@ -855,13 +855,21 @@ export class ImapFlow extends EventEmitter {
     messageDelete(range: SequenceString | number[] | SearchObject, options?: { uid?: boolean }): Promise<boolean>;
 
     /** Appends a new message to a mailbox */
-    append(path: string, content: string | Buffer, flags?: string[], idate?: Date | string): Promise<AppendResponseObject | false>;
+    append(path: string | string[], content: string | Buffer, flags?: string[], idate?: Date | string): Promise<AppendResponseObject | false>;
 
     /** Copies messages from current mailbox to destination mailbox */
-    messageCopy(range: SequenceString | number[] | SearchObject, destination: string, options?: { uid?: boolean }): Promise<CopyResponseObject | false>;
+    messageCopy(
+        range: SequenceString | number[] | SearchObject,
+        destination: string | string[],
+        options?: { uid?: boolean }
+    ): Promise<CopyResponseObject | false>;
 
     /** Moves messages from current mailbox to destination mailbox */
-    messageMove(range: SequenceString | number[] | SearchObject, destination: string, options?: { uid?: boolean }): Promise<CopyResponseObject | false>;
+    messageMove(
+        range: SequenceString | number[] | SearchObject,
+        destination: string | string[],
+        options?: { uid?: boolean }
+    ): Promise<CopyResponseObject | false>;
 
     /** Search messages from the currently opened mailbox — returns number[] (backward-compatible) */
     search(query: SearchObject, options?: { uid?: boolean }): Promise<number[] | false>;
