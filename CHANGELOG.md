@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.2](https://github.com/postalsys/imapflow/compare/v1.7.1...v1.7.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **envelope:** stop inventing an address from a NIL host field ([253a7b0](https://github.com/postalsys/imapflow/commit/253a7b0747ebe3c59fb177d46eb9843da6b5e91e))
+* **types:** accept string[] paths in status, getQuota, append, copy and move ([92f3607](https://github.com/postalsys/imapflow/commit/92f360749fd9518532f0d908bf246fb9402f2eaa)), closes [#382](https://github.com/postalsys/imapflow/issues/382)
+
 ## [1.7.1](https://github.com/postalsys/imapflow/compare/v1.7.0...v1.7.1) (2026-08-14)
 
 
