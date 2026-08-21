@@ -717,6 +717,25 @@ module.exports['Tools: processName with short quoted'] = test => {
 };
 
 // ============================================
+// decodeText tests
+// ============================================
+
+module.exports['Tools: decodeText decodes encoded words and strips quotes'] = test => {
+    test.equal(tools.decodeText('=?utf-8?Q?T=C3=B5nu?='), 'Tõnu');
+    test.equal(tools.decodeText('"=?utf-8?Q?T=C3=B5nu?="'), 'Tõnu');
+    test.equal(tools.decodeText('Plain Name'), 'Plain Name');
+    test.done();
+};
+
+module.exports['Tools: decodeText tolerates missing values'] = test => {
+    // getStrValue returns false for a NIL envelope field
+    test.equal(tools.decodeText(false), '');
+    test.equal(tools.decodeText(null), '');
+    test.equal(tools.decodeText(undefined), '');
+    test.done();
+};
+
+// ============================================
 // getFolderTree tests
 // ============================================
 
@@ -882,6 +901,100 @@ module.exports['Tools: parseEnvelope with empty address parts'] = test => {
     test.equal(result.from.length, 1);
     test.equal(result.from[0].name, 'Group Name');
     test.equal(result.from[0].address, '');
+    test.done();
+};
+
+module.exports['Tools: parseEnvelope keeps group syntax out of the address'] = test => {
+    // RFC 9051 7.5.2: a NIL host marks group syntax, so "undisclosed-recipients:;" must
+    // not turn into the invented address "undisclosed-recipients@"
+    let entry = [
+        null, // date
+        null, // subject
+        [], // from
+        [], // sender
+        [], // reply-to
+        [
+            [null, null, { value: 'undisclosed-recipients' }, null], // start of group
+            [null, null, null, null] // end of group
+        ], // to
+        [], // cc
+        [], // bcc
+        null, // in-reply-to
+        null // message-id
+    ];
+
+    let result = tools.parseEnvelope(entry);
+    // The end-of-group marker carries neither name nor address and is dropped
+    test.deepEqual(result.to, [{ name: 'undisclosed-recipients', address: '' }]);
+    test.done();
+};
+
+module.exports['Tools: parseEnvelope keeps group members alongside the markers'] = test => {
+    let entry = [
+        null, // date
+        null, // subject
+        [], // from
+        [], // sender
+        [], // reply-to
+        [
+            [null, null, { value: 'Team' }, null], // start of group
+            [{ value: 'Member One' }, null, { value: 'one' }, { value: 'example.com' }],
+            [{ value: 'Member Two' }, null, { value: 'two' }, { value: 'example.com' }],
+            [null, null, null, null] // end of group
+        ], // to
+        [], // cc
+        [], // bcc
+        null, // in-reply-to
+        null // message-id
+    ];
+
+    let result = tools.parseEnvelope(entry);
+    test.deepEqual(result.to, [
+        { name: 'Team', address: '' },
+        { name: 'Member One', address: 'one@example.com' },
+        { name: 'Member Two', address: 'two@example.com' }
+    ]);
+    test.done();
+};
+
+module.exports['Tools: parseEnvelope does not join a NIL host onto a mailbox'] = test => {
+    // Some servers parse a malformed header such as
+    // "To: user@example.com user@example.com" into a personal name plus a mailbox
+    // with a NIL host. Joining those produced the invalid address "example.com@".
+    let entry = [
+        null, // date
+        null, // subject
+        [], // from
+        [], // sender
+        [], // reply-to
+        [[{ value: 'user@example.com user@' }, null, { value: 'example.com' }, null]], // to
+        [], // cc
+        [], // bcc
+        null, // in-reply-to
+        null // message-id
+    ];
+
+    let result = tools.parseEnvelope(entry);
+    test.deepEqual(result.to, [{ name: 'user@example.com user@', address: '' }]);
+    test.done();
+};
+
+module.exports['Tools: parseEnvelope decodes an encoded group name'] = test => {
+    let entry = [
+        null, // date
+        null, // subject
+        [], // from
+        [], // sender
+        [], // reply-to
+        [[null, null, { value: '=?utf-8?Q?T=C3=B5ny?=' }, null]], // to
+        [], // cc
+        [], // bcc
+        null, // in-reply-to
+        null // message-id
+    ];
+
+    let result = tools.parseEnvelope(entry);
+    test.deepEqual(result.to, [{ name: 'Tõny', address: '' }]);
     test.done();
 };
 
