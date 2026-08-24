@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.4](https://github.com/postalsys/imapflow/compare/v1.7.3...v1.7.4) (2026-08-24)
+
+
+### Bug Fixes
+
+* **search:** normalize search dates so invalid values cannot throw or emit NaN ([bf6c6bb](https://github.com/postalsys/imapflow/commit/bf6c6bb9c9e649ac9c28eba2c42f744b7d7d8e63)), closes [#385](https://github.com/postalsys/imapflow/issues/385)
+
 ## [1.7.3](https://github.com/postalsys/imapflow/compare/v1.7.2...v1.7.3) (2026-08-24)
 
 
