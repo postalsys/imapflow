@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.6](https://github.com/postalsys/imapflow/compare/v1.7.5...v1.7.6) (2026-08-24)
+
+
+### Bug Fixes
+
+* **errors:** stop a re-stamped rejection carrying the previous site's markers ([ffd266c](https://github.com/postalsys/imapflow/commit/ffd266c1459c6f29c5cc2286592a2b2ce88c2706))
+
 ## [1.7.5](https://github.com/postalsys/imapflow/compare/v1.7.4...v1.7.5) (2026-08-24)
 
 
