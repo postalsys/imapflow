@@ -47,10 +47,12 @@ module.exports['Create imapflow instance with custom logger'] = async test => {
 // Helpers for testing prototype methods on a mock context
 // ---------------------------------------------------------------------------
 const createFetchContext = runOverride => ({
+    id: 'test-cid',
     mailbox: { path: 'INBOX', exists: 10 },
     isClosed: false,
     socket: { destroyed: false },
     resolveRange: async range => range,
+    createConnectionError: ImapFlow.prototype.createConnectionError,
     run: runOverride
 });
 

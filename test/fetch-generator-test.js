@@ -5,10 +5,12 @@ const { ImapFlow } = require('../lib/imap-flow');
 // Helper: create a minimal mock context with the fetch() generator bound to it.
 // The `run` override controls how untagged FETCH responses are delivered.
 const createFetchContext = runOverride => ({
+    id: 'test-cid',
     mailbox: { path: 'INBOX', exists: 10 },
     isClosed: false,
     socket: { destroyed: false },
     resolveRange: async range => range,
+    createConnectionError: ImapFlow.prototype.createConnectionError,
     run: runOverride
 });
 
