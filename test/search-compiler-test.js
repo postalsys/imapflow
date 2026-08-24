@@ -710,6 +710,57 @@ module.exports['Search Compiler: Date with invalid value ignored'] = test => {
     test.done();
 };
 
+module.exports['Search Compiler: all date keys ignore an invalid Date object'] = test => {
+    // An invalid Date is still a Date, so a plain Date brand check let it through:
+    // BEFORE/SENTBEFORE threw RangeError from toISOString(), and with WITHIN
+    // advertised BEFORE/SINCE compiled a literal "OLDER NaN"/"YOUNGER NaN" token
+    for (let capabilities of [[['IMAP4rev1', true]], [['WITHIN', true]]]) {
+        for (let key of ['before', 'since', 'on', 'sentBefore', 'sentOn', 'sentSince']) {
+            let connection = createMockConnection({ capabilities });
+            let compiled = searchCompiler(connection, { [key]: new Date('not-a-date') });
+
+            test.deepEqual(compiled, [], `${key} should compile to no attributes`);
+        }
+    }
+
+    test.done();
+};
+
+module.exports['Search Compiler: invalid date drops only its own criterion'] = test => {
+    let connection = createMockConnection();
+    let compiled = searchCompiler(connection, { seen: true, before: new Date('not-a-date') });
+
+    test.deepEqual(compiled, [{ type: 'ATOM', value: 'SEEN' }]);
+    test.done();
+};
+
+module.exports['Search Compiler: date string and Date object compile alike for BEFORE'] = test => {
+    let asDate = searchCompiler(createMockConnection(), { before: new Date('2023-06-15T12:30:00.000Z') });
+    let asString = searchCompiler(createMockConnection(), { before: '2023-06-15T12:30:00.000Z' });
+
+    // Both input forms are documented, so both must get the +24h shift that makes
+    // same-day BEFORE+SINCE ranges match. The string form used to skip it.
+    test.deepEqual(asString, asDate);
+    test.ok(hasAttr(asString, '16-Jun-2023'));
+    test.done();
+};
+
+module.exports['Search Compiler: date string and Date object compile alike for WITHIN'] = test => {
+    let connection = createMockConnection({ capabilities: [['WITHIN', true]] });
+    let recentDate = new Date(Date.now() - 3600 * 1000); // 1 hour ago
+    let asDate = searchCompiler(connection, { since: recentDate });
+    let asString = searchCompiler(connection, { since: recentDate.toISOString() });
+
+    // The string form used to skip the WITHIN shortcut and compile SINCE instead
+    test.ok(hasAttr(asDate, 'YOUNGER'));
+    test.ok(hasAttr(asString, 'YOUNGER'));
+    // The keyword atom is followed by its value token
+    let seconds = attrs => Number(attrs[1].value);
+    // Both are measured against Date.now() at compile time, so allow a small drift
+    test.ok(Math.abs(seconds(asString) - seconds(asDate)) <= 1);
+    test.done();
+};
+
 // ============================================
 // KEYWORD tests
 // ============================================
