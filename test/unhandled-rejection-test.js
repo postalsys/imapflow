@@ -408,6 +408,98 @@ exports['Unhandled Rejection Prevention'] = {
         });
     },
 
+    'close() stamps the rejection site, command and connection id on the error'(test) {
+        test.expect(5);
+
+        const client = new ImapFlow({
+            host: '127.0.0.1',
+            port: 1,
+            secure: false,
+            logger: false,
+            id: 'test-cid'
+        });
+
+        client.state = client.states.AUTHENTICATED;
+        client.socket = new net.Socket();
+
+        const detector = installRejectionDetector(test);
+
+        let promise = client.exec('NOOP');
+        client.close();
+
+        setTimeout(() => {
+            detector.check();
+            promise.catch(err => {
+                test.equal(err.code, 'NoConnection', 'caller should receive NoConnection error');
+                test.equal(err.rejectedFrom, 'pendingRequest', 'error should name the rejection site');
+                test.equal(err.command, 'NOOP', 'error should name the command it belonged to');
+                test.equal(err.cid, 'test-cid', 'error should carry the connection id');
+                test.done();
+            });
+        }, 100);
+    },
+
+    'preCheck() waiter rejected by close() should not cause unhandled rejection'(test) {
+        test.expect(2);
+
+        // Never acknowledge IDLE with a "+" continuation. preCheck() can only send DONE once
+        // the server has acknowledged, so its waiter stays queued until close() tears the
+        // IDLE command down and runIdle() rejects everything still waiting.
+        const server = createMockServer({
+            extraCapabilities: 'IDLE',
+            onCommand(socket, tag, command) {
+                if (command === 'IDLE') {
+                    return true;
+                }
+            }
+        });
+
+        server.listen(0, '127.0.0.1', async () => {
+            const port = server.address().port;
+
+            const client = new ImapFlow({
+                host: '127.0.0.1',
+                port,
+                secure: false,
+                logger: false,
+                disableAutoIdle: true,
+                auth: {
+                    user: 'test',
+                    pass: 'test'
+                }
+            });
+
+            const detector = installRejectionDetector(test);
+
+            try {
+                await client.connect();
+                await client.mailboxOpen('INBOX');
+
+                client.idle().catch(() => {
+                    // Expected: IDLE rejects when the connection is closed
+                });
+
+                // Let the IDLE command reach the server and install preCheck()
+                await new Promise(r => setTimeout(r, 100));
+                test.equal(typeof client.preCheck, 'function', 'IDLE should have installed preCheck()');
+
+                // Request an IDLE break and drop the returned promise on the floor, so the
+                // queued waiter has no handler of its own when close() rejects it
+                client.preCheck();
+
+                client.close();
+
+                await new Promise(r => setTimeout(r, 100));
+                detector.check();
+            } catch (err) {
+                detector.check();
+                test.ok(false, 'Unexpected error: ' + err.message);
+            } finally {
+                server.close(() => test.done());
+            }
+        });
+    },
+
     'BAD response to FETCH should not cause unhandled rejection (Death 2)'(test) {
         test.expect(3);
 
