@@ -101,6 +101,59 @@ function installRejectionDetector(test) {
     };
 }
 
+// Drives a connection to the one state both IDLE-waiter tests need: IDLE issued but never
+// acknowledged with a "+", so preCheck() cannot send DONE and anything it queues stays queued
+// until close() tears the IDLE command down. Hands the connected client to `run`, and always
+// closes the server so the test ends.
+function withQueuedIdleWaiter(test, options, run, onError) {
+    const server = createMockServer({
+        extraCapabilities: 'IDLE',
+        onCommand(socket, tag, command) {
+            if (command === 'IDLE') {
+                return true;
+            }
+        }
+    });
+
+    server.listen(0, '127.0.0.1', async () => {
+        const client = new ImapFlow(
+            Object.assign(
+                {
+                    host: '127.0.0.1',
+                    port: server.address().port,
+                    secure: false,
+                    logger: false,
+                    disableAutoIdle: true,
+                    auth: { user: 'test', pass: 'test' }
+                },
+                options
+            )
+        );
+
+        try {
+            await client.connect();
+            await client.mailboxOpen('INBOX');
+
+            client.idle().catch(() => {
+                // Expected: IDLE rejects when the connection is closed
+            });
+
+            // Let the IDLE command reach the server and install preCheck()
+            await new Promise(r => setTimeout(r, 100));
+            test.equal(typeof client.preCheck, 'function', 'IDLE should have installed preCheck()');
+
+            await run(client);
+        } catch (err) {
+            if (onError) {
+                onError(err);
+            }
+            test.ok(false, 'Unexpected error: ' + err.message);
+        } finally {
+            server.close(() => test.done());
+        }
+    });
+}
+
 exports['Unhandled Rejection Prevention'] = {
     'exec() + close() race should not cause unhandled rejection'(test) {
         test.expect(2);
@@ -440,63 +493,23 @@ exports['Unhandled Rejection Prevention'] = {
     },
 
     'a preCheck() waiter rejection names its own site, not the IDLE command'(test) {
-        test.expect(6);
+        test.expect(8);
 
-        // IDLE is never acknowledged with a "+", so preCheck() cannot send DONE and its waiter
-        // stays queued until close() tears the IDLE command down.
-        const server = createMockServer({
-            extraCapabilities: 'IDLE',
-            onCommand(socket, tag, command) {
-                if (command === 'IDLE') {
-                    return true;
-                }
-            }
-        });
-
-        server.listen(0, '127.0.0.1', async () => {
-            const port = server.address().port;
-
-            const client = new ImapFlow({
-                host: '127.0.0.1',
-                port,
-                secure: false,
-                logger: false,
-                disableAutoIdle: true,
-                id: 'waiter-cid',
-                auth: {
-                    user: 'test',
-                    pass: 'test'
-                }
-            });
+        withQueuedIdleWaiter(test, { id: 'waiter-cid' }, async client => {
+            let waiter = client.preCheck();
+            client.close();
 
             try {
-                await client.connect();
-                await client.mailboxOpen('INBOX');
-
-                client.idle().catch(() => {
-                    // Expected: IDLE rejects when the connection is closed
-                });
-
-                await new Promise(r => setTimeout(r, 100));
-
-                let waiter = client.preCheck();
-                client.close();
-
-                try {
-                    await waiter;
-                    test.ok(false, 'the waiter should have rejected');
-                } catch (err) {
-                    test.equal(err.rejectedFrom, 'preCheckWaiter', 'the waiter names its own rejection site');
-                    test.equal(err.cid, 'waiter-cid', 'the waiter error carries the connection id');
-                    test.equal(err.code, 'NoConnection', 'the original code is preserved for callers that branch on it');
-                    test.ok(err.cause, 'the command failure travels on as the cause');
-                    test.equal(err.cause.rejectedFrom, 'pendingRequest', 'the cause still names the command site');
-                    test.equal(err.cause.command, 'IDLE', 'the cause still names the command');
-                }
+                await waiter;
+                test.ok(false, 'the waiter should have rejected');
             } catch (err) {
-                test.ok(false, 'Unexpected error: ' + err.message);
-            } finally {
-                server.close(() => test.done());
+                test.equal(err.rejectedFrom, 'preCheckWaiter', 'the waiter names its own rejection site');
+                test.equal(err.cid, 'waiter-cid', 'the waiter error carries the connection id');
+                test.equal(err.code, 'NoConnection', 'the original code is preserved for callers that branch on it');
+                test.strictEqual(err.command, undefined, 'the command belongs to the site the error came from, not to the waiter');
+                test.ok(err.cause, 'the command failure travels on as the cause');
+                test.equal(err.cause.rejectedFrom, 'pendingRequest', 'the cause still names the command site');
+                test.equal(err.cause.command, 'IDLE', 'the cause still names the command');
             }
         });
     },
@@ -504,62 +517,22 @@ exports['Unhandled Rejection Prevention'] = {
     'preCheck() waiter rejected by close() should not cause unhandled rejection'(test) {
         test.expect(2);
 
-        // Never acknowledge IDLE with a "+" continuation. preCheck() can only send DONE once
-        // the server has acknowledged, so its waiter stays queued until close() tears the
-        // IDLE command down and runIdle() rejects everything still waiting.
-        const server = createMockServer({
-            extraCapabilities: 'IDLE',
-            onCommand(socket, tag, command) {
-                if (command === 'IDLE') {
-                    return true;
-                }
-            }
-        });
+        const detector = installRejectionDetector(test);
 
-        server.listen(0, '127.0.0.1', async () => {
-            const port = server.address().port;
-
-            const client = new ImapFlow({
-                host: '127.0.0.1',
-                port,
-                secure: false,
-                logger: false,
-                disableAutoIdle: true,
-                auth: {
-                    user: 'test',
-                    pass: 'test'
-                }
-            });
-
-            const detector = installRejectionDetector(test);
-
-            try {
-                await client.connect();
-                await client.mailboxOpen('INBOX');
-
-                client.idle().catch(() => {
-                    // Expected: IDLE rejects when the connection is closed
-                });
-
-                // Let the IDLE command reach the server and install preCheck()
-                await new Promise(r => setTimeout(r, 100));
-                test.equal(typeof client.preCheck, 'function', 'IDLE should have installed preCheck()');
-
-                // Request an IDLE break and drop the returned promise on the floor, so the
-                // queued waiter has no handler of its own when close() rejects it
+        withQueuedIdleWaiter(
+            test,
+            {},
+            async client => {
+                // Request an IDLE break and drop the returned promise on the floor, so the queued
+                // waiter has no handler of its own when close() rejects it
                 client.preCheck();
-
                 client.close();
 
                 await new Promise(r => setTimeout(r, 100));
                 detector.check();
-            } catch (err) {
-                detector.check();
-                test.ok(false, 'Unexpected error: ' + err.message);
-            } finally {
-                server.close(() => test.done());
-            }
-        });
+            },
+            () => detector.check()
+        );
     },
 
     'BAD response to FETCH should not cause unhandled rejection (Death 2)'(test) {
