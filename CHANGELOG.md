@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.5](https://github.com/postalsys/imapflow/compare/v1.7.4...v1.7.5) (2026-08-24)
+
+
+### Bug Fixes
+
+* **errors:** give an IDLE-break waiter its own rejection site ([9534551](https://github.com/postalsys/imapflow/commit/95345519fa32ee26bff239a2ac90f6b8ddccb559))
+
 ## [1.7.4](https://github.com/postalsys/imapflow/compare/v1.7.3...v1.7.4) (2026-08-24)
 
 
