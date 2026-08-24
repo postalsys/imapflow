@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.3](https://github.com/postalsys/imapflow/compare/v1.7.2...v1.7.3) (2026-08-24)
+
+
+### Bug Fixes
+
+* **errors:** make the rejection guard structural and stamp every connection error ([67a4afc](https://github.com/postalsys/imapflow/commit/67a4afcc06a2699ea327e98459590901f2efb24c))
+* **errors:** name the rejection site on connection errors and guard the IDLE preCheck waiter ([55764f0](https://github.com/postalsys/imapflow/commit/55764f056f5aeb9771e493e9b659872f01ee7995))
+
 ## [1.7.2](https://github.com/postalsys/imapflow/compare/v1.7.1...v1.7.2) (2026-08-21)
 
 
