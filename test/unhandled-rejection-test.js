@@ -439,6 +439,68 @@ exports['Unhandled Rejection Prevention'] = {
         }, 100);
     },
 
+    'a preCheck() waiter rejection names its own site, not the IDLE command'(test) {
+        test.expect(6);
+
+        // IDLE is never acknowledged with a "+", so preCheck() cannot send DONE and its waiter
+        // stays queued until close() tears the IDLE command down.
+        const server = createMockServer({
+            extraCapabilities: 'IDLE',
+            onCommand(socket, tag, command) {
+                if (command === 'IDLE') {
+                    return true;
+                }
+            }
+        });
+
+        server.listen(0, '127.0.0.1', async () => {
+            const port = server.address().port;
+
+            const client = new ImapFlow({
+                host: '127.0.0.1',
+                port,
+                secure: false,
+                logger: false,
+                disableAutoIdle: true,
+                id: 'waiter-cid',
+                auth: {
+                    user: 'test',
+                    pass: 'test'
+                }
+            });
+
+            try {
+                await client.connect();
+                await client.mailboxOpen('INBOX');
+
+                client.idle().catch(() => {
+                    // Expected: IDLE rejects when the connection is closed
+                });
+
+                await new Promise(r => setTimeout(r, 100));
+
+                let waiter = client.preCheck();
+                client.close();
+
+                try {
+                    await waiter;
+                    test.ok(false, 'the waiter should have rejected');
+                } catch (err) {
+                    test.equal(err.rejectedFrom, 'preCheckWaiter', 'the waiter names its own rejection site');
+                    test.equal(err.cid, 'waiter-cid', 'the waiter error carries the connection id');
+                    test.equal(err.code, 'NoConnection', 'the original code is preserved for callers that branch on it');
+                    test.ok(err.cause, 'the command failure travels on as the cause');
+                    test.equal(err.cause.rejectedFrom, 'pendingRequest', 'the cause still names the command site');
+                    test.equal(err.cause.command, 'IDLE', 'the cause still names the command');
+                }
+            } catch (err) {
+                test.ok(false, 'Unexpected error: ' + err.message);
+            } finally {
+                server.close(() => test.done());
+            }
+        });
+    },
+
     'preCheck() waiter rejected by close() should not cause unhandled rejection'(test) {
         test.expect(2);
 
