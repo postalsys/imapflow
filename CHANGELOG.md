@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.7](https://github.com/postalsys/imapflow/compare/v1.7.6...v1.7.7) (2026-08-31)
+
+
+### Bug Fixes
+
+* **deps:** update encoding-japanese to 2.3.0 for the CP932 extended areas ([8ae7ea4](https://github.com/postalsys/imapflow/commit/8ae7ea4cbb48357ffd4e19423d7844c19db9516f))
+
 ## [1.7.6](https://github.com/postalsys/imapflow/compare/v1.7.5...v1.7.6) (2026-08-24)
 
 
