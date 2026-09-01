@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.8](https://github.com/postalsys/imapflow/compare/v1.7.7...v1.7.8) (2026-09-01)
+
+
+### Bug Fixes
+
+* **download:** keep the pipeline error forwarder across a backpressure wait ([c6b2ed7](https://github.com/postalsys/imapflow/commit/c6b2ed7f2ffb598dad0d7a4beb915055c3cfbef6))
+
 ## [1.7.7](https://github.com/postalsys/imapflow/compare/v1.7.6...v1.7.7) (2026-08-31)
 
 
