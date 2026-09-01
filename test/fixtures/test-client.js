@@ -4,6 +4,8 @@
 // One definition instead of a per-file copy, so a change to what the constructor needs lands
 // in one place and cannot drift between suites.
 
+const { Writable } = require('node:stream');
+
 const { ImapFlow } = require('../../lib/imap-flow');
 
 // A socket stub complete enough for setSocketHandlers(), clearSocketHandlers() and close() to
@@ -54,4 +56,46 @@ const chunkedFetchOne = body => async (range, query) => {
     return { uid: 1, size: body.length, source: body.subarray(start, start + maxLength) };
 };
 
-module.exports = { makeClient, makeIdleReadyClient, makeSocketStub, chunkedFetchOne };
+// Installs a process-level unhandledRejection detector for one test. Shared because getting the
+// teardown wrong leaks a process listener into every test that runs after it, and because the
+// assertion has to read the same way wherever a suite checks that nothing escaped.
+const installRejectionDetector = test => {
+    // Tracked as a separate flag rather than by testing the reason: a rejection can carry a falsy
+    // value, and that is still an escaped rejection.
+    let unhandled = false;
+    let unhandledReason = null;
+    const handler = reason => {
+        unhandled = true;
+        unhandledReason = reason;
+    };
+    process.on('unhandledRejection', handler);
+
+    return {
+        check() {
+            process.removeListener('unhandledRejection', handler);
+            test.equal(unhandled, false, 'no unhandledRejection should fire' + (unhandledReason ? ': ' + unhandledReason.message : ''));
+        }
+    };
+};
+
+// A Writable that always defers its callback, so writing to a stream piped into it fills the
+// pipeline and forces the producer into backpressure. `delay` is only for tests that also need
+// wall-clock time to pass; deferring at all is what triggers the drain wait.
+const slowConsumer = (options = {}) => {
+    let { delay = 0, onChunk } = options;
+    return new Writable({
+        highWaterMark: 1,
+        write(chunk, enc, cb) {
+            if (typeof onChunk === 'function') {
+                onChunk(chunk);
+            }
+            if (delay) {
+                setTimeout(cb, delay);
+            } else {
+                setImmediate(cb);
+            }
+        }
+    });
+};
+
+module.exports = { makeClient, makeIdleReadyClient, makeSocketStub, chunkedFetchOne, installRejectionDetector, slowConsumer };

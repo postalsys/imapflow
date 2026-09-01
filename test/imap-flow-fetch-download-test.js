@@ -8,8 +8,8 @@ const { ImapFlow } = require('../lib/imap-flow');
 const libbase64 = require('libbase64');
 const libqp = require('libqp');
 const libmime = require('libmime');
-const { Writable, finished } = require('stream');
-const { chunkedFetchOne } = require('./fixtures/test-client');
+const { finished } = require('stream');
+const { chunkedFetchOne, installRejectionDetector, slowConsumer } = require('./fixtures/test-client');
 
 const makeClient = (overrides = {}) => {
     let client = new ImapFlow({
@@ -547,13 +547,7 @@ module.exports['Download: in-loop backpressure waits for drain'] = async test =>
     // one buffer down) but subsequent loop writes return false while the consumer
     // is still draining the previous chunk, exercising the in-loop drain wait.
     let received = 0;
-    let slow = new Writable({
-        highWaterMark: 1,
-        write(chunk, enc, cb) {
-            received += chunk.length;
-            setTimeout(cb, 40);
-        }
-    });
+    let slow = slowConsumer({ delay: 40, onChunk: chunk => (received += chunk.length) });
     content.pipe(slow);
     await new Promise(resolve => slow.on('finish', resolve));
 
@@ -584,6 +578,53 @@ module.exports['Download: error during streaming surfaces on content stream'] = 
     );
     test.ok(streamErr, 'error surfaced on content stream');
     test.equal(streamErr.message, 'mid-stream fetch failure');
+    test.done();
+};
+
+module.exports['Download: a chunk failure after a backpressure wait reaches the stream'] = async test => {
+    // Regression: the drain wait cleared the head stream's listeners with
+    // removeAllListeners('error'), which also removed the error forwarder the decoder pipeline
+    // attached to it. From the first backpressure wait onwards a later chunk failure was emitted
+    // onto a listener-less stream, so emit() threw inside the .catch() handler and the rejection
+    // escaped as an unhandledRejection instead of reaching the consumer.
+    let client = makeClient();
+    let big = Buffer.alloc(64 * 1024, 0x61);
+    let calls = 0;
+    client.fetchOne = async () => {
+        calls++;
+        if (calls <= 3) {
+            return { uid: 1, size: 400 * 1024, source: big };
+        }
+        let err = new Error('Connection not available');
+        err.code = 'NoConnection';
+        throw err;
+    };
+
+    const detector = installRejectionDetector(test);
+
+    let received = 0;
+    let streamErr;
+    try {
+        let { content } = await client.download('1', false, { uid: true, chunkSize: 64 * 1024 });
+
+        // Backpressure comes from the deferred callback, not from wall-clock delay
+        content.pipe(slowConsumer({ onChunk: chunk => (received += chunk.length) }));
+        await new Promise(resolve =>
+            finished(content, err => {
+                streamErr = err;
+                resolve();
+            })
+        );
+    } finally {
+        detector.check();
+    }
+
+    // Without a completed drain wait the regression is not exercised at all, so assert the
+    // pipeline actually drained a chunk before the failing fetch rather than inferring it
+    test.ok(received >= 64 * 1024, 'a chunk drained through the consumer before the failure');
+    test.equal(calls, 4, 'the failing chunk was reached');
+    test.ok(streamErr, 'error surfaced on content stream');
+    test.equal(streamErr && streamErr.code, 'NoConnection');
     test.done();
 };
 
@@ -634,12 +675,7 @@ module.exports['Download: aborting mid-backpressure stops the fetch loop'] = asy
 
     // Slow consumer to force backpressure, then destroy mid-stream so the loop
     // aborts during a drain wait.
-    let slow = new Writable({
-        highWaterMark: 1,
-        write(chunk, enc, cb) {
-            setTimeout(cb, 50);
-        }
-    });
+    let slow = slowConsumer({ delay: 50 });
     content.pipe(slow);
     setTimeout(() => content.destroy(), 70);
     await new Promise(resolve => {

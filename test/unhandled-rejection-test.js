@@ -18,6 +18,7 @@
 
 const net = require('net');
 const { ImapFlow } = require('../lib/imap-flow');
+const { installRejectionDetector, slowConsumer } = require('./fixtures/test-client');
 
 // Create a mock IMAP server with optional custom behavior.
 // options.extraCapabilities - additional capabilities (e.g., 'IDLE')
@@ -81,24 +82,6 @@ function createMockServer(options) {
     });
 
     return server;
-}
-
-// Helper: install an unhandledRejection detector
-function installRejectionDetector(test) {
-    let unhandled = false;
-    let unhandledReason = null;
-    const handler = reason => {
-        unhandled = true;
-        unhandledReason = reason;
-    };
-    process.on('unhandledRejection', handler);
-
-    return {
-        check() {
-            process.removeListener('unhandledRejection', handler);
-            test.equal(unhandled, false, 'no unhandledRejection should fire' + (unhandledReason ? ': ' + unhandledReason.message : ''));
-        }
-    };
 }
 
 // Drives a connection to the one state both IDLE-waiter tests need: IDLE issued but never
@@ -580,6 +563,91 @@ exports['Unhandled Rejection Prevention'] = {
                 // Wait for any deferred unhandled rejections
                 await new Promise(r => setTimeout(r, 100));
                 detector.check();
+
+                client.close();
+            } catch (err) {
+                detector.check();
+                test.ok(false, 'Unexpected error: ' + err.message);
+            } finally {
+                server.close(() => test.done());
+            }
+        });
+    },
+
+    'a download losing its connection mid-chunk should not cause unhandled rejection (Death 3)'(test) {
+        // The reported production crash, end to end over a real socket: a chunked download whose
+        // consumer is applying backpressure, and a connection that goes away with the next
+        // UID FETCH in flight. close() rejects that pending request, and the rejection has to
+        // reach the content stream rather than a promise nobody holds.
+        test.expect(4);
+
+        const CHUNK = 64 * 1024;
+        const TOTAL = CHUNK * 8;
+        let fetchCount = 0;
+
+        const server = createMockServer({
+            onCommand(socket, tag, command) {
+                if (command !== 'UID') {
+                    return;
+                }
+
+                fetchCount++;
+                if (fetchCount > 3) {
+                    // the production event: the socket ends with a UID FETCH pending
+                    socket.destroy();
+                    return true;
+                }
+
+                // one BODY[]<offset> chunk, in the literal form download() asks for
+                socket.write(`* 1 FETCH (UID 1 RFC822.SIZE ${TOTAL} BODY[]<${(fetchCount - 1) * CHUNK}> {${CHUNK}}\r\n`);
+                socket.write(Buffer.alloc(CHUNK, 0x61));
+                socket.write(')\r\n');
+                socket.write(`${tag} OK FETCH completed\r\n`);
+                return true;
+            }
+        });
+
+        server.listen(0, '127.0.0.1', async () => {
+            const client = new ImapFlow({
+                host: '127.0.0.1',
+                port: server.address().port,
+                secure: false,
+                logger: false,
+                disableAutoIdle: true,
+                auth: { user: 'test', pass: 'test' }
+            });
+
+            // the connection is destroyed under the client on purpose
+            client.on('error', () => false);
+
+            const detector = installRejectionDetector(test);
+
+            try {
+                await client.connect();
+                await client.mailboxOpen('INBOX');
+
+                let { content } = await client.download('1', false, { uid: true, chunkSize: CHUNK });
+
+                let received = 0;
+                let streamErr = null;
+                content.on('error', err => {
+                    streamErr = err;
+                });
+                // The delay is load-bearing: it has to outlast a loopback round trip, or the
+                // pipeline drains between chunks, writeChunk() never returns false, and the
+                // backpressure wait this test exists for is never entered
+                content.pipe(slowConsumer({ delay: 30, onChunk: chunk => (received += chunk.length) }));
+
+                await new Promise(resolve => {
+                    content.on('close', resolve);
+                    content.on('error', resolve);
+                });
+                await new Promise(r => setTimeout(r, 100));
+                detector.check();
+
+                test.ok(received >= CHUNK, 'a chunk drained through the consumer before the connection went away');
+                test.ok(streamErr, 'the failure surfaced on the content stream');
+                test.equal(streamErr && streamErr.code, 'NoConnection', 'the caller gets the connection error');
 
                 client.close();
             } catch (err) {
