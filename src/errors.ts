@@ -76,6 +76,7 @@ export type ConnectionErrorSite = Pick<ImapFlowError, 'rejectedFrom' | 'command'
 export class AuthenticationFailure extends Error implements ImapFlowError {
     authenticationFailed = true as const;
     declare serverResponseCode?: string | undefined;
-    declare response?: ImapResponse | string | false | undefined;
+    /** Text of the server's error response */
+    declare response?: string | undefined;
     declare oauthError?: any;
 }

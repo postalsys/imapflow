@@ -53,9 +53,10 @@ const createServer = () =>
 const listen = (server: any) => new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
 
 describe('timer-policy', () => {
-    it('Timers: connection and greeting deadlines keep the process alive', async () => {
+    it('Timers: connection and greeting deadlines keep the process alive', async t => {
         let server = createServer();
         let port = await listen(server);
+        t.after(() => server.close());
 
         await withFakeTimers(async timers => {
             let client = makeClient({
@@ -68,24 +69,27 @@ describe('timer-policy', () => {
             });
             client.on('error', () => {});
 
-            await client.connect();
+            try {
+                await client.connect();
 
-            let connectDeadline = timers.history().find(timer => timer.delay === 12345);
-            let greetingDeadline = timers.history().find(timer => timer.delay === 6789);
+                let connectDeadline = timers.find(client.connectTimeout);
+                let greetingDeadline = timers.find(client.greetingTimeout);
 
-            assert.ok(connectDeadline, 'the connection deadline was armed');
-            assert.equal(connectDeadline.unrefd, false, 'the connection deadline keeps the process alive');
-            assert.ok(connectDeadline.cleared, 'and is cleared once the transport is established');
+                assert.ok(connectDeadline, 'the connection deadline was armed');
+                // armed with what is left of the connection budget, so at most the configured value
+                assert.ok(connectDeadline.delay !== undefined && connectDeadline.delay <= 12345, 'the connection deadline is within the configured budget');
+                assert.equal(connectDeadline.unrefd, false, 'the connection deadline keeps the process alive');
+                assert.ok(connectDeadline.cleared, 'and is cleared once the transport is established');
 
-            assert.ok(greetingDeadline, 'the greeting deadline was armed');
-            assert.equal(greetingDeadline.unrefd, false, 'the greeting deadline keeps the process alive');
-            assert.ok(greetingDeadline.cleared, 'and is cleared once the greeting arrives');
-
-            client.close();
+                assert.ok(greetingDeadline, 'the greeting deadline was armed');
+                assert.equal(greetingDeadline.delay, 6789, 'with the configured greeting timeout');
+                assert.equal(greetingDeadline.unrefd, false, 'the greeting deadline keeps the process alive');
+                assert.ok(greetingDeadline.cleared, 'and is cleared once the greeting arrives');
+            } finally {
+                client.close();
+            }
             assert.equal(timers.count(), 0, 'no timer is left armed after close');
         });
-
-        server.close();
     });
     it('Timers: the auto-IDLE timer is unrefd and cleared on close', async () => {
         await withFakeTimers(async timers => {

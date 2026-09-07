@@ -179,6 +179,8 @@ export async function run(): Promise<void> {
         failure.responseStatus;
         if (err instanceof AuthenticationFailure) {
             err.authenticationFailed;
+            const response: string | undefined = err.response;
+            void response;
         }
     }
 

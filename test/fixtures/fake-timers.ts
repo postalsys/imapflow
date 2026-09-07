@@ -32,6 +32,7 @@ export interface FakeTimers {
     pending: () => FakeTimerState[];
     count: () => number;
     history: () => FakeTimerState[];
+    find: (handle: unknown) => FakeTimerState | undefined;
     fire: () => Promise<void>;
     drain: (turns?: number) => Promise<void>;
     restore: () => void;
@@ -96,13 +97,29 @@ const installFakeTimers = (): FakeTimers => {
         }
     };
 
+    const snapshot = (timer: FakeTimer): FakeTimerState => ({
+        id: timer.id,
+        delay: timer.delay,
+        unrefd: timer.unrefd,
+        cleared: timer.cleared,
+        fired: timer.fired
+    });
+
     return {
         // Scheduled timers that have not fired or been cleared yet, in scheduling order
         pending: () => Array.from(timers.values()).map(timer => ({ id: timer.id, delay: timer.delay, unrefd: timer.unrefd })),
         count: () => timers.size,
 
         // Every timer scheduled while installed, in scheduling order, with its final state
-        history: () => history.map(timer => ({ id: timer.id, delay: timer.delay, unrefd: timer.unrefd, cleared: timer.cleared, fired: timer.fired })),
+        history: () => history.map(snapshot),
+
+        // The recorded state of the timer behind a handle the code under test kept, so a test can
+        // assert on a timer by identity rather than by its delay or its position in the history
+        find: (handle: unknown) => {
+            const id = (handle as { _fakeTimerId?: number } | null | undefined)?._fakeTimerId;
+            const timer = history.find(timer => timer.id === id);
+            return timer && snapshot(timer);
+        },
 
         // Fires every currently pending timer once, oldest first, letting async callbacks settle.
         // Timers scheduled by those callbacks stay pending for the next fire() call, which is what
