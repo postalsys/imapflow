@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.0.0](https://github.com/postalsys/imapflow/compare/v1.7.8...v2.0.0) (2026-09-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* Node.js 20 or newer is required. The `lib/` directory is no longer published; use the package root or the `imapflow/lib/*` export map.
+
+### Features
+
+* migrate to TypeScript with ES module and CommonJS builds ([a2cde07](https://github.com/postalsys/imapflow/commit/a2cde0778f6d7cb8471ca8e4011534476442ae98))
+* support Bun and Cloudflare Workers ([70fff15](https://github.com/postalsys/imapflow/commit/70fff15b4a3297d4b29c8da7b1faf703ebf00876))
+
+
+### Bug Fixes
+
+* re-arm auto-IDLE after an IDLE or poll session ends on its own ([e6e5d27](https://github.com/postalsys/imapflow/commit/e6e5d27debf87748aae740b5a0a47b2afc2079b3))
+* **types:** strip the internal members of ImapFlow from the declarations ([68b7258](https://github.com/postalsys/imapflow/commit/68b72587e07ebba52676df5b68631d60f55b08c0))
+* **types:** type AuthenticationFailure.response as the string it always is ([5c3b3af](https://github.com/postalsys/imapflow/commit/5c3b3afd234bccf7d86fd999f4673e43ec131b6d))
+* **types:** type the events without the generic EventEmitter of @types/node ([a4285b2](https://github.com/postalsys/imapflow/commit/a4285b26064115bd1740b7850b2b0a14e02d96b8))
+
 ## [1.7.8](https://github.com/postalsys/imapflow/compare/v1.7.7...v1.7.8) (2026-09-01)
 
 
