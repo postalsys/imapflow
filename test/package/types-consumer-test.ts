@@ -15,12 +15,16 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tsc = require.resolve('typescript/bin/tsc');
+// the oldest @types/node of the supported Node line, see the emitter tests
+const legacyNodeTypes = path.join(root, 'node_modules', 'types-node-legacy');
 
 const hasDist = fs.existsSync(path.join(root, 'dist', 'cjs', 'imap-flow.d.ts')) && fs.existsSync(path.join(root, 'dist', 'esm', 'imap-flow.d.ts'));
 
 // The idioms the hand-written imap-flow.d.ts supported, kept compiling by the shipped
 // declarations: the named ImapFlow export, the default export object, the documented option
-// and result types, the typed events, and the async iterator returned by fetch()
+// and result types, the typed events, and the async iterator returned by fetch(). The
+// listener parameters are left unannotated on purpose, under noImplicitAny they only
+// compile when the listener is typed from the event name
 const consumer = `
 import { ImapFlow, AuthenticationFailure } from 'imapflow';
 import imapflow from 'imapflow';
@@ -39,11 +43,7 @@ import type {
     DownloadObject,
     AppendResponseObject,
     CopyResponseObject,
-    ExistsEvent,
     ExpungeEvent,
-    FlagsEvent,
-    LogEvent,
-    ResponseEvent,
     Logger,
     ImapFlowError
 } from 'imapflow';
@@ -72,14 +72,14 @@ const client = new ImapFlow(options);
 const viaDefault = new imapflow.ImapFlow({ host: 'localhost', auth: { user: 'user', accessToken: 'token' }, logger: false });
 const version: string = ImapFlow.version;
 
-client.on('exists', (data: ExistsEvent) => data.count);
-client.on('expunge', (data: ExpungeEvent) => data.vanished);
-client.on('flags', (data: FlagsEvent) => data.flags.has('\\\\Seen'));
-client.on('mailboxOpen', (mailbox: MailboxObject) => mailbox.path);
-client.on('mailboxClose', (mailbox: MailboxObject) => mailbox.path);
-client.on('log', (entry: LogEvent) => entry.level);
-client.on('response', (response: ResponseEvent) => response.code);
-client.on('error', (err: Error) => err.message);
+client.on('exists', data => data.count);
+client.on('expunge', data => data.vanished);
+client.on('flags', data => data.flags.has('\\\\Seen'));
+client.on('mailboxOpen', mailbox => mailbox.path);
+client.on('mailboxClose', mailbox => mailbox.path);
+client.on('log', entry => entry.level);
+client.on('response', response => response.code);
+client.on('error', err => err.message);
 client.on('close', () => {});
 
 export async function run(): Promise<void> {
@@ -316,6 +316,38 @@ type _FlagsEvent = NoneMissing<MissingUndefined<FlagsEvent>>;
 type _DownloadObject = NoneMissing<MissingUndefined<DownloadObject>>;
 `;
 
+// The class extends the plain EventEmitter and types its events through overloads, so the
+// idioms the untyped base allowed keep compiling: holding the client in the EventEmitter
+// type and listening for an event outside the map. The other emitter methods get the same
+// overloads as on(), which the main consumer covers
+const emitterConsumer = `
+import { EventEmitter } from 'node:events';
+import { ImapFlow } from 'imapflow';
+import type { ExistsEvent } from 'imapflow';
+
+const client = new ImapFlow({ host: 'localhost' });
+
+const emitter: EventEmitter = client;
+const nodeEmitter: NodeJS.EventEmitter = client;
+void [emitter, nodeEmitter];
+
+const listener = (data: ExistsEvent): number => data.count;
+client.once('expunge', data => data.path);
+client.addListener('flags', data => data.flags.has('\\\\Seen'));
+client.prependListener('mailboxOpen', mailbox => mailbox.path);
+client.prependOnceListener('mailboxClose', mailbox => mailbox.exists);
+client.on('exists', listener).off('exists', listener).removeListener('exists', listener);
+client.emit('exists', { path: 'INBOX', count: 1, prevCount: 0 });
+client.emit('close');
+
+client.on('custom', (...args) => args.length);
+client.emit('custom', 1, 'two');
+client.off('custom', () => {});
+client.removeAllListeners('custom');
+client.listenerCount('custom');
+client.eventNames();
+`;
+
 // node16 is what an installed copy resolves through the exports map (as an ES module project
 // and as a CommonJS one), bundler is what the common front end tool chains use
 const node16 = { module: 'node16', moduleResolution: 'node16' };
@@ -325,19 +357,30 @@ const resolutions: Array<{ name: string; compilerOptions: { [key: string]: unkno
     { name: 'bundler resolution', compilerOptions: { module: 'esnext', moduleResolution: 'bundler' }, type: 'module' }
 ];
 
-// Type-checks a consumer against the built declarations in dist/ the way an installed copy
-// is resolved: the package is linked into a temporary project so that the specifiers go
-// through the package.json exports map
-const typeCheckConsumer = (source: string, compilerOptions: { [key: string]: unknown }, type?: string): void => {
+// Type-checks one or more consumer sources against the built declarations in dist/ the way
+// an installed copy is resolved: the package is linked into a temporary project so that the
+// specifiers go through the package.json exports map. nodeTypes is the @types/node the
+// consumer compiles with, the one of the repository by default
+const typeCheckConsumer = (
+    sources: string | string[],
+    compilerOptions: { [key: string]: unknown },
+    type?: string,
+    nodeTypes = path.join(root, 'node_modules', '@types', 'node')
+): void => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'imapflow-types-'));
     try {
         fs.mkdirSync(path.join(dir, 'node_modules'));
         // link the package itself and the node typings a real consumer has, so that
         // the specifiers resolve the way they do in an installed project
         fs.symlinkSync(root, path.join(dir, 'node_modules', 'imapflow'), 'dir');
-        fs.symlinkSync(path.join(root, 'node_modules', '@types'), path.join(dir, 'node_modules', '@types'), 'dir');
+        fs.mkdirSync(path.join(dir, 'node_modules', '@types'));
+        fs.symlinkSync(nodeTypes, path.join(dir, 'node_modules', '@types', 'node'), 'dir');
         fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'consumer', private: true, ...(type ? { type } : {}) }));
-        fs.writeFileSync(path.join(dir, 'consumer.ts'), source);
+        const files = (Array.isArray(sources) ? sources : [sources]).map((source, index) => {
+            const name = 'consumer' + index + '.ts';
+            fs.writeFileSync(path.join(dir, name), source);
+            return name;
+        });
         fs.writeFileSync(
             path.join(dir, 'tsconfig.json'),
             JSON.stringify({
@@ -352,7 +395,7 @@ const typeCheckConsumer = (source: string, compilerOptions: { [key: string]: unk
                     esModuleInterop: true,
                     ...compilerOptions
                 },
-                include: ['consumer.ts']
+                include: files
             })
         );
 
@@ -377,6 +420,18 @@ describe('Built package types', { timeout: 120 * 1000, skip: hasDist ? false : '
     it('type-checks a CommonJS consumer', () => {
         // no "type": "module" in the consumer package, so the file is a CommonJS module
         typeCheckConsumer(cjsConsumer, node16);
+    });
+
+    it('types the events through overloads and keeps the plain EventEmitter idioms', () => {
+        typeCheckConsumer(emitterConsumer, node16, 'module');
+    });
+
+    it('type-checks a consumer with the oldest @types/node of the supported Node line', () => {
+        // the alias predates the generic EventEmitter, which the declarations must not depend
+        // on: a consumer on such a release would lose every emitter method of the class
+        const events = fs.readFileSync(path.join(legacyNodeTypes, 'events.d.ts'), 'utf8');
+        assert.ok(!/class EventEmitter</.test(events), 'types-node-legacy has a generic EventEmitter, pin an older release');
+        typeCheckConsumer([consumer, emitterConsumer], node16, 'module', legacyNodeTypes);
     });
 
     it('does not leak module types the consumer does not have', () => {
