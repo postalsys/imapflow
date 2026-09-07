@@ -1,10 +1,8 @@
-'use strict';
-
-const fs = require('fs');
-const util = require('util');
-const os = require('os');
-const pathlib = require('path');
-const { ImapFlow } = require('../lib/imap-flow');
+import fs from 'node:fs';
+import util from 'node:util';
+import os from 'node:os';
+import pathlib from 'node:path';
+import { ImapFlow } from 'imapflow';
 
 console.log('VERSION');
 console.log(ImapFlow.version);

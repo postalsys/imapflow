@@ -17,11 +17,11 @@ npm run test:rev2
 
 Requires Docker. The script pulls `dovecot/dovecot:2.4.4`, starts a container
 with the drop-in config from `dovecot-test.conf`, waits for the IMAP greeting
-on `127.0.0.1:31143`, runs `rev2-live-test.js` with nodeunit, and always
-removes the container afterwards.
+on `127.0.0.1:31143`, runs `rev2-live-test.ts` with the Node.js test runner
+(through tsx), and always removes the container afterwards.
 
-These tests are intentionally not part of `npm test` - the Gruntfile nodeunit
-config excludes `test/integration/**`, so plain test runs stay Docker-free.
+These tests are intentionally not part of `npm test` - the test file list
+excludes `test/integration/**`, so plain test runs stay Docker-free.
 CI runs this suite in a dedicated `test-rev2` job on `ubuntu-latest` (amd64
 with Docker preinstalled), forcing `IMAPFLOW_DOVECOT_PLATFORM=linux/amd64` -
 that job is the authoritative linux/amd64 run, since Apple Silicon machines

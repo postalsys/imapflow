@@ -13,7 +13,8 @@ ImapFlow provides a clean, promise-based API for working with IMAP, so you don't
 - **Automatic IMAP extension handling** - CONDSTORE, QRESYNC, IDLE, COMPRESS, and [more](https://imapflow.com/docs/)
 - **Message streaming** - async iterators for efficient processing
 - **Mailbox locking** - built-in locking mechanism for safe concurrent access
-- **TypeScript support** - type definitions included
+- **TypeScript support** - written in TypeScript, type definitions included
+- **ES modules and CommonJS** - `import { ImapFlow } from 'imapflow'` and `const { ImapFlow } = require('imapflow')` both work
 - **Proxy support** - SOCKS and HTTP CONNECT proxies
 - **Gmail support** - labels, raw search via X-GM-EXT-1
 
@@ -23,10 +24,13 @@ ImapFlow provides a clean, promise-based API for working with IMAP, so you don't
 npm install imapflow
 ```
 
+ImapFlow requires Node.js 20 or newer. The package ships both an ES module build and a CommonJS build with bundled type declarations, so no separate `@types` package is needed.
+
 ## Quick Example
 
 ```js
-const { ImapFlow } = require('imapflow');
+import { ImapFlow } from 'imapflow';
+// or in CommonJS: const { ImapFlow } = require('imapflow');
 
 const client = new ImapFlow({
     host: 'imap.example.com',
