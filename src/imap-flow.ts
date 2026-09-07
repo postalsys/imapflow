@@ -4301,10 +4301,16 @@ export class ImapFlow extends EventEmitter<ImapFlowEvents> {
 
             return await this.runInternal(command, ...args);
         } finally {
-            if (command !== 'IDLE') {
-                // do not autostart IDLE, if IDLE itself was stopped
-                this.autoidle();
-            }
+            // Re-arm auto-IDLE after every command, IDLE included. autoidle() clears any prior
+            // timer and declines while the connection is busy or not SELECTED, so calling it
+            // unconditionally is safe and is the single place the invariant lives. IDLE was once
+            // carved out here on the theory that a command which broke it re-arms on its own way
+            // out - but that only holds when a command broke it. When an IDLE or poll session ends
+            // on its own (the server refused IDLE, ended it unsolicited, or a poll failed) this is
+            // the only thing that re-arms it; without it such a connection would go dark until the
+            // socket watchdog tore it down. When a command really did break IDLE, that command is
+            // still in flight at this point, so autoidle() declines here and re-arms once it ends.
+            this.autoidle();
         }
     }
 
