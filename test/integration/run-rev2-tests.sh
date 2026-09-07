@@ -72,4 +72,4 @@ for i in $(seq 1 30); do
 done
 
 cd "$PROJECT_DIR"
-IMAPFLOW_TEST_HOST=127.0.0.1 IMAPFLOW_TEST_PORT="$PORT" npx nodeunit test/integration/rev2-live-test.js
+IMAPFLOW_TEST_HOST=127.0.0.1 IMAPFLOW_TEST_PORT="$PORT" node --import tsx --test test/integration/rev2-live-test.ts

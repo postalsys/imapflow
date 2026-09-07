@@ -1,6 +1,4 @@
-'use strict';
-
-const { ImapFlow } = require('../lib/imap-flow');
+import { ImapFlow } from 'imapflow';
 
 let config = {
     host: 'ethereal.email',

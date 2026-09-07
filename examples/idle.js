@@ -1,7 +1,5 @@
-'use strict';
-
-const util = require('util');
-const { ImapFlow } = require('../lib/imap-flow');
+import util from 'node:util';
+import { ImapFlow } from 'imapflow';
 
 let config = {
     host: 'localhost',
