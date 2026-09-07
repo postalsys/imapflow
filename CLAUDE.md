@@ -80,6 +80,7 @@ Single file: `node --import tsx --test test/search-compiler-test.ts`.
 - `npm test` builds first (`pretest`), because `test/package/` loads the built `dist/` output through the `exports` map the way an installed copy is loaded. Keep the suite green and lint-clean before committing.
 - Tests use `describe`/`it` from `node:test` and `assert` from `node:assert/strict`. A test that completes inside a callback takes the `done` parameter (`it('...', (t, done) => { ... })`); an async test returns a promise. Module methods are stubbed with `t.mock.method()` on the imported module object, never by replacing the module.
 - The suite runs serially (`--test-concurrency=1`): several suites swap `globalThis.setTimeout` through `test/fixtures/fake-timers.ts`.
+- The `test` scripts pass `--test-force-exit`, so a test that leaves a socket or a server open still finishes with its result instead of hanging the run until the CI job timeout. Where cleanup is the point of a test, assert it explicitly (`test/timer-policy-test.ts`, `test/memory-leak-test.ts`), the flag does not report leaked handles.
 - New tests go in `test/` as `*-test.ts`. The parser, command compiler, and search compiler are the most security-sensitive areas - add hostile/malformed-input cases there.
 - `npm run test:rev2` starts a Dovecot 2.4 container (real IMAP4rev2 server) and runs `test/integration/rev2-live-test.ts` against it - use it to verify rev2-facing changes end to end, mocks alone are not enough.
 
