@@ -1,0 +1,13 @@
+{
+    // Test harness only, see test/cloudflare/cloudflare-test.ts. Never deployed.
+    "$schema": "../../node_modules/wrangler/config-schema.json",
+    "name": "imapflow-workers-test",
+    "main": "worker.ts",
+    "compatibility_date": "2026-09-01",
+    "compatibility_flags": ["nodejs_compat"],
+    "send_metrics": false,
+    "dev": {
+        "ip": "127.0.0.1",
+        "local_protocol": "http"
+    }
+}

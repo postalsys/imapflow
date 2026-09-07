@@ -64,6 +64,15 @@ const installFakeTimers = (): FakeTimers => {
             },
             ref() {
                 return this;
+            },
+            // Bun's net sockets keep their inactivity timer through the global setTimeout and
+            // call refresh() on the handle, Node's use an internal timer list
+            refresh() {
+                return this;
+            },
+            hasRef() {
+                const timer = timers.get(id);
+                return !!timer && !timer.unrefd;
             }
         };
     };

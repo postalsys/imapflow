@@ -32,6 +32,42 @@ jobs:
             - run: npm run format:check
             - run: npm test
 
+    # The library is used from Bun as well: the ES module build and the same test
+    # suite are run under the latest Bun release
+    bun:
+        name: Test (Bun latest)
+        timeout-minutes: 15
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - name: Use Node.js 24.x
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24.x
+                  cache: npm
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+            - run: npm install
+            - run: npm run test:bun
+
+    # The ES module build on the Cloudflare Workers runtime: wrangler starts a local
+    # workerd with test/cloudflare/worker.ts, which runs IMAP sessions against an
+    # in-process mock server and against Ethereal over TLS
+    test-workers:
+        name: Cloudflare Workers (workerd)
+        timeout-minutes: 15
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - name: Use Node.js 24.x
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24.x
+                  cache: npm
+            - run: npm install
+            - run: npm run test:workers
+
     test-rev2:
         # Live IMAP4rev2 integration tests against a real Dovecot 2.4 server in
         # Docker on linux/amd64 (ubuntu runners are amd64 with Docker preinstalled).

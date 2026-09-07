@@ -27,12 +27,12 @@ declarations. Both `import { ImapFlow } from 'imapflow'` and
 - `src/vendor-types.d.ts` - Minimal ambient declarations for the runtime dependencies that ship without types (libmime, libqp, libbase64, encoding-japanese)
 - `scripts/build.js` - The build: generates `src/package-info.ts`, runs `tsc` with `tsconfig.esm.json` and `tsconfig.cjs.json`, writes a `package.json` with the module format into each output directory, and rewrites CommonJS modules that only have a default export so `require()` returns the function or class itself
 - `dist/` - Build output, gitignored; it is what gets published to npm (`src/` is not part of the package)
-- `test/` - TypeScript tests (`*-test.ts`), run with `node --import tsx --test`. `test/fixtures/` holds shared helpers, `test/package/` checks the built `dist/` output and its type declarations, `test/integration/` needs Docker
+- `test/` - TypeScript tests (`*-test.ts`), run with `node --import tsx --test`. `test/fixtures/` holds shared helpers, `test/package/` checks the built `dist/` output and its type declarations, `test/integration/` needs Docker, `test/cloudflare/` runs the build on workerd through wrangler (its own job, see below)
 - `examples/` - Standalone usage examples (not production code, not linted)
 
 ## Technology Stack
 
-- **Runtime**: Node.js 20 or newer (`engines.node`), CI tests on 20.x, 22.x and 24.x
+- **Runtime**: Node.js 20 or newer (`engines.node`), CI tests on 20.x, 22.x and 24.x. The ES module build is also supported on Bun (latest release, full suite in CI) and on Cloudflare Workers with `nodejs_compat` (see "Other runtimes" below)
 - **Language**: TypeScript (`tsconfig.base.json`: strict, `exactOptionalPropertyTypes`, `noImplicitOverride`, `erasableSyntaxOnly`, `isolatedModules`), compiled twice from the same sources
 - **Testing**: Node.js test runner (`node:test`) through `tsx`, coverage with c8
 - **Lint/format**: ESLint with typescript-eslint (`eslint.config.js`, flat config) + Prettier; `npm run lint` also runs the type-check
@@ -51,6 +51,8 @@ npm run format        # Format with Prettier (js, cjs, ts, json, md, yml, yaml)
 npm run format:check  # Prettier check
 npm run update        # Refresh deps: remove node_modules + lockfile, ncu -u, npm install
 npm run test:rev2     # Live IMAP4rev2 tests against Dovecot in Docker (see test/integration/)
+npm run test:bun      # Build, then run the same suite under Bun (needs bun on PATH)
+npm run test:workers  # Build, then run test/cloudflare/ on a local Cloudflare Workers runtime through wrangler
 ```
 
 Single file: `node --import tsx --test test/search-compiler-test.ts`.
@@ -73,12 +75,19 @@ Single file: `node --import tsx --test test/search-compiler-test.ts`.
 
 ## Testing
 
-- Tests live in `test/` and are named `*-test.ts`; `npm test` runs every such file except `test/integration/**`, which needs Docker and runs only via `npm run test:rev2`.
+- Tests live in `test/` and are named `*-test.ts`; `npm test` runs every such file except `test/integration/**` (needs Docker, `npm run test:rev2`) and `test/cloudflare/**` (needs workerd, `npm run test:workers`).
 - `npm test` builds first (`pretest`), because `test/package/` loads the built `dist/` output through the `exports` map the way an installed copy is loaded. Keep the suite green and lint-clean before committing.
 - Tests use `describe`/`it` from `node:test` and `assert` from `node:assert/strict`. A test that completes inside a callback takes the `done` parameter (`it('...', (t, done) => { ... })`); an async test returns a promise. Module methods are stubbed with `t.mock.method()` on the imported module object, never by replacing the module.
 - The suite runs serially (`--test-concurrency=1`): several suites swap `globalThis.setTimeout` through `test/fixtures/fake-timers.ts`.
 - New tests go in `test/` as `*-test.ts`. The parser, command compiler, and search compiler are the most security-sensitive areas - add hostile/malformed-input cases there.
 - `npm run test:rev2` starts a Dovecot 2.4 container (real IMAP4rev2 server) and runs `test/integration/rev2-live-test.ts` against it - use it to verify rev2-facing changes end to end, mocks alone are not enough.
+
+## Other runtimes
+
+- **Bun**: `npm run test:bun` runs the whole suite (package tests included) with `bun test`, which understands the `node:test` imports and runs every file in one process. CI runs it on the latest Bun release; older Bun versions are not a target. `test/fixtures/fake-timers.ts` gives its fake handles `refresh()` and `hasRef()` because Bun's sockets keep their inactivity timer through the global `setTimeout`. A test that spawns a child runtime must skip the tsx loader when `process.versions.bun` is set.
+- **Cloudflare Workers**: `npm run test:workers` builds `dist/`, then `test/cloudflare/cloudflare-test.ts` starts `wrangler dev` (a local workerd with `nodejs_compat`) on `test/cloudflare/worker.ts`, which imports the ES module build and runs a session against the scenario it is posted. Cases cover cleartext, COMPRESS=DEFLATE (`node:zlib`), the default pino logger, and implicit TLS against a throwaway Ethereal account (skipped when the account API is unreachable). `worker.ts` is excluded from the type-check because it imports the build output. Wrangler keeps its state in `.wrangler/` (gitignored).
+- Workers limitations, documented in the README and pinned by the harness: workerd refuses `tls.rejectUnauthorized: false` (`ERR_OPTION_NOT_IMPLEMENTED`), returns `null` from `getCipher()` (normalized to `false` in `client.tls`), and can only upgrade a socket to TLS when no read is pending on it, which an asynchronous STARTTLS exchange can not guarantee, so a STARTTLS upgrade fails there with `tlsFailed` set. Its `process.nextTick` is a microtask, so a `'readable'` event can fire while the reader loop is still winding down; the loop re-checks the parser buffer after it ends (`test/runtime-compat-test.ts`).
+- Keep `src/` free of runtime detection. Portability is achieved by not relying on Node-only ordering or on socket features that other runtimes stub (`setKeepAlive` is a no-op on workerd), and every such spot gets a test in `test/runtime-compat-test.ts`.
 
 ## Packaging Constraints (IMPORTANT)
 
