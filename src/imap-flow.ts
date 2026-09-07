@@ -237,14 +237,21 @@ export type ImapSocket = net.Socket & {
  */
 export type WriteSocket = (ImapSocket | PassThrough) & { destroySoon?: (() => void) | undefined };
 
-/** Handler for an untagged response, registered per command or on the connection */
+/**
+ * Handler for an untagged response, registered per command or on the connection
+ * @internal
+ */
 export type UntaggedHandler = (untagged: ImapResponse, ...args: any[]) => Promise<any> | void;
 
-/** Handler for a response code section such as `[CAPABILITY ...]` */
+/**
+ * Handler for a response code section such as `[CAPABILITY ...]`
+ * @internal
+ */
 export type SectionHandler = (section: ImapAttributeList) => Promise<void> | void;
 
 /**
  * Options for `ImapFlow#exec()`
+ * @internal
  */
 export interface ExecOptions {
     /** Comment logged next to the command */
@@ -260,6 +267,7 @@ export interface ExecOptions {
 /**
  * The settled result of `ImapFlow#exec()`. `next()` must be called once the handler has
  * applied the response, it releases the dispatch of the next queued command.
+ * @internal
  */
 export interface ExecResponse {
     response: ImapResponse;
@@ -268,7 +276,10 @@ export interface ExecResponse {
     hasTrailingData?: boolean | undefined;
 }
 
-/** A command waiting to be written, or in flight */
+/**
+ * A command waiting to be written, or in flight
+ * @internal
+ */
 export interface QueuedRequest {
     tag: string;
     command: string;
@@ -278,7 +289,10 @@ export interface QueuedRequest {
     sent?: boolean | undefined;
 }
 
-/** The promise side of a queued request */
+/**
+ * The promise side of a queued request
+ * @internal
+ */
 export interface PendingRequest {
     command: string;
     attributes: ImapCompileNode[] | false | undefined;
@@ -292,7 +306,10 @@ interface ThrottleWaitEntry {
     timer?: NodeJS.Timeout | undefined;
 }
 
-/** A queued or held mailbox lock */
+/**
+ * A queued or held mailbox lock
+ * @internal
+ */
 export interface MailboxLockEntry {
     resolve: (lock: MailboxLockObject) => void;
     reject: (err: Error) => void;
@@ -424,32 +441,52 @@ export class ImapFlow extends EventEmitter {
     /** Server name for SNI, or false when connecting to an IP literal */
     servername: string | false;
 
-    /** Normalized socket inactivity timeout in milliseconds */
+    /**
+     * Normalized socket inactivity timeout in milliseconds
+     * @internal
+     */
     socketTimeout: number;
 
-    /** Log raw socket traffic in base64 */
+    /**
+     * Log raw socket traffic in base64
+     * @internal
+     */
     logRaw: boolean | undefined;
 
-    /** The response parser stream */
+    /**
+     * The response parser stream
+     * @internal
+     */
     streamer: ImapStream;
 
-    /** Whether the reader loop is running */
+    /**
+     * Whether the reader loop is running
+     * @internal
+     */
     reading: boolean;
 
-    /** The socket carrying the session: `false` before connecting, `null` once closed */
+    /**
+     * The socket carrying the session: `false` before connecting, `null` once closed
+     * @internal
+     */
     socket: ImapSocket | false | null;
 
-    /** Where outgoing bytes are written, see {@link WriteSocket} */
+    /**
+     * Where outgoing bytes are written, see {@link WriteSocket}
+     * @internal
+     */
     writeSocket: WriteSocket | false | null;
 
     // In-flight throttle back-offs (see throttleWait()). Tracked as a set because more than
     // one can be pending at a time: the reader's connection-level back-off and a command
     // retrying its own throttled request. close() clears them all.
+    /** @internal */
     _throttleWaits: Set<ThrottleWaitEntry>;
 
     // Pending rejector of the in-flight STARTTLS upgrade promise (see upgradeToSTARTTLS()).
     // Stored so emitError() can route a streamer-originated error into the upgrade's single
     // error path instead of dropping it (which could hang a verifyOnly connect()).
+    /** @internal */
     _upgradeReject: ((err: Error) => void) | null;
 
     /** Set once `close()` has run */
@@ -461,11 +498,16 @@ export class ImapFlow extends EventEmitter {
     /** Current connection state, one of `states` */
     state: ConnectionState;
 
+    /** @internal */
     lockCounter: number;
 
+    /** @internal */
     tagCounter: number;
+    /** @internal */
     requestTagMap: Map<string, PendingRequest>;
+    /** @internal */
     requestQueue: QueuedRequest[];
+    /** @internal */
     currentRequest: QueuedRequest | false;
 
     // Count of tagged responses whose tag was never issued by this connection. Tolerated
@@ -473,12 +515,18 @@ export class ImapFlow extends EventEmitter {
     // countUnknownTag() can be revisited with field data instead of guesses. Warnings are
     // emitted at the milestones below (1, 2, 4, 8, ...) so the count stays exact without
     // turning a spraying server into a log flood.
+    /** @internal */
     _unknownTagCount: number;
+    /** @internal */
     _nextUnknownTagWarn: number;
 
+    /** @internal */
     writeBytesCounter: number;
 
-    /** Remaining parts of the command being written: literal data and continuations */
+    /**
+     * Remaining parts of the command being written: literal data and continuations
+     * @internal
+     */
     commandParts: Buffer[];
 
     // Whether the command currently being written carries credentials. send() sets this for
@@ -486,6 +534,7 @@ export class ImapFlow extends EventEmitter {
     // it; every write belongs to the command send() dispatched last, because trySend() keeps
     // one command in flight at a time. The initial value only covers a write before the
     // first command, which no current path performs. See write().
+    /** @internal */
     rawSensitiveCommand: boolean;
 
     /**
@@ -494,16 +543,24 @@ export class ImapFlow extends EventEmitter {
      */
     capabilities: Map<string, boolean | number>;
 
-    /** Advertised AUTH= mechanisms, `true` for the one that was used */
+    /**
+     * Advertised AUTH= mechanisms, `true` for the one that was used
+     * @internal
+     */
     authCapabilities: Map<string, boolean>;
 
-    /** The capability list as the server sent it */
+    /**
+     * The capability list as the server sent it
+     * @internal
+     */
     rawCapabilities: ImapAttributeList | null | undefined;
 
+    /** @internal */
     expectCapabilityUpdate: boolean;
 
     // Set true if the server sent data after the STARTTLS OK and before the TLS
     // handshake (a plaintext-injection signal). See upgradeToSTARTTLS().
+    /** @internal */
     _starttlsHadTrailingData: boolean;
 
     /**
@@ -527,7 +584,10 @@ export class ImapFlow extends EventEmitter {
      */
     mailbox: MailboxObject | false;
 
-    /** The SELECT/EXAMINE command that opened the current mailbox, for re-selecting */
+    /**
+     * The SELECT/EXAMINE command that opened the current mailbox, for re-selecting
+     * @internal
+     */
     currentSelectCommand: SelectCommand | false;
 
     /**
@@ -535,58 +595,94 @@ export class ImapFlow extends EventEmitter {
      */
     idling: boolean;
 
+    /** Whether log entries are also emitted as 'log' events, see the `emitLogs` option */
     emitLogs: boolean;
     // ordering number for emitted logs
+    /** @internal */
     lo: number;
 
+    /** @internal */
     untaggedHandlers: { [command: string]: UntaggedHandler | null | undefined };
+    /** @internal */
     sectionHandlers: { [key: string]: SectionHandler | null | undefined };
 
+    /** @internal */
     commands: Map<string, CommandHandler>;
 
-    /** Mailboxes from the last LIST, keyed by path */
+    /**
+     * Mailboxes from the last LIST, keyed by path
+     * @internal
+     */
     folders: Map<string, ListResponse>;
 
+    /** @internal */
     currentLock: MailboxLockEntry | false;
+    /** @internal */
     locks: MailboxLockEntry[];
 
+    /** @internal */
     idRequested: IdInfoObject | false;
 
+    /** @internal */
     maxIdleTime: number | false;
+    /** @internal */
     autoIdleDelay: number;
 
     // Wall-clock time of the last fallback poll, owned by commands/idle.ts
+    /** @internal */
     _lastPollAt: number;
 
     // Download streams still fetching chunks. Counted, not a flag, so overlapping downloads
     // cannot clear each other's suppression of auto-IDLE.
+    /** @internal */
     _openDownloads: number;
+    /** @internal */
     missingIdleCommand: string;
 
+    /** @internal */
     disableBinary: boolean;
 
     // Set when the server rejects a LIST RETURN option group, the auxiliary
     // SPECIAL-USE/CHILDREN return options, or the LSUB command, so later
     // listings on this connection skip what the server does not support
+    /** @internal */
     skipListSubscribedArg: boolean;
+    /** @internal */
     skipListStatusArgs: boolean;
+    /** @internal */
     skipListAuxArgs: boolean;
+    /** @internal */
     skipLsub: boolean;
 
+    /** @internal */
     _streamerErrorHandler: ((err: ImapFlowError) => void) | null;
 
     // Has the `connect` method already been called
+    /** @internal */
     _connectCalled: boolean;
 
     // State that is only set later in the connection's life
-    /** Whether a STARTTLS upgrade is in progress */
+    /**
+     * Whether a STARTTLS upgrade is in progress
+     * @internal
+     */
     declare upgrading: boolean | undefined;
-    /** Settles the pending `connect()` promise, see `beginSession()` */
+    /**
+     * Settles the pending `connect()` promise, see `beginSession()`
+     * @internal
+     */
     declare initialResolve: (() => void) | false | undefined;
+    /** @internal */
     declare initialReject: ((err: Error) => void) | false | undefined;
-    /** Breaks an active IDLE before the next command, installed by commands/idle.ts */
+    /**
+     * Breaks an active IDLE before the next command, installed by commands/idle.ts
+     * @internal
+     */
     declare preCheck: (() => Promise<void>) | false | undefined;
-    /** Token of the IDLE or polling session that owns `idling`, see commands/idle.ts */
+    /**
+     * Token of the IDLE or polling session that owns `idling`, see commands/idle.ts
+     * @internal
+     */
     declare _idleSession: object | null | undefined;
     /** The personal namespace, from the NAMESPACE command */
     declare namespace: NamespaceObject | undefined;
@@ -598,22 +694,42 @@ export class ImapFlow extends EventEmitter {
     declare byeReason: string | undefined;
     /** Negotiated TLS session details, `false` for a cleartext connection */
     declare tls: TlsInfo | false | undefined;
-    /** The DEFLATE stream for outgoing data once COMPRESS is active */
+    /**
+     * The DEFLATE stream for outgoing data once COMPRESS is active
+     * @internal
+     */
     declare _deflate: zlib.DeflateRaw | null | undefined;
-    /** The INFLATE stream for incoming data once COMPRESS is active */
+    /**
+     * The INFLATE stream for incoming data once COMPRESS is active
+     * @internal
+     */
     declare _inflate: zlib.InflateRaw | null | undefined;
+    /** @internal */
     declare connectTimeout: NodeJS.Timeout | null | undefined;
+    /** @internal */
     declare greetingTimeout: NodeJS.Timeout | null | undefined;
+    /** @internal */
     declare upgradeTimeout: NodeJS.Timeout | null | undefined;
+    /** @internal */
     declare idleStartTimer: NodeJS.Timeout | null | undefined;
+    /** @internal */
     declare socketReadable: (() => void) | undefined;
+    /** @internal */
     declare _connectErrorHandler: ((err: Error) => void) | null | undefined;
+    /** @internal */
     declare _socketError: ((err: Error) => void) | null | undefined;
+    /** @internal */
     declare _socketClose: (() => void) | null | undefined;
+    /** @internal */
     declare _socketEnd: (() => void) | null | undefined;
+    /** @internal */
     declare _socketTimeout: (() => void) | null | undefined;
+    /** @internal */
     declare processingLock: boolean | undefined;
-    /** Mailbox listing collected by a `verifyOnly` connection with `includeMailboxes` */
+    /**
+     * Mailbox listing collected by a `verifyOnly` connection with `includeMailboxes`
+     * @internal
+     */
     declare _mailboxList: ListResponse[] | undefined;
 
     constructor(options?: ImapFlowOptions | undefined) {
@@ -770,6 +886,7 @@ export class ImapFlow extends EventEmitter {
         this._connectCalled = false;
     }
 
+    /** @internal */
     emitError(err: ImapFlowError | null | undefined): void {
         if (!err) {
             return;
@@ -810,6 +927,7 @@ export class ImapFlow extends EventEmitter {
         this.emit('error', err);
     }
 
+    /** @internal */
     getRandomId(): string {
         let rid = BigInt('0x' + crypto.randomBytes(13).toString('hex')).toString(36);
         if (rid.length < 20) {
@@ -821,6 +939,7 @@ export class ImapFlow extends EventEmitter {
         return rid;
     }
 
+    /** @internal */
     write(chunk: string | Buffer): void | false {
         if (!this.socket || this.socket.destroyed) {
             // do not write after connection end or logout
@@ -908,6 +1027,7 @@ export class ImapFlow extends EventEmitter {
     // and once as a string (for logging, with sensitive data masked).
     // When LITERAL- or LITERAL+ extensions are available, the compiler can use
     // non-synchronizing literals to avoid waiting for server "+" continuation.
+    /** @internal */
     async send(data: QueuedRequest): Promise<void> {
         if (this.state === this.states.LOGOUT) {
             // already logged out
@@ -979,6 +1099,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async trySend(): Promise<void> {
         while (!this.currentRequest && this.requestQueue.length) {
             this.currentRequest = this.requestQueue.shift() as QueuedRequest;
@@ -1004,6 +1125,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     exec(command: string, attributes?: ImapCompileNode[] | false | undefined, options?: ExecOptions | undefined): Promise<ExecResponse> {
         if (this.state === this.states.LOGOUT || this.isClosed) {
             return guardedReject(this.createNoConnectionError(false, { rejectedFrom: 'execClosed', command }));
@@ -1036,6 +1158,7 @@ export class ImapFlow extends EventEmitter {
     // For numeric-prefixed responses the keyword sits in the first attribute, because `command`
     // holds the sequence number. Also used for logging, so a failure reports FETCH rather than
     // the message number that happened to precede it.
+    /** @internal */
     normalizeUntaggedCommand(command: string, attributes?: ImapAttributeList | undefined): string {
         if (/^[0-9]+$/.test(command)) {
             let type =
@@ -1052,6 +1175,7 @@ export class ImapFlow extends EventEmitter {
 
     // Handler priority: command-specific handlers (registered per exec() call) take
     // precedence over global handlers (registered on the connection).
+    /** @internal */
     getUntaggedHandler(command: string, attributes?: ImapAttributeList | undefined): UntaggedHandler | undefined {
         command = this.normalizeUntaggedCommand(command, attributes);
         // Check command-specific handler first (registered in exec() options.untagged)
@@ -1066,6 +1190,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     getSectionHandler(key: string): SectionHandler | undefined {
         if (this.sectionHandlers[key]) {
             return this.sectionHandlers[key];
@@ -1076,6 +1201,7 @@ export class ImapFlow extends EventEmitter {
     // backpressure token: until it is called, ImapStream stops feeding the connection. Every
     // path out of response handling - success, handled error, or unexpected throw - has to go
     // through here, otherwise the parser stalls permanently.
+    /** @internal */
     releaseStreamData(data: ImapStreamItem | null | undefined): void {
         if (!data || data.released) {
             return;
@@ -1091,6 +1217,7 @@ export class ImapFlow extends EventEmitter {
     // it must not pass silently. Warnings are emitted for the first occurrence and then at
     // powers of two so a server spraying stray tagged lines cannot flood the log, while the
     // counter itself stays exact and is reported when the connection closes.
+    /** @internal */
     countUnknownTag(tag: string): void {
         if (this.isClosed) {
             // teardown crossover, not a server compatibility signal
@@ -1113,6 +1240,7 @@ export class ImapFlow extends EventEmitter {
     // steps are explicit here rather than destroying the parser *with* the error and relying on
     // its error listener to report, so the reporting path does not depend on teardown ordering or
     // on the streamer error handler's suppression list.
+    /** @internal */
     failProtocol(err: ImapFlowError): void {
         if (this.streamer && !this.streamer.destroyed) {
             // Destroyed without an error: nothing after a protocol violation may reach
@@ -1124,6 +1252,7 @@ export class ImapFlow extends EventEmitter {
 
     // Rejects the in-flight request, if any, exactly once. Used when response handling fails in
     // a way that leaves the command's outcome unknown.
+    /** @internal */
     rejectCurrentRequest(err: Error): void {
         if (!this.currentRequest) {
             return;
@@ -1148,6 +1277,7 @@ export class ImapFlow extends EventEmitter {
      *
      * @param delay - Requested delay in milliseconds.
      * @returns True if close() aborted the wait, false on normal expiry.
+     * @internal
      */
     async throttleWait(delay: number): Promise<boolean> {
         delay = Math.min(Math.max(Number(delay) || 0, 0), MAX_THROTTLE_DELAY);
@@ -1163,6 +1293,7 @@ export class ImapFlow extends EventEmitter {
         });
     }
 
+    /** @internal */
     async reader(): Promise<void> {
         let data: ImapStreamItem | null;
         let processedCount = 0;
@@ -1207,6 +1338,7 @@ export class ImapFlow extends EventEmitter {
      *
      * @param payload - Raw bytes of the line that failed to parse.
      * @param parserError - The error the parser raised.
+     * @internal
      */
     rejectUnparsedCompletion(payload: Buffer, parserError: ImapFlowError): void {
         if (!this.currentRequest || !this.currentRequest.sent) {
@@ -1240,6 +1372,7 @@ export class ImapFlow extends EventEmitter {
      *
      * @param data - Readable item from the parser stream.
      * @returns `true` to keep reading, `false` to stop (connection is failing).
+     * @internal
      */
     async handleResponse(data: ImapStreamItem): Promise<boolean> {
         let parsed: ImapResponse;
@@ -1426,6 +1559,7 @@ export class ImapFlow extends EventEmitter {
      * @param request - Pending request entry (resolve/reject and the compiled command).
      * @param parsed - Parsed tagged response.
      * @param hasTrailingData - Whether more input was already buffered after this line.
+     * @internal
      */
     async settleRequest(request: PendingRequest, parsed: ImapResponse, hasTrailingData: boolean): Promise<void> {
         switch ((parsed.command || '').toUpperCase()) {
@@ -1522,6 +1656,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     setEventHandlers(): void {
         // Bind the 'readable' event to kick off the reader loop.
         // The `this.reading` flag acts as a concurrency guard: if reader()
@@ -1559,6 +1694,7 @@ export class ImapFlow extends EventEmitter {
      * to end up with no armed timer at all).
      *
      * @param socket - The socket that now carries the IMAP session.
+     * @internal
      */
     configureSocket(socket: ImapSocket | false | null | undefined): void {
         /* c8 ignore next 3 */ // defensive: connect() only calls this with an established socket
@@ -1575,6 +1711,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     setSocketHandlers(): void {
         // Clear any existing handlers first to prevent duplicates
         this.clearSocketHandlers();
@@ -1647,6 +1784,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     clearSocketHandlers(): void {
         if (!this.socket) {
             return;
@@ -1676,6 +1814,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async startSession(): Promise<void> {
         await this.run('CAPABILITY');
 
@@ -1725,6 +1864,7 @@ export class ImapFlow extends EventEmitter {
     // Enable extensions if possible. IMAP4rev2 must be enabled explicitly on
     // servers that advertise both rev1 and rev2 (RFC 9051 Appendix A); a single
     // ENABLE call is used so the enabled set is built in one round trip.
+    /** @internal */
     async autoEnable(): Promise<void> {
         let enableList = ['CONDSTORE', 'UTF8=ACCEPT'].concat(this.options.qresync ? 'QRESYNC' : []).concat(this.options.disableIMAP4rev2 ? [] : 'IMAP4rev2');
         let enableResult = await this.run('ENABLE', enableList);
@@ -1739,6 +1879,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async compress(): Promise<void> {
         if (!(await this.run('COMPRESS'))) {
             return; // was not able to negotiate compression
@@ -1865,6 +2006,7 @@ export class ImapFlow extends EventEmitter {
         });
     }
 
+    /** @internal */
     _failSTARTTLS(): false {
         if (this.options.doSTARTTLS === true) {
             // STARTTLS configured as requirement
@@ -2109,6 +2251,7 @@ export class ImapFlow extends EventEmitter {
         return upgraded;
     }
 
+    /** @internal */
     async setAuthenticationState(): Promise<void> {
         this.state = this.states.AUTHENTICATED;
         this.authenticated = true;
@@ -2118,6 +2261,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async authenticate(): Promise<boolean> {
         if (this.state === this.states.LOGOUT) {
             throw new AuthenticationFailure('Already logged out');
@@ -2173,6 +2317,7 @@ export class ImapFlow extends EventEmitter {
         throw new AuthenticationFailure('No matching authentication method');
     }
 
+    /** @internal */
     beginSession(onUnhandledError: (err: Error) => void): void {
         clearTimer(this.greetingTimeout);
         this.untaggedHandlers.OK = null;
@@ -2207,6 +2352,7 @@ export class ImapFlow extends EventEmitter {
             });
     }
 
+    /** @internal */
     async initialOK(message: ImapResponse): Promise<void> {
         this.greeting = (message.attributes || [])
             .filter(entry => (entry as ImapAttributeNode).type === 'TEXT')
@@ -2218,6 +2364,7 @@ export class ImapFlow extends EventEmitter {
         this.beginSession(err => this.emitError(err));
     }
 
+    /** @internal */
     async initialPREAUTH(): Promise<void> {
         if (this.isClosed) {
             return;
@@ -2232,6 +2379,7 @@ export class ImapFlow extends EventEmitter {
         });
     }
 
+    /** @internal */
     async serverBye(parsed: ImapResponse): Promise<void> {
         // Extract BYE reason from response for better error messages
         let reason =
@@ -2252,12 +2400,14 @@ export class ImapFlow extends EventEmitter {
     // public surface external consumers read, so a discard (RFC 9051 6.2.1 requires
     // one after STARTTLS) that missed it would leave the stale list visible if the
     // re-fetch fails.
+    /** @internal */
     clearCapabilities(): void {
         this.capabilities.clear();
         this.authCapabilities.clear();
         this.rawCapabilities = null;
     }
 
+    /** @internal */
     updateCapabilitiesFromRaw(rawCapabilities: ImapAttributeList | null | undefined): void {
         this.rawCapabilities = rawCapabilities;
         this.capabilities = updateCapabilities(rawCapabilities);
@@ -2275,14 +2425,17 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async sectionCapability(section: ImapAttributeList): Promise<void> {
         this.updateCapabilitiesFromRaw(section);
     }
 
+    /** @internal */
     async untaggedCapability(untagged: ImapResponse): Promise<void> {
         this.updateCapabilitiesFromRaw(untagged.attributes);
     }
 
+    /** @internal */
     async untaggedExists(untagged: ImapResponse): Promise<void> {
         if (!this.mailbox) {
             // mailbox closed, ignore
@@ -2318,6 +2471,7 @@ export class ImapFlow extends EventEmitter {
 
     // Reports one expunged message, either through the caller's expungeHandler or as an
     // 'expunge' event. Shared by the EXPUNGE and VANISHED paths so the two cannot drift.
+    /** @internal */
     async notifyExpunge(payload: ExpungeEvent): Promise<void> {
         if (typeof this.options.expungeHandler !== 'function') {
             this.emit('expunge', payload);
@@ -2332,6 +2486,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async untaggedExpunge(untagged: ImapResponse): Promise<void> {
         if (!this.mailbox) {
             // mailbox closed, ignore
@@ -2356,6 +2511,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async untaggedVanished(untagged: ImapResponse, mailbox?: MailboxObject | false | undefined): Promise<void> {
         mailbox = mailbox || this.mailbox;
         if (!mailbox) {
@@ -2395,6 +2551,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async untaggedFetch(untagged: ImapResponse, mailbox?: MailboxObject | false | undefined): Promise<void> {
         mailbox = mailbox || this.mailbox;
         if (!mailbox) {
@@ -2427,6 +2584,7 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    /** @internal */
     async ensureSelectedMailbox(path: string | string[] | undefined): Promise<MailboxObject | boolean> {
         if (!path) {
             return false;
@@ -2442,6 +2600,7 @@ export class ImapFlow extends EventEmitter {
     // Normalizes a message range from various input formats into an IMAP-compatible
     // sequence string (e.g., "1:5,7,10:*"). Handles: numbers, "*", {all:true},
     // {uid:value}, search query objects (resolved via SEARCH), and arrays of numbers.
+    /** @internal */
     async resolveRange(range: MessageRange, options: { uid?: boolean | undefined; [key: string]: any }): Promise<string | false> {
         let value: any = range;
 
@@ -2493,6 +2652,7 @@ export class ImapFlow extends EventEmitter {
     // `missingIdleCommand` set to SELECT or STATUS, a mailbox poll - between two of that
     // caller's own commands. Every one of those states ends by calling autoidle() again, so
     // declining while busy postpones IDLE, it never cancels it.
+    /** @internal */
     connectionBusy(): boolean {
         return !!(this.currentLock || this.locks.length || this.currentRequest || this.requestQueue.length || this._openDownloads);
     }
@@ -2502,6 +2662,7 @@ export class ImapFlow extends EventEmitter {
     // (auto-IDLE, IDLE restart, fallback polling, throttle back-off, the held-lock diagnostic) are
     // unref'd, so an otherwise idle process is not held open by them. Every timer is still cleared
     // explicitly on close().
+    /** @internal */
     autoidle(): void {
         clearTimer(this.idleStartTimer);
         if (this.options.disableAutoIdle || this.state !== this.states.SELECTED) {
@@ -2728,12 +2889,14 @@ export class ImapFlow extends EventEmitter {
     }
 
     // Connection-scoped wrapper around the shared stamping helper; see buildConnectionError().
+    /** @internal */
     createConnectionError(code: string, message: string, meta?: ConnectionErrorSite | undefined): ImapFlowError {
         return buildConnectionError(this.id, code, message, meta);
     }
 
     // The standard "connection not available" error, optionally annotated with the server's BYE
     // reason. Single source of truth so every NoConnection rejection is consistent.
+    /** @internal */
     createNoConnectionError(byeReason?: string | false | null | undefined, meta?: ConnectionErrorSite | undefined): ImapFlowError {
         const error = this.createConnectionError('NoConnection', 'Connection not available', meta);
         if (byeReason) {
@@ -4308,6 +4471,7 @@ export class ImapFlow extends EventEmitter {
         return data as DownloadManyResult;
     }
 
+    /** @internal */
     async run(command: string, ...args: any[]): Promise<any> {
         command = command.toUpperCase();
         if (!this.commands.has(command)) {
@@ -4356,6 +4520,7 @@ export class ImapFlow extends EventEmitter {
      * @param args Arguments forwarded to the command implementation.
      * @returns Whatever the command implementation returns, or `false` for an
      *   unknown command.
+     * @internal
      */
     async runInternal(command: string, ...args: any[]): Promise<any> {
         command = command.toUpperCase();
@@ -4375,6 +4540,7 @@ export class ImapFlow extends EventEmitter {
     // is active at a time. When the active lock is released, the next queued
     // lock is processed. The `processingLock` flag prevents concurrent runs
     // of this method (which could happen via setImmediate re-entry from release()).
+    /** @internal */
     async processLocks(): Promise<void> {
         const wasProcessing = this.processingLock;
         if (wasProcessing) {
@@ -4634,6 +4800,7 @@ export class ImapFlow extends EventEmitter {
         return lockPromise;
     }
 
+    /** @internal */
     getLogger(): InternalLogger {
         let mainLogger: { [key: string]: any } =
             this.options.logger && typeof this.options.logger === 'object'
