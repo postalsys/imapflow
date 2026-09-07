@@ -1497,18 +1497,29 @@ export class ImapFlow extends EventEmitter<ImapFlowEvents> {
         // The `this.reading` flag acts as a concurrency guard: if reader()
         // is already running, new 'readable' events are ignored. The reader
         // loop will keep draining data until the stream returns null.
-        this.socketReadable = () => {
+        const onReadable = () => {
             if (!this.reading) {
                 this.reading = true;
                 this.reader()
                     .catch(err => this.log.error({ err, cid: this.id }))
                     .finally(() => {
                         this.reading = false;
+                        // A 'readable' event that fired while the loop was winding down was
+                        // ignored by the guard above. Node emits the event on the next tick,
+                        // after this handler has run, but a runtime that implements nextTick
+                        // as a microtask (Cloudflare Workers) emits it before, and the response
+                        // the parser had pushed in the meantime would then sit unread until the
+                        // next chunk arrives - or, for the last response of an exchange, until
+                        // the socket times out. Anything already buffered is picked up here.
+                        if (this.streamer && !this.streamer.destroyed && this.streamer.readableLength > 0) {
+                            onReadable();
+                        }
                     });
             }
         };
+        this.socketReadable = onReadable;
 
-        this.streamer.on('readable', this.socketReadable);
+        this.streamer.on('readable', onReadable);
     }
 
     /**
@@ -1975,61 +1986,73 @@ export class ImapFlow extends EventEmitter<ImapFlowEvents> {
             /* c8 ignore stop */
 
             this.upgrading = true;
-            const tlsSocket: ImapSocket = tls.connect(opts, () => {
-                try {
-                    /* c8 ignore start */ // race: connection closed during the TLS handshake window
-                    if (this.isClosed) {
-                        return settle(this.createNoConnectionError(false, { rejectedFrom: 'tlsUpgrade' }));
+            let tlsSocket: ImapSocket;
+            try {
+                tlsSocket = tls.connect(opts, () => {
+                    try {
+                        /* c8 ignore start */ // race: connection closed during the TLS handshake window
+                        if (this.isClosed) {
+                            return settle(this.createNoConnectionError(false, { rejectedFrom: 'tlsUpgrade' }));
+                        }
+                        /* c8 ignore stop */
+
+                        // TLS handshake complete. Reconnect the now-encrypted socket
+                        // to the IMAP parser stream and record the cipher details.
+                        this.secureConnection = true;
+                        this.streamer.secureConnection = true;
+                        tlsSocket.pipe(this.streamer);
+                        // Cloudflare Workers expose getCipher() but return null from it, so the
+                        // result is normalized to the documented `false`
+                        /* c8 ignore next */ // on Node an upgraded TLS socket always answers getCipher(), so the false fallback is unreachable
+                        this.tls = (typeof tlsSocket.getCipher === 'function' && tlsSocket.getCipher()) || false;
+                        if (this.tls) {
+                            this.tls.authorized = tlsSocket.authorized;
+                            this.log.info({
+                                src: 'tls',
+                                msg: 'Established TLS session',
+                                cid: this.id,
+                                authorized: this.tls.authorized,
+                                /* c8 ignore next */ // cipher.standardName is present on modern Node, so the .name fallback rarely runs
+                                algo: this.tls.standardName || this.tls.name,
+                                version: this.tls.version
+                            });
+                        }
+
+                        // The plain socket is now only the TLS transport: drop its superseded
+                        // inactivity timer so no armed timer is left behind without a listener.
+                        if (typeof socketPlain.setTimeout === 'function') {
+                            socketPlain.setTimeout(0);
+                        }
+
+                        // Install the normal socket handlers only now that the handshake
+                        // succeeded. Doing this during the handshake would leave both settle() and
+                        // the generic _socketError on the socket; a handshake 'error' would then fire
+                        // BOTH (EventEmitter clones its listener array on emit), causing a duplicate
+                        // error and a possible unhandled 'error' crash. Keeping settle() as the sole
+                        // listener until here guarantees a single error path for the upgrade.
+                        this.setSocketHandlers();
+
+                        // Arm the inactivity watchdog on the socket that now carries the session.
+                        // Without this a STARTTLS-upgraded connection has no watchdog at all: the
+                        // timer was armed on the plain socket, while the timeout listener lives on
+                        // the TLS socket.
+                        this.configureSocket(this.socket);
+
+                        // settle() also removes the temporary handshake handlers
+                        settle(null, true);
+                        /* c8 ignore next 3 */ // defensive: the success callback body does not throw under normal operation
+                    } catch (ex) {
+                        this.emitError(ex as ImapFlowError);
                     }
-                    /* c8 ignore stop */
-
-                    // TLS handshake complete. Reconnect the now-encrypted socket
-                    // to the IMAP parser stream and record the cipher details.
-                    this.secureConnection = true;
-                    this.streamer.secureConnection = true;
-                    tlsSocket.pipe(this.streamer);
-                    /* c8 ignore next */ // an upgraded TLS socket always exposes getCipher(), so the false fallback is unreachable
-                    this.tls = typeof tlsSocket.getCipher === 'function' ? tlsSocket.getCipher() : false;
-                    if (this.tls) {
-                        this.tls.authorized = tlsSocket.authorized;
-                        this.log.info({
-                            src: 'tls',
-                            msg: 'Established TLS session',
-                            cid: this.id,
-                            authorized: this.tls.authorized,
-                            /* c8 ignore next */ // cipher.standardName is present on modern Node, so the .name fallback rarely runs
-                            algo: this.tls.standardName || this.tls.name,
-                            version: this.tls.version
-                        });
-                    }
-
-                    // The plain socket is now only the TLS transport: drop its superseded
-                    // inactivity timer so no armed timer is left behind without a listener.
-                    if (typeof socketPlain.setTimeout === 'function') {
-                        socketPlain.setTimeout(0);
-                    }
-
-                    // Install the normal socket handlers only now that the handshake
-                    // succeeded. Doing this during the handshake would leave both settle() and
-                    // the generic _socketError on the socket; a handshake 'error' would then fire
-                    // BOTH (EventEmitter clones its listener array on emit), causing a duplicate
-                    // error and a possible unhandled 'error' crash. Keeping settle() as the sole
-                    // listener until here guarantees a single error path for the upgrade.
-                    this.setSocketHandlers();
-
-                    // Arm the inactivity watchdog on the socket that now carries the session.
-                    // Without this a STARTTLS-upgraded connection has no watchdog at all: the
-                    // timer was armed on the plain socket, while the timeout listener lives on
-                    // the TLS socket.
-                    this.configureSocket(this.socket);
-
-                    // settle() also removes the temporary handshake handlers
-                    settle(null, true);
-                    /* c8 ignore next 3 */ // defensive: the success callback body does not throw under normal operation
-                } catch (ex) {
-                    this.emitError(ex as ImapFlowError);
-                }
-            });
+                });
+            } catch (err) {
+                // tls.connect() refused the upgrade before any handshake (an option the runtime
+                // does not implement, a socket it can not wrap). Settled through the same path
+                // as a handshake failure, so the upgrade state and its timer are cleared and
+                // the error is marked as a TLS failure rather than escaping the executor.
+                settle(err as ImapFlowError);
+                return;
+            }
             this.socket = tlsSocket;
 
             // Registered after tls.connect (the TLS socket now exists). This is the ONLY
@@ -2583,7 +2606,7 @@ export class ImapFlow extends EventEmitter<ImapFlowEvents> {
                     }, this.options.greetingTimeout || GREETING_TIMEOUT);
 
                     const connected = this.socket as ImapSocket;
-                    this.tls = typeof connected.getCipher === 'function' ? connected.getCipher() : false;
+                    this.tls = (typeof connected.getCipher === 'function' && connected.getCipher()) || false;
 
                     let logInfo: { [key: string]: any } = {
                         src: 'connection',

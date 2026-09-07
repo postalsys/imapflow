@@ -26,6 +26,8 @@ npm install imapflow
 
 ImapFlow requires Node.js 20 or newer. The package ships both an ES module build and a CommonJS build with bundled type declarations, so no separate `@types` package is needed.
 
+The ES module build also runs on [Bun](https://bun.sh/) (tested against the latest release) and on [Cloudflare Workers](https://developers.cloudflare.com/workers/) with the `nodejs_compat` compatibility flag. On Workers connect with implicit TLS (`secure: true`, usually port 993) or in cleartext: the runtime can not upgrade an already connected socket, so a STARTTLS negotiation fails with a TLS error, and it does not allow turning certificate validation off, so `tls: { rejectUnauthorized: false }` is rejected with `ERR_OPTION_NOT_IMPLEMENTED`. COMPRESS=DEFLATE, IDLE and the default pino logger work as on Node.js.
+
 ## Quick Example
 
 ```js
