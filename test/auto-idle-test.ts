@@ -425,4 +425,127 @@ describe('auto-idle', () => {
 
         client.close();
     });
+
+    // ============================================================================
+    // re-arming auto-IDLE after a session that ended on its own
+    //
+    // run() skips its own auto-IDLE re-arm for the IDLE command, on the assumption that a user
+    // command broke IDLE and will re-arm on its way out. That assumption fails for a session that
+    // ended by itself: a server that refused IDLE with a tagged NO, one that ended IDLE with an
+    // unsolicited tagged OK, or a poll that failed. The idle command re-arms auto-IDLE in a
+    // finally so such a session does not leave the connection with no IDLE, no poll and no timer -
+    // dark until the socket watchdog tears it down as dead.
+    // ============================================================================
+    it('Auto-IDLE: a server-refused IDLE re-arms the timer', async () => {
+        await withFakeTimers(async timers => {
+            let client = makeIdleReadyClient({ autoIdleDelay: 300 });
+            client.capabilities = new Map([['IDLE', true]]);
+            // The server rejects IDLE with a tagged NO, so exec('IDLE') rejects and the IDLE
+            // session ends without any command having broken it.
+            client.exec = async (command: any) => {
+                if (command === 'IDLE') {
+                    let err: any = new Error('IDLE not allowed');
+                    err.responseStatus = 'NO';
+                    throw err;
+                }
+                return { next() {} };
+            };
+
+            await client.run('IDLE', false);
+
+            let armed = timers.pending().filter((t: any) => t.delay === 300);
+            assert.equal(armed.length, 1, 'auto-IDLE is re-armed after the server refused IDLE');
+
+            client.close();
+        });
+    });
+    it('Auto-IDLE: a server-ended IDLE re-arms the timer', async () => {
+        await withFakeTimers(async timers => {
+            let client = makeIdleReadyClient({ autoIdleDelay: 300 });
+            client.capabilities = new Map([['IDLE', true]]);
+            // The server ends IDLE with a tagged OK we never asked for: exec('IDLE') resolves
+            // although no DONE was sent and no command requested a break.
+            client.exec = async () => ({ next() {}, response: { attributes: [] } });
+
+            await client.run('IDLE', false);
+
+            let armed = timers.pending().filter((t: any) => t.delay === 300);
+            assert.equal(armed.length, 1, 'auto-IDLE is re-armed after the server ended IDLE on its own');
+
+            client.close();
+        });
+    });
+    it('Auto-IDLE: a failed poll re-arms the timer', async () => {
+        await withFakeTimers(async timers => {
+            let client = makeIdleReadyClient({ autoIdleDelay: 300 });
+            // No IDLE capability -> the polling fallback runs instead.
+            client.capabilities = new Map([['IMAP4rev1', true]]);
+            client.currentSelectCommand = { command: 'SELECT', arguments: [{ type: 'ATOM', value: 'INBOX' }] };
+            client.missingIdleCommand = 'NOOP';
+            // The first poll fails, which cancels the loop the same way a dead socket would.
+            client.exec = async (command: any) => {
+                if (command === 'NOOP') {
+                    throw new Error('poll failed');
+                }
+                return { next() {} };
+            };
+
+            await client.run('IDLE', false);
+
+            let armed = timers.pending().filter((t: any) => t.delay === 300);
+            assert.equal(armed.length, 1, 'auto-IDLE is re-armed after a failed poll');
+
+            client.close();
+        });
+    });
+    it('Auto-IDLE: an active poll loop does not arm the timer early', async () => {
+        await withFakeTimers(async timers => {
+            let client = makeIdleReadyClient({ autoIdleDelay: 300 });
+            client.capabilities = new Map([['IMAP4rev1', true]]);
+            client.currentSelectCommand = { command: 'SELECT', arguments: [{ type: 'ATOM', value: 'INBOX' }] };
+            client.missingIdleCommand = 'NOOP';
+            // Every poll succeeds, so the loop keeps running and never reaches the finally. The
+            // re-arm must not fire while polling is still live (the awaited fallback guards this).
+            client.exec = async () => ({ next() {} });
+
+            // maxIdleTime bounds the interval so the next poll is a distinctly-sized timer.
+            let idlePromise = client.run('IDLE', 60000);
+            // Let the first poll run and schedule the next one.
+            await drainImmediate();
+            await drainImmediate();
+
+            assert.equal(timers.pending().filter((t: any) => t.delay === 300).length, 0, 'no auto-IDLE timer while the poll loop is still running');
+            assert.equal(timers.pending().filter((t: any) => t.delay === 60000).length, 1, 'the next poll is scheduled');
+
+            // Break the loop; only now may auto-IDLE re-arm.
+            await client.preCheck();
+            await idlePromise;
+            assert.equal(timers.pending().filter((t: any) => t.delay === 300).length, 1, 'auto-IDLE re-arms once the loop ends');
+
+            client.close();
+        });
+    });
+    it('Auto-IDLE: a session that ends during teardown does not arm the timer', async () => {
+        await withFakeTimers(async timers => {
+            let client = makeIdleReadyClient({ autoIdleDelay: 300 });
+            client.capabilities = new Map([['IDLE', true]]);
+            // The connection leaves SELECTED (as close() does synchronously) before the IDLE
+            // session unwinds. autoidle() must decline, so no timer is left armed on a dead client.
+            client.exec = async (command: any) => {
+                if (command === 'IDLE') {
+                    client.state = client.states.LOGOUT;
+                    let err: any = new Error('connection gone');
+                    err.responseStatus = 'NO';
+                    throw err;
+                }
+                return { next() {} };
+            };
+
+            await client.run('IDLE', false);
+
+            assert.equal(timers.pending().filter((t: any) => t.delay === 300).length, 0, 'auto-IDLE stays disarmed once the connection is no longer SELECTED');
+
+            client.close();
+        });
+    });
 });
