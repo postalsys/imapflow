@@ -75,6 +75,7 @@
         "globals": "17.12.0",
         "prettier": "3.9.6",
         "tsx": "4.23.13",
+        "types-node-legacy": "npm:@types/node@20.0.0",
         "typescript": "6.0.3",
         "typescript-eslint": "8.69.0",
         "wrangler": "4.129.0"

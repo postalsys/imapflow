@@ -355,10 +355,40 @@ const normalizeAutoIdleDelay = (value: unknown, socketTimeout: number, log: Inte
     return Math.floor(delay);
 };
 
+// The class extends the plain EventEmitter rather than EventEmitter<ImapFlowEvents>: the
+// generic form only exists in @types/node 20.11.21 and later, and a consumer on an older
+// release would lose every emitter method of the class. Each method gets an overload generic
+// over ImapFlowEvents, which types the listener from the event name, plus the string
+// catch-all of the base class, so that an event outside the map still compiles.
+
+/**
+ * Typed event overloads of the {@link ImapFlow} class, see {@link ImapFlowEvents}
+ */
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+export interface ImapFlow {
+    on<K extends keyof ImapFlowEvents>(event: K, listener: (...args: ImapFlowEvents[K]) => void): this;
+    on(event: string | symbol, listener: (...args: any[]) => void): this;
+    once<K extends keyof ImapFlowEvents>(event: K, listener: (...args: ImapFlowEvents[K]) => void): this;
+    once(event: string | symbol, listener: (...args: any[]) => void): this;
+    off<K extends keyof ImapFlowEvents>(event: K, listener: (...args: ImapFlowEvents[K]) => void): this;
+    off(event: string | symbol, listener: (...args: any[]) => void): this;
+    addListener<K extends keyof ImapFlowEvents>(event: K, listener: (...args: ImapFlowEvents[K]) => void): this;
+    addListener(event: string | symbol, listener: (...args: any[]) => void): this;
+    removeListener<K extends keyof ImapFlowEvents>(event: K, listener: (...args: ImapFlowEvents[K]) => void): this;
+    removeListener(event: string | symbol, listener: (...args: any[]) => void): this;
+    prependListener<K extends keyof ImapFlowEvents>(event: K, listener: (...args: ImapFlowEvents[K]) => void): this;
+    prependListener(event: string | symbol, listener: (...args: any[]) => void): this;
+    prependOnceListener<K extends keyof ImapFlowEvents>(event: K, listener: (...args: ImapFlowEvents[K]) => void): this;
+    prependOnceListener(event: string | symbol, listener: (...args: any[]) => void): this;
+    emit<K extends keyof ImapFlowEvents>(event: K, ...args: ImapFlowEvents[K]): boolean;
+    emit(event: string | symbol, ...args: any[]): boolean;
+}
+
 /**
  * IMAP client class for accessing IMAP mailboxes
  */
-export class ImapFlow extends EventEmitter<ImapFlowEvents> {
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+export class ImapFlow extends EventEmitter {
     /**
      * Current module version as a static class property
      */
