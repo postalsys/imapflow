@@ -96,7 +96,9 @@ export default {
                 result.tls = client.tls;
             }
             result.steps.push('connect');
-            result.compressed = !!client._deflate;
+            // COMPRESS is active once the DEFLATE stream exists, an internal member that the
+            // shipped declarations strip
+            result.compressed = !!(client as unknown as { _deflate?: unknown })._deflate;
 
             const list = await client.list();
             result.list = list.map(entry => entry.path);

@@ -350,6 +350,22 @@ client.listenerCount('custom');
 client.eventNames();
 `;
 
+// The internals of the client are stripped from the declarations (`@internal` plus
+// stripInternal): the members and helper types the hand-written imap-flow.d.ts never
+// declared exist at runtime but must not type-check for a consumer
+const internalConsumer = `
+import { ImapFlow } from 'imapflow';
+import type { ExecOptions } from 'imapflow';
+
+const client = new ImapFlow({ host: 'localhost', auth: { user: 'user', pass: 'pass' }, logger: false });
+client.requestTagMap.clear();
+client.exec('NOOP');
+client.handleResponse();
+client.streamer.pause();
+client._deflate;
+const options: ExecOptions = {};
+`;
+
 // node16 is what an installed copy resolves through the exports map (as an ES module project
 // and as a CommonJS one), bundler is what the common front end tool chains use
 const node16 = { module: 'node16', moduleResolution: 'node16' };
@@ -362,12 +378,14 @@ const resolutions: Array<{ name: string; compilerOptions: { [key: string]: unkno
 // Type-checks one or more consumer sources against the built declarations in dist/ the way
 // an installed copy is resolved: the package is linked into a temporary project so that the
 // specifiers go through the package.json exports map. nodeTypes is the @types/node the
-// consumer compiles with, the one of the repository by default
+// consumer compiles with, the one of the repository by default. With expectedErrors the
+// consumer must fail to compile, and every listed message must be among the errors
 const typeCheckConsumer = (
     sources: string | string[],
     compilerOptions: { [key: string]: unknown },
     type?: string,
-    nodeTypes = path.join(root, 'node_modules', '@types', 'node')
+    nodeTypes = path.join(root, 'node_modules', '@types', 'node'),
+    expectedErrors?: string[]
 ): void => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'imapflow-types-'));
     try {
@@ -402,7 +420,15 @@ const typeCheckConsumer = (
         );
 
         const result = spawnSync(process.execPath, [tsc, '-p', path.join(dir, 'tsconfig.json')], { encoding: 'utf8' });
-        assert.strictEqual(result.status, 0, 'tsc reported\n' + result.stdout + result.stderr);
+        const output = result.stdout + result.stderr;
+        if (expectedErrors) {
+            assert.notStrictEqual(result.status, 0, 'tsc accepted a consumer that must not compile');
+            for (const expected of expectedErrors) {
+                assert.ok(output.includes(expected), 'tsc did not report "' + expected + '"\n' + output);
+            }
+            return;
+        }
+        assert.strictEqual(result.status, 0, 'tsc reported\n' + output);
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -422,6 +448,17 @@ describe('Built package types', { timeout: 120 * 1000, skip: hasDist ? false : '
     it('type-checks a CommonJS consumer', () => {
         // no "type": "module" in the consumer package, so the file is a CommonJS module
         typeCheckConsumer(cjsConsumer, node16);
+    });
+
+    it('strips the internal members and helper types from the declarations', () => {
+        typeCheckConsumer(internalConsumer, node16, 'module', undefined, [
+            "Property 'requestTagMap' does not exist on type 'ImapFlow'",
+            "Property 'exec' does not exist on type 'ImapFlow'",
+            "Property 'handleResponse' does not exist on type 'ImapFlow'",
+            "Property 'streamer' does not exist on type 'ImapFlow'",
+            "Property '_deflate' does not exist on type 'ImapFlow'",
+            "Module '\"imapflow\"' has no exported member 'ExecOptions'"
+        ]);
     });
 
     it('types the events through overloads and keeps the plain EventEmitter idioms', () => {
