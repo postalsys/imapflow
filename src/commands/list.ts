@@ -103,8 +103,10 @@ export default async function list(
         // advertisement alone (not hasCapability/isRev2Active): the staged retry below
         // handles servers that advertise but reject RETURN options, so the wider gate
         // is safe for anything it covers, while gates without a retry ladder stay
-        // conservative.
-        let supportsExtendedList = connection.capabilities.has('LIST-EXTENDED') || connection.capabilities.has('IMAP4rev2');
+        // conservative. The rev2 advertisement stops counting once the session has
+        // been told not to act on it (skipRev2), because the ladder costs one rejected
+        // command per stage and a server that has disowned rev2 may not grant that many.
+        let supportsExtendedList = connection.capabilities.has('LIST-EXTENDED') || (connection.capabilities.has('IMAP4rev2') && !connection.skipRev2);
 
         // RETURN options for the LIST command. Servers occasionally advertise the
         // extensions but still reject RETURN options - the staged retry below then

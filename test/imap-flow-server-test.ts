@@ -872,6 +872,73 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
+    it('Server: rev2 advertised next to rev1 but ENABLE rejected - listing stays plain and inside the error budget', async () => {
+        // Exchange Online, 2026-09: the mailbox backend advertises ENABLE and IMAP4rev2
+        // next to IMAP4rev1, answers ENABLE IMAP4REV2 and every LIST with RETURN options
+        // with BAD, and closes the connection after three rejected commands. The one
+        // rejection the client cannot avoid is the ENABLE; the listing must then go
+        // straight to a plain LIST plus LSUB instead of walking the RETURN option ladder
+        let rejections = 0;
+        let lists = 0;
+        let lsubs = 0;
+        const reject = (ctx: any) => {
+            ctx.bad('Command Argument Error. 12');
+            if (++rejections >= 3) {
+                ctx.write('* BYE Connection closed. 14\r\n');
+                ctx.socket.end();
+            }
+        };
+        let server = createServer({
+            capabilities: 'IMAP4rev1 ID ENABLE NAMESPACE IMAP4rev2 CHILDREN',
+            handlers: {
+                ENABLE: reject,
+                LIST(ctx: any) {
+                    if (/\bRETURN\b/i.test(ctx.args)) {
+                        return reject(ctx);
+                    }
+                    lists++;
+                    ctx.write('* LIST (\\HasNoChildren) "/" INBOX\r\n');
+                    ctx.write('* LIST (\\HasNoChildren) "/" "Sent Items"\r\n');
+                    ctx.ok('LIST completed');
+                },
+                LSUB(ctx: any) {
+                    lsubs++;
+                    ctx.write('* LSUB (\\HasNoChildren) "/" INBOX\r\n');
+                    ctx.ok('LSUB completed');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port);
+        let errors: any[] = [];
+        client.on('error', err => errors.push(err));
+
+        await client.connect();
+        assert.ok(client.usable, 'the rejected ENABLE does not cost the session');
+        assert.equal(client.skipRev2, true);
+        assert.equal(client.enabled.has('IMAP4REV2'), false);
+        assert.ok(client.capabilities.has('IMAP4rev2'), 'the advertisement stays on record as what the server said');
+
+        for (let round = 1; round <= 2; round++) {
+            let listing = await client.list();
+            assert.ok(
+                listing.some(entry => entry.path === 'INBOX'),
+                `INBOX listed on round ${round}`
+            );
+            assert.equal(listing.find(entry => entry.path === 'INBOX')!.subscribed, true, 'LSUB answered the subscription state');
+        }
+
+        // Every LIST carrying RETURN options and every ENABLE counts as a rejection, so
+        // one is the ENABLE and the ladder was never walked
+        assert.equal(rejections, 1);
+        assert.equal(lists, 2, 'one plain LIST per listing');
+        assert.equal(lsubs, 2);
+        assert.equal(errors.length, 0);
+
+        await client.logout();
+        client.close();
+        server.close();
+    });
     it('Server: unsolicited STATUS for another mailbox is tolerated', async () => {
         // RFC 9051 (Appendix E item 20): with rev2, servers may push updates that are
         // unrelated to the selected mailbox (e.g. a STATUS for another mailbox during

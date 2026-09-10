@@ -104,7 +104,7 @@ export interface ImapFlowOptions {
     disableBinary?: boolean | undefined;
     /** If true, do not enable supported extensions */
     disableAutoEnable?: boolean | undefined;
-    /** If true, do not enable IMAP4rev2 mode even if the server supports it */
+    /** If true, do not enable IMAP4rev2 mode even if the server advertises it, and do not treat the advertisement as support for anything IMAP4rev2 implies, such as the extended LIST syntax */
     disableIMAP4rev2?: boolean | undefined;
     /**
      * How long to wait for a usable transport, covering DNS resolution, proxy negotiation and the

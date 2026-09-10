@@ -90,6 +90,7 @@ const createMockConnection = (overrides = {}) => {
         skipListStatusArgs: false,
         skipListAuxArgs: false,
         skipLsub: false,
+        skipRev2: false,
         messageFlagsAdd: (overrides as any).messageFlagsAdd || (async () => {}),
         // Mirrors ImapFlow.throttleWait(): resolves false on normal expiry, true when close()
         // aborted the wait. The mock resolves immediately so throttle retries stay fast.
@@ -3924,6 +3925,72 @@ describe('commands-integration', () => {
         const inbox = result.find(e => e.path === 'INBOX');
         assert.ok(inbox);
         assert.equal(inbox.subscribed, true);
+    });
+    it('Commands: list keeps RETURN (SUBSCRIBED) on a rev1 session that still advertises IMAP4rev2', async () => {
+        // Advertised next to IMAP4rev1 and never enabled - the session is rev1, but the
+        // advertisement still says the server understands the extended LIST syntax, and
+        // the retry ladder covers a server that does not
+        let lsubCalled = false;
+        let listAttrs: any = false;
+        const connection: any = createMockConnection({
+            state: 3,
+            capabilities: new Map([
+                ['IMAP4rev1', true],
+                ['IMAP4rev2', true]
+            ]),
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                if (cmd === 'LSUB') {
+                    lsubCalled = true;
+                }
+                if (cmd === 'LIST') {
+                    listAttrs = attrs;
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\Subscribed' }, { value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                    });
+                }
+                return { next: () => {} };
+            }
+        });
+
+        const result = await listCommand(connection, '', '*');
+        assert.ok(JSON.stringify(listAttrs).includes('SUBSCRIBED'));
+        assert.equal(lsubCalled, false);
+        assert.equal(result.find(e => e.path === 'INBOX')!.subscribed, true);
+    });
+    it('Commands: list sends a plain LIST once the IMAP4rev2 advertisement is disowned', async () => {
+        // skipRev2 is set when the server rejected ENABLE IMAP4REV2 (or the caller opted
+        // out): the advertisement no longer stands in for LIST-EXTENDED, so no RETURN
+        // options are tried and subscription state comes from LSUB
+        let lsubCalled = false;
+        let listCalls: any[] = [];
+        const connection: any = createMockConnection({
+            state: 3,
+            capabilities: new Map([
+                ['IMAP4rev1', true],
+                ['IMAP4rev2', true],
+                ['CHILDREN', true]
+            ]),
+            skipRev2: true,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                if (cmd === 'LSUB') {
+                    lsubCalled = true;
+                    await opts.untagged.LSUB({ attributes: [[], { value: '/' }, { value: 'INBOX' }] });
+                }
+                if (cmd === 'LIST') {
+                    listCalls.push(attrs);
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'INBOX' }]
+                    });
+                }
+                return { next: () => {} };
+            }
+        });
+
+        const result = await listCommand(connection, '', '*');
+        assert.equal(listCalls.length, 1);
+        assert.equal(listCalls[0].length, 2, 'no RETURN options');
+        assert.equal(lsubCalled, true);
+        assert.equal(result.find(e => e.path === 'INBOX')!.subscribed, true);
     });
     it('Commands: list listOnly does not add RETURN args on IMAP4rev2', async () => {
         let listAttrs: any = false;

@@ -619,6 +619,7 @@ describe('imap-flow-methods', () => {
         await client.autoEnable();
         assert.equal(calls.length, 1);
         assert.deepEqual(calls[0], ['ENABLE', ['CONDSTORE', 'UTF8=ACCEPT']]);
+        assert.equal(client.skipRev2, true, 'the option also keeps the advertisement from being acted on elsewhere');
     });
     it('Methods: autoEnable includes QRESYNC when requested', async () => {
         let client = makeClient({ qresync: true });
@@ -643,6 +644,44 @@ describe('imap-flow-methods', () => {
         await client.autoEnable();
         assert.equal(calls.length, 1);
     });
+    it('Methods: autoEnable stops acting on the IMAP4rev2 advertisement when the server rejects ENABLE over it', async () => {
+        // Advertised next to IMAP4rev1, so the rejection leaves an IMAP4rev1 session
+        // behind - and a server that rejects the ENABLE it advertised is not going to
+        // honor the rev2 syntax either
+        let client = makeClient();
+        client.capabilities = new Map([
+            ['IMAP4rev1', true],
+            ['IMAP4rev2', true],
+            ['ENABLE', true]
+        ]);
+        let calls = recordRun(client, () => false);
+        await client.autoEnable();
+        assert.equal(calls.length, 2);
+        assert.equal(client.skipRev2, true);
+        // The advertisement itself stays on record - it is what the server said
+        assert.ok(client.capabilities.has('IMAP4rev2'));
+    });
+    for (let { title, capabilities } of [
+        {
+            // Without IMAP4rev1 there is nothing to fall back to: rev2 is the base protocol
+            // of the session whether or not the ENABLE was accepted (RFC 9051 Appendix A)
+            title: 'on a rev2-only server',
+            capabilities: [['IMAP4rev2', true] as const, ['ENABLE', true] as const]
+        },
+        {
+            // No advertisement, so the rejection was about another extension
+            title: 'when the rejected ENABLE never carried it',
+            capabilities: [['IMAP4rev1', true] as const, ['ENABLE', true] as const, ['CONDSTORE', true] as const]
+        }
+    ]) {
+        it(`Methods: autoEnable keeps acting on IMAP4rev2 ${title}`, async () => {
+            let client = makeClient();
+            client.capabilities = new Map(capabilities);
+            recordRun(client, () => false);
+            await client.autoEnable();
+            assert.equal(client.skipRev2, false);
+        });
+    }
     it('Methods: untaggedExpunge refuses an unusable sequence number', async () => {
         // Same bound untaggedExists() applies: an overflowing or non-decimal value must not
         // decrement the live message count

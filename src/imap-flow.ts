@@ -35,6 +35,7 @@ import {
     expandRange,
     getColorFlags,
     hasCapability,
+    isRev2Active,
     logConnectionError,
     unrefTimer,
     clearTimer,
@@ -654,6 +655,17 @@ export class ImapFlow extends EventEmitter {
     /** @internal */
     skipLsub: boolean;
 
+    // Set when the IMAP4rev2 advertisement is not to be acted on: the caller opted
+    // out (disableIMAP4rev2), or the server rejected ENABLE IMAP4REV2 while also
+    // advertising IMAP4rev1. Either way the session is IMAP4rev1, so nothing may
+    // treat the advertisement as a promise of rev2 syntax such as LIST RETURN.
+    // Exchange Online started advertising IMAP4rev2 this way in 2026-09: it answers
+    // ENABLE IMAP4REV2 and every LIST with RETURN options with BAD, and closes the
+    // connection after three rejected commands, so a LIST retry ladder that still
+    // trusted the advertisement supplied the second and third
+    /** @internal */
+    skipRev2: boolean;
+
     /** @internal */
     _streamerErrorHandler: ((err: ImapFlowError) => void) | null;
 
@@ -867,6 +879,7 @@ export class ImapFlow extends EventEmitter {
         this.skipListStatusArgs = false;
         this.skipListAuxArgs = false;
         this.skipLsub = false;
+        this.skipRev2 = !!this.options.disableIMAP4rev2;
 
         // Named error handler for proper cleanup. Certain error codes represent
         // expected socket/network issues (buffer exhaustion, connection reset, broken pipe,
@@ -1866,9 +1879,15 @@ export class ImapFlow extends EventEmitter {
     // ENABLE call is used so the enabled set is built in one round trip.
     /** @internal */
     async autoEnable(): Promise<void> {
-        let enableList = ['CONDSTORE', 'UTF8=ACCEPT'].concat(this.options.qresync ? 'QRESYNC' : []).concat(this.options.disableIMAP4rev2 ? [] : 'IMAP4rev2');
+        let enableList = ['CONDSTORE', 'UTF8=ACCEPT'].concat(this.options.qresync ? 'QRESYNC' : []).concat(this.skipRev2 ? [] : 'IMAP4rev2');
         let enableResult = await this.run('ENABLE', enableList);
         if (enableResult === false && enableList.includes('IMAP4rev2')) {
+            if (this.capabilities.has('IMAP4rev2') && !isRev2Active(this)) {
+                // The one command that would have made this a rev2 session was
+                // rejected, so it stays an IMAP4rev1 session (RFC 9051 Appendix A)
+                // with an advertisement the server does not implement - see skipRev2
+                this.skipRev2 = true;
+            }
             // RFC 5161 requires servers to ignore unknown ENABLE arguments, but a
             // broken implementation may reject the whole command over IMAP4rev2 -
             // retry without it so CONDSTORE/QRESYNC are not lost as collateral
