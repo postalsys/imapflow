@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/postalsys/imapflow/compare/v2.0.1...v2.0.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* skip LSUB once a server has rejected ENABLE over the IMAP4rev2 it advertises ([1c4bca2](https://github.com/postalsys/imapflow/commit/1c4bca2349ed05d5cb61a85abb4152630ceb3d73))
+
 ## [2.0.1](https://github.com/postalsys/imapflow/compare/v2.0.0...v2.0.1) (2026-09-10)
 
 
