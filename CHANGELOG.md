@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/postalsys/imapflow/compare/v2.0.0...v2.0.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* stop acting on an IMAP4rev2 advertisement once the server rejects ENABLE over it ([227355f](https://github.com/postalsys/imapflow/commit/227355fee56a10913af8feb8e52a74364eb90ca2))
+
 ## [2.0.0](https://github.com/postalsys/imapflow/compare/v1.7.8...v2.0.0) (2026-09-07)
 
 
