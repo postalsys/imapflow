@@ -661,8 +661,11 @@ export class ImapFlow extends EventEmitter {
     // treat the advertisement as a promise of rev2 syntax such as LIST RETURN.
     // Exchange Online started advertising IMAP4rev2 this way in 2026-09: it answers
     // ENABLE IMAP4REV2 and every LIST with RETURN options with BAD, and closes the
-    // connection after three rejected commands, so a LIST retry ladder that still
-    // trusted the advertisement supplied the second and third
+    // connection after three rejected commands in a session, so a LIST retry ladder
+    // that still trusted the advertisement supplied the second and third. The
+    // rejection also sets skipLsub: a server that advertises rev2 has dropped LSUB
+    // from that mode (RFC 9051), so LSUB is more likely a third rejection than an
+    // answer, and the listing assumes every folder subscribed instead
     /** @internal */
     skipRev2: boolean;
 
@@ -1887,6 +1890,7 @@ export class ImapFlow extends EventEmitter {
                 // rejected, so it stays an IMAP4rev1 session (RFC 9051 Appendix A)
                 // with an advertisement the server does not implement - see skipRev2
                 this.skipRev2 = true;
+                this.skipLsub = true;
             }
             // RFC 5161 requires servers to ignore unknown ENABLE arguments, but a
             // broken implementation may reject the whole command over IMAP4rev2 -

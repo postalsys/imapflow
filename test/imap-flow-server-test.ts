@@ -875,12 +875,13 @@ describe('imap-flow-server', () => {
     it('Server: rev2 advertised next to rev1 but ENABLE rejected - listing stays plain and inside the error budget', async () => {
         // Exchange Online, 2026-09: the mailbox backend advertises ENABLE and IMAP4rev2
         // next to IMAP4rev1, answers ENABLE IMAP4REV2 and every LIST with RETURN options
-        // with BAD, and closes the connection after three rejected commands. The one
-        // rejection the client cannot avoid is the ENABLE; the listing must then go
-        // straight to a plain LIST plus LSUB instead of walking the RETURN option ladder
+        // with BAD, and closes the connection after three rejected commands in a
+        // session. The one rejection the client cannot avoid is the ENABLE; the listing
+        // must then go straight to a plain LIST instead of walking the RETURN option
+        // ladder, and must not spend a second rejection on LSUB, which such a server
+        // (rev2 dropped it) rejects the same way
         let rejections = 0;
         let lists = 0;
-        let lsubs = 0;
         const reject = (ctx: any) => {
             ctx.bad('Command Argument Error. 12');
             if (++rejections >= 3) {
@@ -901,11 +902,7 @@ describe('imap-flow-server', () => {
                     ctx.write('* LIST (\\HasNoChildren) "/" "Sent Items"\r\n');
                     ctx.ok('LIST completed');
                 },
-                LSUB(ctx: any) {
-                    lsubs++;
-                    ctx.write('* LSUB (\\HasNoChildren) "/" INBOX\r\n');
-                    ctx.ok('LSUB completed');
-                }
+                LSUB: reject
             }
         });
         let port = await listen(server);
@@ -925,14 +922,16 @@ describe('imap-flow-server', () => {
                 listing.some(entry => entry.path === 'INBOX'),
                 `INBOX listed on round ${round}`
             );
-            assert.equal(listing.find(entry => entry.path === 'INBOX')!.subscribed, true, 'LSUB answered the subscription state');
+            assert.ok(
+                listing.every(entry => entry.subscribed),
+                `subscription state is unknowable here, so every folder is assumed subscribed on round ${round}`
+            );
         }
 
-        // Every LIST carrying RETURN options and every ENABLE counts as a rejection, so
-        // one is the ENABLE and the ladder was never walked
+        // ENABLE, every LIST carrying RETURN options and LSUB all count as rejections,
+        // so one means the ENABLE alone: the ladder was never walked and LSUB never sent
         assert.equal(rejections, 1);
         assert.equal(lists, 2, 'one plain LIST per listing');
-        assert.equal(lsubs, 2);
         assert.equal(errors.length, 0);
 
         await client.logout();

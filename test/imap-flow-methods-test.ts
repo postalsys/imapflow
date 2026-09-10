@@ -620,6 +620,7 @@ describe('imap-flow-methods', () => {
         assert.equal(calls.length, 1);
         assert.deepEqual(calls[0], ['ENABLE', ['CONDSTORE', 'UTF8=ACCEPT']]);
         assert.equal(client.skipRev2, true, 'the option also keeps the advertisement from being acted on elsewhere');
+        assert.equal(client.skipLsub, false, 'opting out of rev2 says nothing about LSUB');
     });
     it('Methods: autoEnable includes QRESYNC when requested', async () => {
         let client = makeClient({ qresync: true });
@@ -658,6 +659,9 @@ describe('imap-flow-methods', () => {
         await client.autoEnable();
         assert.equal(calls.length, 2);
         assert.equal(client.skipRev2, true);
+        // A server that advertises rev2 has dropped LSUB from that mode, so the
+        // listing does not spend another rejection finding that out
+        assert.equal(client.skipLsub, true);
         // The advertisement itself stays on record - it is what the server said
         assert.ok(client.capabilities.has('IMAP4rev2'));
     });
@@ -680,6 +684,7 @@ describe('imap-flow-methods', () => {
             recordRun(client, () => false);
             await client.autoEnable();
             assert.equal(client.skipRev2, false);
+            assert.equal(client.skipLsub, false);
         });
     }
     it('Methods: untaggedExpunge refuses an unusable sequence number', async () => {
