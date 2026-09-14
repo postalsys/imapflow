@@ -443,6 +443,41 @@ describe('imap-flow-fetch-download', () => {
         let data: any = await collect(content);
         assert.equal(data.toString(), 'ABCDABCDABCD');
     });
+    it('Download: stops after one fetch when the server ignores the partial spec', async () => {
+        // Some servers answer every partial request with the complete part, so
+        // the returned chunk is larger than chunkSize. Before the fix the loop
+        // kept advancing the offset by the full part size and never terminated
+        // because a short chunk never arrived.
+        let client = makeClient();
+        let calls = 0;
+        let whole = Buffer.from('ABCDEFG'); // 7 bytes, more than the 4 byte window
+        client.fetchOne = async () => {
+            calls++;
+            return { uid: 1, size: whole.length, source: whole };
+        };
+        let { content } = await client.download('1', false as any, { chunkSize: 4 });
+        let data: any = await collect(content);
+        assert.equal(data.toString(), 'ABCDEFG');
+        assert.equal(calls, 1);
+    });
+    it('Download: oversized body part stops after one fetch', async () => {
+        let client = makeClient();
+        let calls = 0;
+        let whole = Buffer.from('<html>oversized part</html>');
+        client.fetchOne = async () => {
+            calls++;
+            return {
+                uid: 1,
+                size: whole.length,
+                headers: Buffer.from('Content-Type: text/html\r\n\r\n'),
+                bodyParts: new Map([['text', whole]])
+            };
+        };
+        let { content } = await client.download('1', 'TEXT', { chunkSize: 8 });
+        let data: any = await collect(content);
+        assert.equal(data.toString(), whole.toString());
+        assert.equal(calls, 1);
+    });
     it('Download: initial chunk waits for drain when buffer full', async () => {
         let client = makeClient();
         let big = Buffer.alloc(64 * 1024, 0x61); // 64KB > default 16KB highWaterMark
