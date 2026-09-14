@@ -452,7 +452,10 @@ describe('imap-flow-fetch-download', () => {
         let calls = 0;
         let whole = Buffer.from('ABCDEFG'); // 7 bytes, more than the 4 byte window
         client.fetchOne = async () => {
-            calls++;
+            // Capped so a regression fails here instead of looping until the CI job times out
+            if (++calls > 3) {
+                throw new Error('download did not terminate');
+            }
             return { uid: 1, size: whole.length, source: whole };
         };
         let { content } = await client.download('1', false as any, { chunkSize: 4 });
@@ -465,7 +468,9 @@ describe('imap-flow-fetch-download', () => {
         let calls = 0;
         let whole = Buffer.from('<html>oversized part</html>');
         client.fetchOne = async () => {
-            calls++;
+            if (++calls > 3) {
+                throw new Error('download did not terminate');
+            }
             return {
                 uid: 1,
                 size: whole.length,
@@ -477,6 +482,60 @@ describe('imap-flow-fetch-download', () => {
         let data: any = await collect(content);
         assert.equal(data.toString(), whole.toString());
         assert.equal(calls, 1);
+    });
+    it('Download: repeated part the size of the window ends with an error', async () => {
+        // The narrow case the oversized-chunk test above does not cover: a server that ignores
+        // the partial spec and whose part happens to be exactly chunkSize bytes answers every
+        // window with a full-looking chunk, so neither the short-chunk nor the oversized-chunk
+        // exit ever fires. The size ceiling is the only thing left to end the loop, and it does
+        // so loudly rather than handing the caller a silently duplicated body.
+        let client = makeClient();
+        let calls = 0;
+        let whole = Buffer.from('ABCD'); // exactly the 4 byte window
+        client.fetchOne = async () => {
+            if (++calls > 20) {
+                throw new Error('download did not terminate');
+            }
+            return { uid: 1, size: 10, source: whole };
+        };
+        let { content } = await client.download('1', false as any, { chunkSize: 4 });
+        await assert.rejects(collect(content), (err: any) => err.code === 'DownloadOverflow');
+        // Pins the ceiling formula: 10 * 2 + 4 = 24 bytes of headroom, taken four at a time by
+        // the head fetch and five loop fetches
+        assert.equal(calls, 6);
+    });
+    it('Download: under-reported message size does not cut the download short', async () => {
+        // Servers that compute RFC822.SIZE on a different line ending form than they deliver
+        // report less than they send, which is why the ceiling carries slack. A download that
+        // legitimately runs past the reported size still has to complete.
+        let client = makeClient();
+        let body = Buffer.alloc(40, 0x61);
+        let fetchChunk = chunkedFetchOne(body);
+        client.fetchOne = async (range: any, query: any) => {
+            let response = await fetchChunk(range, query);
+            response.size = 20; // half of what the server actually delivers
+            return response;
+        };
+        let { content } = await client.download('1', false as any, { chunkSize: 8 });
+        let data: any = await collect(content);
+        assert.equal(data.length, body.length);
+    });
+    it('Download: a server that reports no size leaves the ceiling inert', async () => {
+        // The ceiling is derived from RFC822.SIZE. A server that reports none leaves nothing to
+        // bound the loop with, so the download runs on the short-chunk exit alone and still has
+        // to deliver the whole part.
+        let client = makeClient();
+        let body = Buffer.alloc(20, 0x62);
+        let fetchChunk = chunkedFetchOne(body);
+        client.fetchOne = async (range: any, query: any) => {
+            let response = await fetchChunk(range, query);
+            delete response.size;
+            return response;
+        };
+        let { meta, content }: any = await client.download('1', false as any, { chunkSize: 8 });
+        assert.equal(meta.expectedSize, undefined);
+        let data: any = await collect(content);
+        assert.equal(data.length, body.length);
     });
     it('Download: initial chunk waits for drain when buffer full', async () => {
         let client = makeClient();

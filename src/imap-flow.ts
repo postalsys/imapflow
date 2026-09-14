@@ -4020,6 +4020,16 @@ export class ImapFlow extends EventEmitter {
             // chunk. An oversized answer already contains the whole part - stop.
             hasMore = chunk.length === chunkSize;
 
+            if (chunk.length > chunkSize) {
+                this.log.warn({
+                    msg: 'Server returned more than the requested window, treating the part as complete',
+                    chunkSize,
+                    received: chunk.length,
+                    processed,
+                    cid: this.id
+                });
+            }
+
             let result: PartResult = { chunk };
             if (query.size) {
                 result.response = response;
@@ -4207,11 +4217,32 @@ export class ImapFlow extends EventEmitter {
             return stream.write(chunk);
         };
 
+        // Ceiling on how many bytes one download may pull off the wire, as the backstop for the
+        // partial-ignoring servers above: a part whose size happens to equal chunkSize exactly
+        // comes back looking like a full window every time, so no test over chunk lengths can end
+        // that loop. RFC822.SIZE bounds any part of the message; doubled for servers that count
+        // line endings differently than they deliver, plus one window so a download sitting right
+        // at the bound still gets its terminating chunk. Infinity when the server reported no
+        // size, which leaves the loop bounded by maxBytes alone.
+        let maxTotalBytes = normalizeByteLimit(meta.expectedSize ? meta.expectedSize * 2 + chunkSize : 0);
+
         // Fetch remaining chunks in a loop, writing each to the decoder stream.
-        // Stops when the server returns a short chunk (< chunkSize), the byte
-        // limiter is satisfied, or the consumer destroys the output stream.
+        // Stops when the server returns a short chunk (< chunkSize), answers with more than the
+        // requested window, the byte limiter is satisfied, or the consumer destroys the output
+        // stream. Throws when the ceiling above is crossed.
         let fetchAllParts = async () => {
             while (hasMore && !isLimited() && !fetchAborted) {
+                if (processed >= maxTotalBytes) {
+                    // Loud on purpose. Everything written downstream by this point holds
+                    // duplicated content, and a quiet stop is indistinguishable from a clean EOF,
+                    // so the consumer would store a corrupt body believing it intact.
+                    let err: ImapFlowError = new Error('Download exceeded the expected message size');
+                    err.code = 'DownloadOverflow';
+                    err.maxSize = maxTotalBytes;
+                    err.cid = this.id;
+                    throw err;
+                }
+
                 let { chunk } = await getNextPart();
                 if (!chunk || fetchAborted) {
                     break;
