@@ -78,7 +78,7 @@
         "types-node-legacy": "npm:@types/node@20.0.0",
         "typescript": "6.0.3",
         "typescript-eslint": "8.69.0",
-        "wrangler": "4.129.0"
+        "wrangler": "4.131.2"
     },
     "dependencies": {
         "@zone-eu/mailsplit": "5.4.16",
