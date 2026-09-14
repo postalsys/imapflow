@@ -4012,7 +4012,13 @@ export class ImapFlow extends EventEmitter {
             }
 
             processed += chunk.length;
-            hasMore = chunk.length >= chunkSize;
+            // A compliant server returns at most `chunkSize` bytes for a partial
+            // request. Some servers (Tencent Exmail among them) ignore the partial
+            // spec and answer every request with the complete part. That chunk is
+            // then larger than requested, so treating it as "full, keep going"
+            // would advance the offset past the end forever and never see a short
+            // chunk. An oversized answer already contains the whole part - stop.
+            hasMore = chunk.length === chunkSize;
 
             let result: PartResult = { chunk };
             if (query.size) {
