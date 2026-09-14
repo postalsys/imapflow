@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.3](https://github.com/postalsys/imapflow/compare/v2.0.2...v2.0.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* bound the chunked download loop by the reported message size ([fc9b4eb](https://github.com/postalsys/imapflow/commit/fc9b4ebdcc15fbc952fb2a18d98a723511e384ab))
+* stop chunked download when the server ignores the partial spec ([#396](https://github.com/postalsys/imapflow/issues/396)) ([e216fde](https://github.com/postalsys/imapflow/commit/e216fdeaad4724bdeead6f346e207cd3d75a20fd))
+
 ## [2.0.2](https://github.com/postalsys/imapflow/compare/v2.0.1...v2.0.2) (2026-09-10)
 
 
