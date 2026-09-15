@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.5](https://github.com/postalsys/imapflow/compare/v2.0.4...v2.0.5) (2026-09-15)
+
+
+### Bug Fixes
+
+* **deps:** update mailsplit to 5.4.17 ([4eb90d8](https://github.com/postalsys/imapflow/commit/4eb90d860b8c12fc79b2829e4eb593649c60ea32))
+
 ## [2.0.4](https://github.com/postalsys/imapflow/compare/v2.0.3...v2.0.4) (2026-09-15)
 
 
