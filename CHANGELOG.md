@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.4](https://github.com/postalsys/imapflow/compare/v2.0.3...v2.0.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* **deps:** update libmime to 5.4.4 and encoding-japanese to 2.4.0 ([ffa0f93](https://github.com/postalsys/imapflow/commit/ffa0f93a60e7b17f8bd6f6920c158ee308b95cee))
+
 ## [2.0.3](https://github.com/postalsys/imapflow/compare/v2.0.2...v2.0.3) (2026-09-14)
 
 
