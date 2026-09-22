@@ -411,4 +411,16 @@ describe('token-parser', () => {
         assert.equal(lit.type, 'LITERAL');
         assert.equal(lit!.value!.toString(), 'abc');
     });
+
+    // Glued flags ("\\Sent\\HasNoChildren", see the STATE_ATOM branch of token-parser.ts)
+    // are only split inside a list, only off an atom that already is a flag, and only
+    // when a flag name follows. Everything else keeps failing as before
+    it(
+        'Token Parser: E16: backslash inside a non-flag atom still throws ParserError16',
+        expectParserError('* LIST (HasNoChildren\\Sent) "/" "x"', 'ParserError16')
+    );
+    it('Token Parser: E16: doubled backslash still throws ParserError16', expectParserError('* LIST (\\\\Sent) "/" "x"', 'ParserError16'));
+    it('Token Parser: E16: trailing backslash in a flag still throws ParserError16', expectParserError('* LIST (\\Sent\\) "/" "x"', 'ParserError16'));
+    it('Token Parser: E16: backslash followed by a space still throws ParserError16', expectParserError('* LIST (\\Sent\\ \\Drafts) "/" "x"', 'ParserError16'));
+    it('Token Parser: E16: glued flags outside a list still throw ParserError16', expectParserError('* 1 FETCH \\Seen\\Flagged', 'ParserError16'));
 });

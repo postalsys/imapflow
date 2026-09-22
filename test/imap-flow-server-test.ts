@@ -274,6 +274,47 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
+    it('Server: LIST attributes glued together without a space still yield the special-use mailboxes', async () => {
+        // home.pl answers LIST RETURN (SPECIAL-USE CHILDREN SUBSCRIBED) with the special-use
+        // flag and the CHILDREN flag run together. Each such line used to fail to parse and
+        // its mailbox vanished from the listing, so a sent message had no Sent mailbox to
+        // be uploaded into. The source assertion is what proves the flag came off the wire:
+        // a mailbox named SENT would have been recognized by name even without it
+        let server = createServer({
+            capabilities: 'IMAP4rev1 ID ENABLE NAMESPACE CHILDREN LIST-EXTENDED LIST-STATUS SPECIAL-USE',
+            handlers: {
+                LIST(ctx: any) {
+                    ctx.write('* LIST (\\Subscribed \\HasChildren) "." "INBOX"\r\n');
+                    ctx.write('* LIST (\\Subscribed \\Drafts\\HasNoChildren) "." "DRAFTS"\r\n');
+                    ctx.write('* LIST (\\Subscribed \\Sent\\HasNoChildren) "." "SENT"\r\n');
+                    ctx.write('* LIST (\\Subscribed \\Junk\\HasNoChildren) "." "SPAM"\r\n');
+                    ctx.write('* LIST (\\Subscribed \\Trash\\HasNoChildren) "." "TRASH"\r\n');
+                    ctx.ok('Completed');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port);
+        client.on('error', () => {});
+
+        await client.connect();
+        let folders = await client.list();
+
+        let byPath = new Map(folders.map(entry => [entry.path, entry]));
+        assert.deepEqual(
+            ['DRAFTS', 'SENT', 'SPAM', 'TRASH'].map(path => byPath.get(path)?.specialUse),
+            ['\\Drafts', '\\Sent', '\\Junk', '\\Trash']
+        );
+
+        let sent = byPath.get('SENT')!;
+        assert.equal(sent.specialUseSource, 'extension');
+        assert.equal(sent.subscribed, true);
+        assert.ok(sent.flags.has('\\HasNoChildren'));
+
+        await client.logout();
+        client.close();
+        server.close();
+    });
     it('Server: enable compression negotiation (server declines)', async () => {
         let server = createServer();
         let port = await listen(server);

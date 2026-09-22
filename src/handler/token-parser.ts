@@ -457,6 +457,7 @@ export class TokenParser {
 
                 case STATE_ATOM:
                     // An atom is terminated by: space, closing delimiter of parent node,
+                    // a backslash starting the next flag of a list (broken servers only),
                     // or encountering a '[' that starts a section for BODY/BINARY commands.
                     // space finishes an atom
                     if (chr === ' ') {
@@ -481,6 +482,33 @@ export class TokenParser {
                         checkSP();
 
                         break;
+                    }
+
+                    // A backslash can not occur inside an atom (it is a quoted-special), so one
+                    // arriving inside a flag of a parenthesized list can only be a server that
+                    // wrote two flags without the separating space, as home.pl does in its LIST
+                    // responses ("\\Sent\\HasNoChildren"). Read it as the end of this flag and the
+                    // start of the next one rather than rejecting the line, which would drop the
+                    // whole mailbox. Only an atom that already is a flag is split, so an unquoted
+                    // name is never cut in two, and only when a flag name follows, so a trailing
+                    // backslash still fails as before instead of becoming a one-character flag
+                    if (chr === '\\') {
+                        const parent = this.currentNode.parentNode;
+                        const value = this.currentNode.value as string;
+                        const next = this.str.charAt(i + 1);
+                        if (
+                            parent &&
+                            parent.type === 'LIST' &&
+                            value.length > 1 &&
+                            value.startsWith('\\') &&
+                            next &&
+                            (imapFormalSyntax['ATOM-CHAR']().includes(next) || next === '*')
+                        ) {
+                            this.currentNode.endPos = this.pos + i - 1;
+                            this.currentNode = parent;
+                            startAtom();
+                            break;
+                        }
                     }
 
                     // If the atom so far is all digits and we see ',' or ':', it is actually

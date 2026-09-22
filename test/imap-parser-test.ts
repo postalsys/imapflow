@@ -682,6 +682,24 @@ describe('imap-parser', () => {
     // PERMANENTFLAGS is from RFC3501.  Its syntax is also very
     // similar to BADCHARSET, except BADCHARSET has astrings
     // inside the list.
+    // The same glue in front of \\*, which the parser treats specially, and inside an
+    // OK response, where a stray character used to be merged into the atom silently
+    it('IMAP Parser: Section: PERMANENTFLAGS with glued flags', async () =>
+        assert.deepEqual((await parser('* OK [PERMANENTFLAGS (\\Seen\\*)] Limited')).attributes, [
+            {
+                type: 'ATOM',
+                value: '',
+                section: [
+                    { type: 'ATOM', value: 'PERMANENTFLAGS' },
+                    [
+                        { type: 'ATOM', value: '\\Seen' },
+                        { type: 'ATOM', value: '\\*' }
+                    ]
+                ]
+            },
+            { type: 'TEXT', value: 'Limited' }
+        ]));
+
     it('IMAP Parser: Section: PERMANENTFLAGS', async () =>
         assert.deepEqual(await parser('* OK [PERMANENTFLAGS (de:hacking $label kt-evalution [css3-page] \\*)] Flags permitted.'), {
             tag: '*',
@@ -944,6 +962,17 @@ describe('imap-parser', () => {
             ],
             { type: 'STRING', value: '/' },
             { type: 'ATOM', value: "'a" }
+        ]));
+    // home.pl writes LIST attributes without the space between two flags
+    it('IMAP Parser, glued LIST flags', async () =>
+        assert.deepEqual((await parser('* LIST (\\Subscribed \\Sent\\HasNoChildren) "." "SENT"')).attributes, [
+            [
+                { type: 'ATOM', value: '\\Subscribed' },
+                { type: 'ATOM', value: '\\Sent' },
+                { type: 'ATOM', value: '\\HasNoChildren' }
+            ],
+            { type: 'STRING', value: '.' },
+            { type: 'STRING', value: 'SENT' }
         ]));
     it('IMAP Parser, unicode status 1', async () =>
         assert.deepEqual((await parser('* STATUS Segregator/Społeczności (MESSAGES 0 UIDNEXT 1 UIDVALIDITY 1)')).attributes, [
