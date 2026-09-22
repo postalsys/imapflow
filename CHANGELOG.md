@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.6](https://github.com/postalsys/imapflow/compare/v2.0.5...v2.0.6) (2026-09-22)
+
+
+### Bug Fixes
+
+* **parser:** split flags a server writes without the separating space ([96b2022](https://github.com/postalsys/imapflow/commit/96b202283ea5840842b4c9c94319b2b29cad829f))
+
 ## [2.0.5](https://github.com/postalsys/imapflow/compare/v2.0.4...v2.0.5) (2026-09-15)
 
 
