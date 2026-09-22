@@ -70,15 +70,15 @@
     "devDependencies": {
         "@types/node": "20.19.43",
         "c8": "12.0.0",
-        "eslint": "10.10.0",
+        "eslint": "10.11.0",
         "eslint-config-prettier": "10.1.8",
         "globals": "17.12.0",
-        "prettier": "3.9.6",
-        "tsx": "4.23.13",
+        "prettier": "3.9.8",
+        "tsx": "4.23.15",
         "types-node-legacy": "npm:@types/node@20.0.0",
         "typescript": "6.0.3",
-        "typescript-eslint": "8.70.0",
-        "wrangler": "4.131.2"
+        "typescript-eslint": "8.70.1",
+        "wrangler": "4.136.3"
     },
     "dependencies": {
         "@zone-eu/mailsplit": "5.4.17",
