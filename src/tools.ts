@@ -729,6 +729,12 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
             if (Buffer.isBuffer(attribute.value)) {
                 return attribute.value;
             }
+            // A section is an nstring, so a server may answer with a quoted string
+            // instead of a literal (Yahoo does for small parts). The tokenizer decoded
+            // the line as UTF-8, so encoding the same way restores the bytes it sent.
+            if (typeof attribute.value === 'string') {
+                return Buffer.from(attribute.value);
+            }
         };
 
         // NIL (parsed as null) and other non-array values yield an empty array, so callers

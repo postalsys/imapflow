@@ -417,6 +417,37 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
+    it('Server: download() reads a body part the server sends as a quoted string', async () => {
+        // issue #403: Yahoo answers small sections with a quoted string instead of a literal
+        let mime = 'Content-Type: text/plain; name="a.txt"\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+        let server = createServer({
+            handlers: {
+                UID(ctx: any) {
+                    ctx.write(`* 1 FETCH (UID 5 RFC822.SIZE 300 BODY[2.MIME] {${mime.length}}\r\n${mime} BODY[2]<0> "VGVzdA==")\r\n`);
+                    ctx.ok('FETCH completed');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port);
+        client.on('error', () => {});
+
+        await client.connect();
+        await client.mailboxOpen('INBOX');
+
+        let { meta, content }: any = await client.download('5', '2', { uid: true });
+        assert.ok(content, 'download() must yield a content stream for a quoted body part');
+        assert.equal(meta.encoding, 'base64');
+        let chunks: Buffer[] = [];
+        for await (let chunk of content) {
+            chunks.push(chunk);
+        }
+        assert.equal(Buffer.concat(chunks).toString(), 'Test');
+
+        await client.logout();
+        client.close();
+        server.close();
+    });
     it('Server: APPEND with synchronizing literal', async () => {
         let server = createServer({
             capabilities: 'IMAP4rev1 ID ENABLE NAMESPACE UIDPLUS',

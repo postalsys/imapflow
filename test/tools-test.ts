@@ -1267,6 +1267,24 @@ describe('tools', () => {
         assert.ok(Buffer.isBuffer(r.source));
         assert.equal(r.source.toString(), 'HELLO');
     });
+    // ============================================
+    // formatMessageResponse: body sections sent as quoted strings (issue #403)
+    // ============================================
+    it('Tools: formatMessageResponse accepts body sections sent as quoted strings', async () => {
+        // A section is an nstring, so a quoted string is as valid as a literal (Yahoo
+        // sends small parts this way). Every quoted section must reach the caller as a
+        // Buffer, unescaped, byte for byte, while NIL stays empty
+        let untagged = await parser(
+            '* 1 FETCH (BODY[2]<0> "VGVzdA==" BODY[] "Subject: hi" BODY[HEADER] "Subject: hi" BODY[3] "a \\"b\\" \\\\ c é" BODY[4] "" BODY[5] NIL)'
+        );
+        let r: any = await tools.formatMessageResponse(untagged, { path: 'INBOX' } as MailboxObject);
+        assert.deepEqual(r.bodyParts.get('2'), Buffer.from('VGVzdA=='));
+        assert.deepEqual(r.source, Buffer.from('Subject: hi'));
+        assert.deepEqual(r.headers, Buffer.from('Subject: hi'));
+        assert.deepEqual(r.bodyParts.get('3'), Buffer.from('a "b" \\ c é'));
+        assert.deepEqual(r.bodyParts.get('4'), Buffer.alloc(0));
+        assert.ok(r.bodyParts.has('5') && !r.bodyParts.get('5'));
+    });
     it('Tools: formatMessageResponse keeps invalid INTERNALDATE as raw string', async () => {
         let untagged = await parser('* 1 FETCH (INTERNALDATE "not a date")');
         let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' } as MailboxObject);
