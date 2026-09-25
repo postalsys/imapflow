@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.7](https://github.com/postalsys/imapflow/compare/v2.0.6...v2.0.7) (2026-09-25)
+
+
+### Bug Fixes
+
+* **fetch:** keep body sections a server sends as quoted strings ([a4f2f18](https://github.com/postalsys/imapflow/commit/a4f2f181f978dea9e6c94195c1f4ddbe54d52fc7)), closes [#403](https://github.com/postalsys/imapflow/issues/403)
+
 ## [2.0.6](https://github.com/postalsys/imapflow/compare/v2.0.5...v2.0.6) (2026-09-22)
 
 
