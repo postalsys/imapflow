@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.8](https://github.com/postalsys/imapflow/compare/v2.0.7...v2.0.8) (2026-09-26)
+
+
+### Bug Fixes
+
+* surface throttle, truncation and listener failures instead of hiding them ([03a0624](https://github.com/postalsys/imapflow/commit/03a0624d0f381e935bbc3b4e12002272426abbae))
+
 ## [2.0.7](https://github.com/postalsys/imapflow/compare/v2.0.6...v2.0.7) (2026-09-25)
 
 
