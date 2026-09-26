@@ -206,15 +206,6 @@ export function guardedReject(error: Error): Promise<never> {
 }
 
 /**
- * Detaches a background timer from the event loop, so it cannot keep the process alive on its
- * own. Applied to every background timer (auto-IDLE, IDLE restart, fallback polling, throttle
- * back-off, held-lock diagnostics); connection and greeting deadlines are deliberately left
- * attached, because a caller is waiting for connect() to settle.
- *
- * @param timer - Timer handle returned by setTimeout
- * @returns The same timer handle
- */
-/**
  * Clears a timer that may already have been dropped. `clearTimeout()` accepts undefined but not
  * null, and the connection nulls its timer fields once cleared, so every site clears through here.
  *
@@ -226,6 +217,15 @@ export function clearTimer(timer: NodeJS.Timeout | null | undefined): void {
     }
 }
 
+/**
+ * Detaches a background timer from the event loop, so it cannot keep the process alive on its
+ * own. Applied to every background timer (auto-IDLE, IDLE restart, fallback polling, throttle
+ * back-off, held-lock diagnostics); connection and greeting deadlines are deliberately left
+ * attached, because a caller is waiting for connect() to settle.
+ *
+ * @param timer - Timer handle returned by setTimeout
+ * @returns The same timer handle
+ */
 export function unrefTimer<T extends NodeJS.Timeout | null | undefined>(timer: T): T {
     /* c8 ignore next 3 */ // node timers always expose unref(); the guard covers replaced globals in tests
     if (timer && typeof timer.unref === 'function') {
@@ -490,6 +490,17 @@ export function getStatusCode(response: ImapResponse | string | false | undefine
         typeof response.attributes[0].section[0].value === 'string'
         ? response.attributes[0].section[0].value.toUpperCase().trim()
         : false;
+}
+
+/**
+ * Collects the values of the TEXT tokens of a parsed response (the human-readable
+ * part of a status response, a greeting or a BYE).
+ *
+ * @param attributes - Attributes of a parsed IMAP response
+ * @returns Values of the TEXT tokens, in order
+ */
+export function getTextValues(attributes: ImapAttributeList | undefined): string[] {
+    return (attributes || []).filter(attr => attr?.type === 'TEXT').map(attr => String(attr?.value ?? ''));
 }
 
 /**

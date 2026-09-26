@@ -2,19 +2,14 @@ import { getStatusCode, getErrorText } from '../tools.js';
 import type { ImapFlow } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapResponse } from '../handler/types.js';
+import type { AuthOptions } from '../types.js';
 
 /**
- * Credentials for the AUTHENTICATE command
+ * Credentials for the AUTHENTICATE command: the auth options, with the password passed as `password`
  */
-export interface AuthenticateCredentials {
-    /** OAuth2 access token for OAUTHBEARER/XOAUTH2 authentication */
-    accessToken?: string | undefined;
+export interface AuthenticateCredentials extends Omit<AuthOptions, 'user' | 'pass'> {
     /** Password for PLAIN or LOGIN authentication */
     password?: string | undefined;
-    /** Force a specific login method (e.g., 'AUTH=PLAIN', 'AUTH=LOGIN') */
-    loginMethod?: string | undefined;
-    /** Authorization identity for PLAIN authentication */
-    authzid?: string | undefined;
 }
 
 /**

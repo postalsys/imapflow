@@ -42,6 +42,7 @@ import {
     parseUintValue,
     isUnsafeKey,
     getStringList,
+    getTextValues,
     buildConnectionError,
     guardedPromise,
     guardedReject,
@@ -1588,12 +1589,9 @@ export class ImapFlow extends EventEmitter {
 
             case 'NO':
             case 'BAD': {
-                let txt =
-                    parsed.attributes &&
-                    parsed.attributes
-                        .filter(val => (val as ImapAttributeNode).type === 'TEXT')
-                        .map(val => (val as { value: string }).value.trim())
-                        .join(' ');
+                let txt = getTextValues(parsed.attributes)
+                    .map(val => val.trim())
+                    .join(' ');
 
                 let err: ImapFlowError = new Error('Command failed');
                 err.response = parsed;
@@ -1631,7 +1629,7 @@ export class ImapFlow extends EventEmitter {
                     // Example: "tag BAD Request is throttled. Suggested Backoff Time: 92415 milliseconds"
                     if (/Request is throttled/i.test(txt) && /Backoff Time/i.test(txt)) {
                         let throttlingMatch = txt.match(/Backoff Time[:=\s]+(\d+)/i);
-                        if (throttlingMatch && throttlingMatch[1] && !isNaN(throttlingMatch[1] as unknown as number)) {
+                        if (throttlingMatch) {
                             throttleDelay = Number(throttlingMatch[1]);
                         }
                     }
@@ -2377,9 +2375,7 @@ export class ImapFlow extends EventEmitter {
 
     /** @internal */
     async initialOK(message: ImapResponse): Promise<void> {
-        this.greeting = (message.attributes || [])
-            .filter(entry => (entry as ImapAttributeNode).type === 'TEXT')
-            .map(entry => (entry as { value: string }).value)
+        this.greeting = getTextValues(message.attributes)
             .filter(entry => entry)
             .join('');
 
@@ -2407,10 +2403,8 @@ export class ImapFlow extends EventEmitter {
         // Extract BYE reason from response for better error messages
         let reason =
             parsed &&
-            parsed.attributes &&
-            parsed.attributes
-                .filter(val => (val as ImapAttributeNode).type === 'TEXT')
-                .map(val => (val as { value: string }).value.trim())
+            getTextValues(parsed.attributes)
+                .map(val => val.trim())
                 .join(' ');
 
         this.byeReason = reason || 'Server closed connection';
@@ -2624,7 +2618,7 @@ export class ImapFlow extends EventEmitter {
     // sequence string (e.g., "1:5,7,10:*"). Handles: numbers, "*", {all:true},
     // {uid:value}, search query objects (resolved via SEARCH), and arrays of numbers.
     /** @internal */
-    async resolveRange(range: MessageRange, options: { uid?: boolean | undefined; [key: string]: any }): Promise<string | false> {
+    async resolveRange(range: MessageRange, options: MessageRangeOptions): Promise<string | false> {
         let value: any = range;
 
         if (typeof value === 'number' || typeof value === 'bigint') {

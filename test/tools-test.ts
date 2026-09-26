@@ -1678,3 +1678,27 @@ describe('tools', () => {
         assert.equal(overflowing.seq, undefined);
     });
 });
+
+describe('getTextValues', () => {
+    it('collects TEXT token values in order, skipping NIL, lists and other tokens', async () => {
+        let parsed = await parser('* BYE [ALERT] Server shutting down');
+        assert.deepEqual(tools.getTextValues(parsed.attributes), ['Server shutting down']);
+
+        assert.deepEqual(
+            tools.getTextValues([
+                null,
+                [],
+                { type: 'ATOM', value: 'x' },
+                { type: 'TEXT', value: 'a' },
+                { type: 'TEXT', value: null },
+                { type: 'TEXT', value: 'b' }
+            ]),
+            ['a', '', 'b']
+        );
+    });
+
+    it('returns an empty list when there are no attributes', () => {
+        assert.deepEqual(tools.getTextValues(undefined), []);
+        assert.deepEqual(tools.getTextValues([]), []);
+    });
+});

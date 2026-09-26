@@ -453,24 +453,18 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                          * @returns Binary tree structure
                          */
                         let genOrTree = (list: any[]): any => {
-                            let group: any[] | false = false;
                             let groups: any[] = [];
 
                             // Group items in pairs
-                            list.forEach((entry, i) => {
-                                if (i % 2 === 0) {
-                                    group = [entry];
-                                } else {
-                                    (group as any[]).push(entry);
-                                    groups.push(group);
-                                    group = false;
-                                }
-                            });
+                            for (let i = 0; i + 1 < list.length; i += 2) {
+                                groups.push([list[i], list[i + 1]]);
+                            }
 
                             // Handle odd number of items
-                            if (group && (group as any[]).length) {
-                                while ((group as any[]).length === 1 && Array.isArray((group as any[])[0])) {
-                                    group = (group as any[])[0];
+                            if (list.length % 2) {
+                                let group: any[] = [list[list.length - 1]];
+                                while (group.length === 1 && Array.isArray(group[0])) {
+                                    group = group[0];
                                 }
 
                                 groups.push(group);

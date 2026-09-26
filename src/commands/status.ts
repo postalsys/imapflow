@@ -7,20 +7,19 @@ import type { MailboxObject, StatusObject, StatusQuery } from '../types.js';
 
 // STATUS fields that also refresh the live mailbox state when the queried mailbox is the
 // currently selected one. Keyed by the output property name parseStatusList() reports.
-const MAILBOX_UPDATERS: { [key: string]: ((value: any, connection: ImapFlow, path: string) => void) | undefined } = {
-    messages: (value: number, connection: ImapFlow, path: string) => {
-        let mailbox = connection.mailbox as MailboxObject;
+const MAILBOX_UPDATERS: { [key: string]: ((value: any, mailbox: MailboxObject, connection: ImapFlow, path: string) => void) | undefined } = {
+    messages: (value: number, mailbox: MailboxObject, connection: ImapFlow, path: string) => {
         let prevCount = mailbox.exists;
         if (prevCount !== value) {
             mailbox.exists = value;
             connection.emit('exists', { path, count: value, prevCount });
         }
     },
-    uidNext: (value: number, connection: ImapFlow) => {
-        (connection.mailbox as MailboxObject).uidNext = value;
+    uidNext: (value: number, mailbox: MailboxObject) => {
+        mailbox.uidNext = value;
     },
-    highestModseq: (value: bigint, connection: ImapFlow) => {
-        (connection.mailbox as MailboxObject).highestModseq = value;
+    highestModseq: (value: bigint, mailbox: MailboxObject) => {
+        mailbox.highestModseq = value;
     }
 };
 
@@ -72,7 +71,8 @@ export default async function status(connection: ImapFlow, path: string | string
                 STATUS: async (untagged: ImapResponse) => {
                     // If querying the currently selected mailbox, also update the
                     // connection's live mailbox state and emit events for changes.
-                    let updateCurrent = connection.state === connection.states.SELECTED && path === (connection.mailbox as MailboxObject).path;
+                    let currentMailbox =
+                        connection.state === connection.states.SELECTED && connection.mailbox && connection.mailbox.path === path ? connection.mailbox : false;
 
                     let list = untagged.attributes && Array.isArray(untagged.attributes[1]) ? untagged.attributes[1] : false;
                     if (!list) {
@@ -82,8 +82,8 @@ export default async function status(connection: ImapFlow, path: string | string
                         map[key] = value;
 
                         let updater = MAILBOX_UPDATERS[key];
-                        if (updateCurrent && updater) {
-                            updater(value, connection, path as string);
+                        if (currentMailbox && updater) {
+                            updater(value, currentMailbox, connection, path as string);
                         }
                     });
                 }
