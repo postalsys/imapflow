@@ -1702,3 +1702,27 @@ describe('getTextValues', () => {
         assert.deepEqual(tools.getTextValues([]), []);
     });
 });
+
+describe('emitSafe', () => {
+    it('logs a throwing listener instead of propagating the error', () => {
+        let warned: any = null;
+        let connection: any = {
+            id: 'c1',
+            emit: () => {
+                throw new Error('listener failed');
+            },
+            log: { warn: (entry: any) => (warned = entry) }
+        };
+        tools.emitSafe(connection, 'mailboxOpen', { path: 'INBOX' } as MailboxObject);
+        assert.equal(warned.event, 'mailboxOpen');
+        assert.equal(warned.err.message, 'listener failed');
+        assert.equal(warned.cid, 'c1');
+    });
+
+    it('passes the event and its arguments through', () => {
+        let seen: any[] = [];
+        let connection: any = { emit: (...args: any[]) => seen.push(args), log: { warn: () => assert.fail('no warning expected') } };
+        tools.emitSafe(connection, 'exists', { path: 'INBOX', count: 2, prevCount: 1 });
+        assert.deepEqual(seen, [['exists', { path: 'INBOX', count: 2, prevCount: 1 }]]);
+    });
+});

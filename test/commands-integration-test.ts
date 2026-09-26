@@ -9639,8 +9639,7 @@ describe('commands-integration', () => {
 
         // part '1' triggers the bodyStructure check path
         let result: any = await client.download('1', '1');
-        assert.equal(result.response, false);
-        assert.equal((result as any).chunk, false);
+        assert.deepEqual(result, {}, 'a missing message resolves with the documented empty object');
     });
     it('Commands: downloadMany with fetchOne returning null', async () => {
         let client = new ImapFlow({
@@ -9652,7 +9651,7 @@ describe('commands-integration', () => {
         (client as any).fetchOne = async () => null;
 
         let result = await client.downloadMany('1', ['2', '3']);
-        assert.equal(result.response, false);
+        assert.deepEqual(result, {}, 'no phantom "response" entry among the parts');
     });
 
     // ============================================
@@ -10087,6 +10086,124 @@ describe('commands-integration', () => {
         assert.ok(failure, 'the caller is told the fetch did not happen');
         assert.equal(failure.code, 'NoConnection', 'an aborted back-off means the connection is gone');
         assert.equal(calls, 1, 'no retry may be issued on a closed connection');
+    });
+    it('Commands: fetch throws once every retry was throttled', async () => {
+        // Running out of retries used to fall out of the loop and resolve undefined, which
+        // fetchOne() and download() read as "message not found"
+        let calls = 0;
+        let waits: number[] = [];
+        const connection: any = createMockConnection({
+            state: 3,
+            mailbox: { path: 'INBOX', exists: 1, flags: new Set(), permanentFlags: new Set(), noModseq: true },
+            throttleWait: async (delay: number) => {
+                waits.push(delay);
+                return false;
+            },
+            exec: async () => {
+                calls++;
+                const err: any = new Error('throttled');
+                err.code = 'ETHROTTLE';
+                throw err;
+            }
+        });
+
+        await assert.rejects(fetchCommand(connection, '1:*', { uid: true }, { uid: true }), (err: any) => err.code === 'ETHROTTLE');
+        assert.equal(calls, 4, 'four attempts in total');
+        assert.deepEqual(waits, [1000, 2000, 4000], 'no back-off after the last attempt');
+    });
+    it('Commands: fetch only waits out the part of the back-off the connection has not', async () => {
+        let waits: number[] = [];
+        let calls = 0;
+        const connection: any = createMockConnection({
+            state: 3,
+            mailbox: { path: 'INBOX', exists: 1, flags: new Set(), permanentFlags: new Set(), noModseq: true },
+            throttleWait: async (delay: number) => {
+                waits.push(delay);
+                return false;
+            },
+            exec: async () => {
+                calls++;
+                if (calls === 1) {
+                    const err: any = new Error('throttled');
+                    err.code = 'ETHROTTLE';
+                    err.throttleReset = 10000;
+                    err.throttleWaited = 6000;
+                    throw err;
+                }
+                if (calls === 2) {
+                    const err: any = new Error('throttled');
+                    err.code = 'ETHROTTLE';
+                    err.throttleReset = 500;
+                    err.throttleWaited = 500;
+                    throw err;
+                }
+                return { next: () => {} };
+            }
+        });
+
+        let result = await fetchCommand(connection, '1', { uid: true });
+        assert.ok(result);
+        // 10000 hinted, 6000 already waited; then the 2000 back-off exceeds the 500 already waited
+        assert.deepEqual(waits, [4000, 1500]);
+    });
+    it('Commands: a throwing mailboxOpen listener does not stall select', async () => {
+        let released = false;
+        let warned: any = null;
+        const connection: any = createMockConnection({
+            state: 3,
+            mailbox: { path: 'OldFolder' },
+            folders: new Map([['INBOX', { path: 'INBOX' }]]),
+            run: async () => [],
+            exec: async () => ({
+                next: () => {
+                    released = true;
+                },
+                response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+            }),
+            emit: () => {
+                throw new Error('listener failed');
+            }
+        });
+        connection.log = { ...connection.log, warn: (entry: any) => (warned = warned || entry) };
+
+        let result: any = await selectCommand(connection, 'INBOX');
+        assert.equal(result.path, 'INBOX');
+        assert.ok(released, 'the response is released so the next command can run');
+        assert.equal(connection.state, 3, 'the new mailbox stays selected');
+        assert.equal(warned.event, 'mailboxClose');
+    });
+    it('Commands: close reports success when the mailboxClose listener throws', async () => {
+        const connection: any = createMockConnection({
+            state: 3,
+            mailbox: { path: 'INBOX' },
+            exec: async () => ({ next: () => {} }),
+            emit: () => {
+                throw new Error('listener failed');
+            }
+        });
+
+        assert.equal(await closeCommand(connection), true);
+        assert.equal(connection.mailbox, false);
+    });
+    it('Commands: idle releases queued waiters when the server refuses IDLE', async () => {
+        let waiter: any = null;
+        const connection: any = createMockConnection({
+            state: 3,
+            capabilities: new Map([['IDLE', true]]),
+            exec: async () => {
+                // a command is waiting for IDLE to break when the server answers IDLE with BAD
+                waiter = connection.preCheck().then(
+                    () => 'resolved',
+                    () => 'rejected'
+                );
+                const err: any = new Error('Command failed');
+                err.responseStatus = 'BAD';
+                throw err;
+            }
+        });
+
+        assert.equal(await idleCommand(connection), false);
+        assert.equal(await waiter, 'resolved', 'the waiting command runs instead of failing with the IDLE error');
     });
     it('Commands: select accepts an unparenthesized MAILBOXID', async () => {
         // RFC 8474 sends the id as a parenthesized list, but servers in the wild send it bare too

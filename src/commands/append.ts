@@ -8,7 +8,8 @@ import {
     enhanceCommandError,
     parseBigIntValue,
     parseUintValue,
-    MAX_UINT32_DIGITS
+    MAX_UINT32_DIGITS,
+    emitSafe
 } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
@@ -124,7 +125,7 @@ export default async function append(
             let prevCount = mailbox.exists;
             if (map.seq !== prevCount) {
                 mailbox.exists = map.seq;
-                connection.emit('exists', {
+                emitSafe(connection, 'exists', {
                     path: mailbox.path,
                     count: map.seq,
                     prevCount

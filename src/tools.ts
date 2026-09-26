@@ -18,6 +18,7 @@ import type {
     MessageAddressObject,
     MessageEnvelopeObject,
     MessageStructureObject,
+    ImapFlowEvents,
     StatusQuery
 } from './types.js';
 
@@ -490,6 +491,24 @@ export function getStatusCode(response: ImapResponse | string | false | undefine
         typeof response.attributes[0].section[0].value === 'string'
         ? response.attributes[0].section[0].value.toUpperCase().trim()
         : false;
+}
+
+/**
+ * Emits a state-change event from inside the command pipeline. A listener that throws must not
+ * abort the code that emitted it: select() emits before it releases the response, so the throw
+ * would leave the reader loop waiting forever, and close() would never get to emit 'close'. The
+ * error is logged instead, the same contract untagged handlers and the 'response' event get.
+ *
+ * @param connection - IMAP connection instance
+ * @param event - Event name
+ * @param args - Event arguments
+ */
+export function emitSafe<K extends keyof ImapFlowEvents>(connection: ImapFlow, event: K, ...args: ImapFlowEvents[K]): void {
+    try {
+        connection.emit(event, ...args);
+    } catch (err) {
+        connection.log.warn({ msg: 'Event listener failed', event, err, cid: connection.id });
+    }
 }
 
 /**

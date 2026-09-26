@@ -190,7 +190,8 @@ describe('timer-policy', () => {
                 let readerDone = client.reader().catch(() => {});
                 await timers.drain();
 
-                let backoff = timers.history().find(timer => timer.delay === 300000);
+                // The 300s hint is capped at half the socket timeout, as the wait parks the reader loop
+                let backoff = timers.history().find(timer => timer.delay === 150000);
                 assert.ok(backoff, 'the throttle back-off timer is armed');
                 assert.ok(backoff.unrefd, 'the back-off timer does not keep the process alive');
 

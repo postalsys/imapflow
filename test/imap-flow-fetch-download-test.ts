@@ -350,11 +350,11 @@ describe('imap-flow-fetch-download', () => {
         let data: any = await collect(content);
         assert.equal(data.toString(), 'plain text body');
     });
-    it('Download: part 1 returns sentinel when bodyStructure fetch fails', async () => {
+    it('Download: part 1 resolves empty when bodyStructure fetch fails', async () => {
         let client = makeClient();
         client.fetchOne = async () => false;
         let res = await client.download('1', '1', { chunkSize: 1024 });
-        assert.deepEqual(res, { response: false, chunk: false });
+        assert.deepEqual(res, {});
     });
     it('Download: maxBytes limits output', async () => {
         let client = makeClient();
@@ -482,6 +482,53 @@ describe('imap-flow-fetch-download', () => {
         let data: any = await collect(content);
         assert.equal(data.toString(), whole.toString());
         assert.equal(calls, 1);
+    });
+    it('Download: a message expunged mid-download ends with an error, not a clean EOF', async () => {
+        // The head chunk arrives, then the message is gone: fetchOne() resolves false. Ending the
+        // stream normally would hand the consumer a truncated body as if it were complete.
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            if (calls === 1) {
+                return { uid: 1, size: 100, source: Buffer.from('ABCD') };
+            }
+            return false;
+        };
+        let { content } = await client.download('1', false as any, { chunkSize: 4 });
+        await assert.rejects(collect(content), (err: any) => err.code === 'DownloadIncomplete');
+        assert.equal(calls, 2);
+    });
+    it('Download: a consumer that destroys the stream mid-chunk gets no error', async () => {
+        let client = makeClient();
+        let calls = 0;
+        let content: any;
+        client.fetchOne = async () => {
+            calls++;
+            if (calls === 1) {
+                return { uid: 1, size: 100, source: Buffer.from('ABCD') };
+            }
+            // the consumer gives up while this chunk is in flight, then the message vanishes too
+            content.destroy();
+            return false;
+        };
+        ({ content } = await client.download('1', false as any, { chunkSize: 4 }));
+        let errors: any[] = [];
+        content.on('error', (err: any) => errors.push(err));
+        content.resume();
+        await new Promise(r => setTimeout(r, 50));
+        assert.equal(calls, 2);
+        assert.deepEqual(errors, [], 'an aborted download is not reported as incomplete');
+    });
+    it('Download: a missing chunk body still ends the stream cleanly', async () => {
+        // The message exists but the window past the end comes back without the section, which
+        // some servers do for an exact multiple of chunkSize
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => (++calls === 1 ? { uid: 1, size: 4, source: Buffer.from('ABCD') } : { uid: 1 });
+        let { content } = await client.download('1', false as any, { chunkSize: 4 });
+        let data: any = await collect(content);
+        assert.equal(data.toString(), 'ABCD');
     });
     it('Download: repeated part the size of the window ends with an error', async () => {
         // The narrow case the oversized-chunk test above does not cover: a server that ignores
@@ -717,11 +764,11 @@ describe('imap-flow-fetch-download', () => {
         let res = await client.downloadMany('1', ['2']);
         assert.deepEqual(res, {});
     });
-    it('DownloadMany: returns {response:false} when no bodyParts', async () => {
+    it('DownloadMany: resolves empty when no bodyParts', async () => {
         let client = makeClient();
         client.fetchOne = async () => ({ uid: 1 });
         let res = await client.downloadMany('1', ['2']);
-        assert.deepEqual(res, { response: false });
+        assert.deepEqual(res, {});
     });
     it('DownloadMany: parses charset, flowed and name params', async () => {
         let client = makeClient();

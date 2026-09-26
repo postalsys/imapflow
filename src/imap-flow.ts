@@ -43,6 +43,7 @@ import {
     isUnsafeKey,
     getStringList,
     getTextValues,
+    emitSafe,
     buildConnectionError,
     guardedPromise,
     guardedReject,
@@ -56,6 +57,7 @@ import type {
     DownloadManyResult,
     DownloadMeta,
     DownloadObject,
+    DownloadNotFound,
     DownloadOptions,
     ESearchResult,
     ExpungeEvent,
@@ -1639,8 +1641,14 @@ export class ImapFlow extends EventEmitter {
                         err.code = 'ETHROTTLE';
                         err.throttleReset = throttleDelay;
 
-                        // The server-suggested delay can be very large, so throttleWait() caps it
-                        let delayResponse = Math.min(throttleDelay, MAX_THROTTLE_DELAY);
+                        // The server-suggested delay can be very large, so throttleWait() caps it.
+                        // The reader loop is parked for the whole wait, so it also stays well
+                        // inside the socket inactivity timeout: a wait that outlasted it would
+                        // fire the timeout handler, and the keepalive NOOP it sends can not be
+                        // read while the loop is parked, so the connection would be torn down.
+                        // A caller that retries (fetch) waits out the rest of the hint itself.
+                        let delayResponse = Math.min(throttleDelay, MAX_THROTTLE_DELAY, Math.floor(this.socketTimeout / 2));
+                        err.throttleWaited = delayResponse;
 
                         this.log.warn({ msg: 'Throttling detected', cid: this.id, throttleDelay, delayResponse, err });
 
@@ -3169,7 +3177,7 @@ export class ImapFlow extends EventEmitter {
             // whether the session ended with a clean logout or a lost transport. Emitted before
             // 'close' and only from the first close(), so no consumer sees it twice.
             if (closedMailbox) {
-                this.emit('mailboxClose', closedMailbox);
+                emitSafe(this, 'mailboxClose', closedMailbox);
             }
 
             this.emit('close');
@@ -3347,14 +3355,14 @@ export class ImapFlow extends EventEmitter {
      *
      * @param path mailbox path to check for (unicode string). If value is an array then it is joined using current delimiter symbols. Namespace prefix is added automatically if required.
      * @param query defines requested status items
-     * @returns status of the indicated mailbox
+     * @returns status of the indicated mailbox, or `false` if the server rejected the request
      *
      * @example
      * let status = await client.status('INBOX', {unseen: true});
      * console.log(status.unseen);
      * // 123
      */
-    async status(path: string | string[], query: StatusQuery): Promise<StatusObject> {
+    async status(path: string | string[], query: StatusQuery): Promise<StatusObject | false> {
         return await this.run('STATUS', path, query);
     }
 
@@ -3363,7 +3371,7 @@ export class ImapFlow extends EventEmitter {
      * otherwise IDLE is started by default on connection inactivity. NB! If `idle()` is called manually then it does not
      * return until IDLE is finished which means you would have to call some other command out of scope.
      *
-     * @returns Did the operation succeed or not
+     * @returns `false` if IDLE failed, `undefined` otherwise
      *
      * @example
      * let mailbox = await client.mailboxOpen('INBOX');
@@ -3897,13 +3905,15 @@ export class ImapFlow extends EventEmitter {
      * @example
      * let mailbox = await client.mailboxOpen('INBOX');
      * // download body part nr '1.2' from latest message
-     * let {meta, content} = await client.download('*', '1.2');
-     * content.pipe(fs.createWriteStream(meta.filename));
+     * let download = await client.download('*', '1.2');
+     * if (download.content) {
+     *     download.content.pipe(fs.createWriteStream(download.meta.filename));
+     * }
      */
-    async download(range: SequenceString, part?: string | undefined, options?: DownloadOptions | undefined): Promise<DownloadObject> {
+    async download(range: SequenceString, part?: string | undefined, options?: DownloadOptions | undefined): Promise<DownloadObject | DownloadNotFound> {
         if (!this.mailbox) {
             // no mailbox selected, nothing to do
-            return {} as DownloadObject;
+            return {};
         }
 
         let downloadOptions: DownloadOptions & FetchOptions = Object.assign(
@@ -3930,7 +3940,7 @@ export class ImapFlow extends EventEmitter {
             let response = await this.fetchOne(range, { uid: true, bodyStructure: true }, downloadOptions);
 
             if (!response) {
-                return { response: false, chunk: false } as unknown as DownloadObject;
+                return {};
             }
 
             if (!uid && response.uid) {
@@ -4046,8 +4056,8 @@ export class ImapFlow extends EventEmitter {
         });
 
         if (!response || !chunk) {
-            // ???
-            return {} as DownloadObject;
+            // the message or the part does not exist
+            return {};
         }
 
         let meta: DownloadMeta = {
@@ -4237,8 +4247,22 @@ export class ImapFlow extends EventEmitter {
                     throw err;
                 }
 
-                let { chunk } = await getNextPart();
-                if (!chunk || fetchAborted) {
+                let { response, chunk } = await getNextPart();
+                if (fetchAborted) {
+                    break;
+                }
+
+                if (response === false) {
+                    // The message is gone mid-download (expunged by another client, or the
+                    // mailbox was closed). Ending the stream here would pass the truncated body
+                    // off as complete, so the consumer is told the same way as for an overflow.
+                    let err: ImapFlowError = new Error('Message disappeared before the download completed');
+                    err.code = 'DownloadIncomplete';
+                    err.cid = this.id;
+                    throw err;
+                }
+
+                if (!chunk) {
                     break;
                 }
 
@@ -4417,7 +4441,7 @@ export class ImapFlow extends EventEmitter {
         let response = await this.fetchOne(range, query, downloadOptions);
 
         if (!response || !response.bodyParts) {
-            return { response: false } as unknown as DownloadManyResult;
+            return {};
         }
 
         let data: { [part: string]: { meta?: DownloadMeta | undefined; content?: Buffer | null | undefined } } = {};

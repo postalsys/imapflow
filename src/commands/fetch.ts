@@ -252,7 +252,9 @@ export default async function fetch(
             response.next();
             return messages;
         } catch (err: any) {
-            if (err.code === 'ETHROTTLE') {
+            // The last throttled attempt falls through and throws, so running out of retries
+            // is never mistaken for an empty result
+            if (err.code === 'ETHROTTLE' && retryCount < maxRetries - 1) {
                 // Server returned a throttle error (rate limiting). Retry with exponential backoff.
                 // Delay doubles each retry: 1s, 2s, 4s, 8s (capped at 30s).
                 // If server provides a throttleReset hint, use that if longer.
@@ -260,8 +262,9 @@ export default async function fetch(
 
                 // Use throttle reset time if provided and longer than backoff. The hint is
                 // server-controlled, so the wait goes through connection.throttleWait(), which caps
-                // it and keeps the timer tracked and abortable.
-                const delay = err.throttleReset && err.throttleReset > backoffDelay ? err.throttleReset : backoffDelay;
+                // it and keeps the timer tracked and abortable. The connection already waited
+                // part of the back-off before rejecting (throttleWaited), so only the rest is left.
+                const delay = Math.max(Math.max(err.throttleReset || 0, backoffDelay) - (err.throttleWaited || 0), 0);
 
                 connection.log.warn({
                     msg: 'Retrying throttled request with exponential backoff',

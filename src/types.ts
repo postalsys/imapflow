@@ -646,6 +646,15 @@ export interface DownloadObject {
     content: Readable;
 }
 
+/**
+ * What `download()` resolves with when there is nothing to download: no mailbox is selected, or
+ * the message or part was not found. Check `content` before using the result.
+ */
+export interface DownloadNotFound {
+    meta?: undefined;
+    content?: undefined;
+}
+
 export interface DownloadOptions {
     /** If true then uses UID number instead of sequence number for `range` */
     uid?: boolean | undefined;

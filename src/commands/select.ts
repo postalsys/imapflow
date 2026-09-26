@@ -1,4 +1,4 @@
-import { encodePath, normalizePath, enhanceCommandError, parseBigIntValue, parseUintValue, getStringList, MAX_UINT32_DIGITS } from '../tools.js';
+import { encodePath, normalizePath, enhanceCommandError, parseBigIntValue, parseUintValue, getStringList, MAX_UINT32_DIGITS, emitSafe } from '../tools.js';
 import type { ImapFlow } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapAttributeList, ImapAttributeNode, ImapCompileNode, ImapResponse } from '../handler/types.js';
@@ -274,7 +274,7 @@ export default async function select(
         // Emit mailboxClose if we're switching from a different mailbox.
         // Re-selecting the same mailbox (e.g., for resync) does not trigger close/open.
         if (currentMailbox && currentMailbox.path !== path) {
-            connection.emit('mailboxClose', currentMailbox);
+            emitSafe(connection, 'mailboxClose', currentMailbox);
         }
 
         connection.mailbox = map as MailboxObject;
@@ -284,7 +284,7 @@ export default async function select(
         connection.state = connection.states.SELECTED;
 
         if (!currentMailbox || currentMailbox.path !== path) {
-            connection.emit('mailboxOpen', connection.mailbox);
+            emitSafe(connection, 'mailboxOpen', connection.mailbox);
         }
 
         response.next();
@@ -303,7 +303,7 @@ export default async function select(
             connection.state = connection.states.AUTHENTICATED;
 
             if (currentMailbox) {
-                connection.emit('mailboxClose', currentMailbox);
+                emitSafe(connection, 'mailboxClose', currentMailbox);
             }
         }
 

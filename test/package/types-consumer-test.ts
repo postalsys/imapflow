@@ -41,6 +41,7 @@ import type {
     QuotaResponse,
     ESearchResult,
     DownloadObject,
+    DownloadNotFound,
     AppendResponseObject,
     CopyResponseObject,
     ExpungeEvent,
@@ -96,8 +97,10 @@ export async function run(): Promise<void> {
         list.forEach(entry => entry.flags.has('\\\\Noselect'));
         const tree: ListTreeResponse = await client.listTree();
         tree.folders?.forEach(folder => folder.path);
-        const status: StatusObject = await client.status('INBOX', { messages: true, uidNext: true });
-        status.messages;
+        const status: StatusObject | false = await client.status('INBOX', { messages: true, uidNext: true });
+        if (status) {
+            status.messages;
+        }
         const quota: QuotaResponse | false = await client.getQuota('INBOX');
         if (quota) {
             quota.storage?.used;
@@ -145,8 +148,11 @@ export async function run(): Promise<void> {
         }
 
         const download = await client.download('1', '2', { uid: true, maxBytes: 1024, chunkSize: 512 });
+        const missing: DownloadNotFound | DownloadObject = download;
+        missing.content?.destroy();
         if (download.content) {
-            const full: DownloadObject = download as DownloadObject;
+            // checking content narrows the result to a full download
+            const full: DownloadObject = download;
             full.meta.contentType;
             download.content.on('data', () => {});
         }

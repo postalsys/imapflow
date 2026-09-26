@@ -34,6 +34,8 @@ export interface ImapFlowError extends Error {
     tlsFailed?: boolean | undefined;
     /** Server suggested back-off in milliseconds for an ETHROTTLE error */
     throttleReset?: number | undefined;
+    /** Milliseconds of the ETHROTTLE back-off the connection already waited before rejecting */
+    throttleWaited?: number | undefined;
     /** Additional details, e.g. the timeouts that applied */
     details?: { [key: string]: any } | undefined;
     /** The underlying error */

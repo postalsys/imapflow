@@ -1,3 +1,4 @@
+import { emitSafe } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 
 /**
@@ -28,7 +29,7 @@ export default async function close(connection: ImapFlow): Promise<boolean | und
         connection.state = connection.states.AUTHENTICATED;
 
         if (currentMailbox) {
-            connection.emit('mailboxClose', currentMailbox);
+            emitSafe(connection, 'mailboxClose', currentMailbox);
         }
         return true;
     } catch (err) {
