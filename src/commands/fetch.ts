@@ -1,7 +1,7 @@
-import { formatMessageResponse, isRev2Active } from '../tools.js';
+import { formatMessageResponse, isRev2Active, getSelectedMailbox } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapAttributeList, ImapAttributeNode, ImapCompileNode, ImapResponse } from '../handler/types.js';
-import type { FetchMessageObject, FetchOptions, FetchQueryObject, MailboxObject } from '../types.js';
+import type { FetchMessageObject, FetchOptions, FetchQueryObject } from '../types.js';
 
 /**
  * Options for the FETCH command
@@ -38,14 +38,13 @@ export default async function fetch(
     query: FetchQueryObject,
     options?: FetchCommandOptions | undefined
 ): Promise<FetchCommandResult | undefined> {
-    if (connection.state !== connection.states.SELECTED || !range) {
+    let mailbox = getSelectedMailbox(connection);
+    if (!mailbox || !range) {
         // nothing to do here
         return;
     }
 
     options = options || {};
-
-    let mailbox = connection.mailbox as MailboxObject;
 
     // Use BINARY extension for fetching if supported and requested, otherwise fall back to BODY.
     // RFC 9051 folds the FETCH side of the BINARY extension into base IMAP4rev2, so an active

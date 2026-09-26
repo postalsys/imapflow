@@ -1,8 +1,8 @@
-import { normalizePath, encodePath, enhanceCommandError, hasCapability } from '../tools.js';
+import { normalizePath, encodePath, hasCapability, reportCommandError, getSelectedMailbox } from '../tools.js';
 import { parseCopyUid } from './copyuid-parser.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapAttributeNode, ImapResponse } from '../handler/types.js';
-import type { CopyResponseObject, MailboxObject, MessageRangeOptions } from '../types.js';
+import type { CopyResponseObject, MessageRangeOptions } from '../types.js';
 
 /**
  * Moves messages from the current mailbox to another mailbox.
@@ -20,7 +20,8 @@ export default async function move(
     destination: string | string[],
     options?: MessageRangeOptions | undefined
 ): Promise<CopyResponseObject | false | undefined> {
-    if (connection.state !== connection.states.SELECTED || !range || !destination) {
+    let mailbox = getSelectedMailbox(connection);
+    if (!mailbox || !range || !destination) {
         // nothing to do here
         return;
     }
@@ -33,7 +34,7 @@ export default async function move(
         { type: 'ATOM', value: encodePath(connection, destination) }
     ];
 
-    let map: CopyResponseObject = { path: (connection.mailbox as MailboxObject).path, destination };
+    let map: CopyResponseObject = { path: mailbox.path, destination };
 
     // Fallback for servers without the MOVE extension (RFC 6851):
     // emulate MOVE using COPY + flag as \Deleted + EXPUNGE.
@@ -59,8 +60,7 @@ export default async function move(
         parseCopyUid(response.response, map);
         return map;
     } catch (err: any) {
-        await enhanceCommandError(err);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err);
         return false;
     }
 }

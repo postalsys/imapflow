@@ -5,16 +5,18 @@ import {
     normalizePath,
     encodePath,
     comparePaths,
-    enhanceCommandError,
     parseBigIntValue,
     parseUintValue,
     MAX_UINT32_DIGITS,
-    emitSafe
+    getSelectedMailbox,
+    emitSafe,
+    isAuthenticatedState,
+    reportCommandError
 } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapCompileNode, ImapResponse } from '../handler/types.js';
-import type { AppendResponseObject, MailboxObject } from '../types.js';
+import type { AppendResponseObject } from '../types.js';
 
 /**
  * Result of an APPEND: the destination, the selected mailbox path at the time of the append,
@@ -43,7 +45,7 @@ export default async function append(
     flags?: string | string[] | undefined,
     idate?: Date | string | false | undefined
 ): Promise<AppendResult | undefined> {
-    if (![connection.states.AUTHENTICATED, connection.states.SELECTED].includes(connection.state) || !destination) {
+    if (!isAuthenticatedState(connection) || !destination) {
         // nothing to do here
         return;
     }
@@ -67,7 +69,8 @@ export default async function append(
 
     // If appending to the currently selected mailbox, we can listen for the
     // untagged EXISTS response to capture the new message's sequence number.
-    let expectExists = comparePaths(connection, (connection.mailbox as MailboxObject).path, destination);
+    let selected = getSelectedMailbox(connection);
+    let expectExists = !!selected && comparePaths(connection, selected.path, destination);
 
     // Validate and format flags. Only flags allowed by the mailbox's permanentFlags are included.
     flags = (Array.isArray(flags) ? flags : ([] as string[]).concat(flags || []))
@@ -120,13 +123,12 @@ export default async function append(
 
         // Update the connection's mailbox state and emit 'exists' event if the
         // count changed (notifies listeners about the new message).
-        if (expectExists) {
-            let mailbox = connection.mailbox as MailboxObject;
-            let prevCount = mailbox.exists;
+        if (expectExists && selected) {
+            let prevCount = selected.exists;
             if (map.seq !== prevCount) {
-                mailbox.exists = map.seq;
+                selected.exists = map.seq;
                 emitSafe(connection, 'exists', {
-                    path: mailbox.path,
+                    path: selected.path,
                     count: map.seq,
                     prevCount
                 });
@@ -189,8 +191,7 @@ export default async function append(
 
         return map;
     } catch (err) {
-        await enhanceCommandError(err as ImapFlowError);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err as ImapFlowError);
         throw err;
     }
 }

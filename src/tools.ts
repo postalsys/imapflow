@@ -562,6 +562,38 @@ export async function enhanceCommandError(err: ImapFlowError): Promise<ImapFlowE
 }
 
 /**
+ * Enhances a failed command's error (see enhanceCommandError()) and logs it, the shared first
+ * step of every command's failure path. The caller decides whether to throw or return.
+ *
+ * @param connection - IMAP connection instance
+ * @param err - The command error
+ */
+export async function reportCommandError(connection: ImapFlow, err: ImapFlowError): Promise<void> {
+    await enhanceCommandError(err);
+    connection.log.warn({ err, cid: connection.id });
+}
+
+/**
+ * Whether the session is authenticated, that is in the AUTHENTICATED or SELECTED state, which
+ * every mailbox-level command requires.
+ *
+ * @param connection - IMAP connection instance
+ */
+export function isAuthenticatedState(connection: ImapFlow): boolean {
+    return connection.state === connection.states.AUTHENTICATED || connection.state === connection.states.SELECTED;
+}
+
+/**
+ * Returns the selected mailbox, or false when the connection is not in the SELECTED state.
+ * Message-level commands use it as their precondition, which also narrows the mailbox type.
+ *
+ * @param connection - IMAP connection instance
+ */
+export function getSelectedMailbox(connection: ImapFlow): MailboxObject | false {
+    return connection.state === connection.states.SELECTED && connection.mailbox ? connection.mailbox : false;
+}
+
+/**
  * Converts a flat list of mailbox folders into a tree structure.
  *
  * @param folders - Array of folder objects from LIST/LSUB response

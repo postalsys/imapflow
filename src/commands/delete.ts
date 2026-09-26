@@ -1,6 +1,6 @@
-import { encodePath, normalizePath, enhanceCommandError } from '../tools.js';
+import { encodePath, normalizePath, isAuthenticatedState, reportCommandError, getSelectedMailbox } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
-import type { MailboxDeleteResponse, MailboxObject } from '../types.js';
+import type { MailboxDeleteResponse } from '../types.js';
 
 /**
  * Deletes an existing mailbox.
@@ -11,7 +11,7 @@ import type { MailboxDeleteResponse, MailboxObject } from '../types.js';
  * @throws If the DELETE command fails
  */
 export default async function deleteMailbox(connection: ImapFlow, path: string | string[]): Promise<MailboxDeleteResponse | undefined> {
-    if (![connection.states.AUTHENTICATED, connection.states.SELECTED].includes(connection.state)) {
+    if (!isAuthenticatedState(connection)) {
         // nothing to do here
         return;
     }
@@ -20,7 +20,8 @@ export default async function deleteMailbox(connection: ImapFlow, path: string |
 
     // If the mailbox to delete is currently selected, we must close/deselect it first.
     // IMAP servers reject DELETE on the currently selected mailbox (RFC 3501 6.3.4).
-    if (connection.state === connection.states.SELECTED && (connection.mailbox as MailboxObject).path === path) {
+    let selected = getSelectedMailbox(connection);
+    if (selected && selected.path === path) {
         await connection.run('CLOSE');
     }
 
@@ -33,8 +34,7 @@ export default async function deleteMailbox(connection: ImapFlow, path: string |
         response.next();
         return map;
     } catch (err: any) {
-        await enhanceCommandError(err);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err);
         throw err;
     }
 }

@@ -1,8 +1,8 @@
-import { normalizePath, encodePath, enhanceCommandError } from '../tools.js';
+import { normalizePath, encodePath, reportCommandError, getSelectedMailbox } from '../tools.js';
 import { parseCopyUid } from './copyuid-parser.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapAttributeNode } from '../handler/types.js';
-import type { CopyResponseObject, MailboxObject, MessageRangeOptions } from '../types.js';
+import type { CopyResponseObject, MessageRangeOptions } from '../types.js';
 
 /**
  * Copies messages from the current mailbox to another mailbox.
@@ -20,7 +20,8 @@ export default async function copy(
     destination: string | string[],
     options?: MessageRangeOptions | undefined
 ): Promise<CopyResponseObject | false | undefined> {
-    if (connection.state !== connection.states.SELECTED || !range || !destination) {
+    let mailbox = getSelectedMailbox(connection);
+    if (!mailbox || !range || !destination) {
         // nothing to do here
         return;
     }
@@ -38,7 +39,7 @@ export default async function copy(
         response = await connection.exec(options.uid ? 'UID COPY' : 'COPY', attributes);
         response.next();
 
-        let map: CopyResponseObject = { path: (connection.mailbox as MailboxObject).path, destination };
+        let map: CopyResponseObject = { path: mailbox.path, destination };
 
         // UIDPLUS (RFC 4315): the server may include a COPYUID response code in the
         // tagged OK response, providing a mapping from source UIDs to destination UIDs.
@@ -46,8 +47,7 @@ export default async function copy(
 
         return map;
     } catch (err: any) {
-        await enhanceCommandError(err);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err);
         return false;
     }
 }

@@ -1,8 +1,8 @@
-import { formatFlag, canUseFlag, enhanceCommandError } from '../tools.js';
+import { formatFlag, canUseFlag, reportCommandError, getSelectedMailbox } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapCompileNode } from '../handler/types.js';
-import type { MailboxObject, StoreOptions } from '../types.js';
+import type { StoreOptions } from '../types.js';
 
 /**
  * Options for the STORE command
@@ -22,7 +22,8 @@ export interface StoreCommandOptions extends StoreOptions {
  * @returns True on success, false on failure or if nothing to do
  */
 export default async function store(connection: ImapFlow, range: string, flags: string | string[], options: StoreCommandOptions): Promise<boolean> {
-    if (connection.state !== connection.states.SELECTED || !range || (options.useLabels && !connection.capabilities.has('X-GM-EXT-1'))) {
+    let mailbox = getSelectedMailbox(connection);
+    if (!mailbox || !range || (options.useLabels && !connection.capabilities.has('X-GM-EXT-1'))) {
         // nothing to do here
         return false;
     }
@@ -63,7 +64,7 @@ export default async function store(connection: ImapFlow, range: string, flags: 
         .map(flag => {
             let formatted = formatFlag(flag);
 
-            if (!canUseFlag(connection.mailbox, formatted as string) && options.operation !== 'remove') {
+            if (!canUseFlag(mailbox, formatted as string) && options.operation !== 'remove') {
                 return false;
             }
 
@@ -84,7 +85,7 @@ export default async function store(connection: ImapFlow, range: string, flags: 
 
     // CONDSTORE (RFC 7162): UNCHANGEDSINCE modifier prevents updating messages whose
     // mod-sequence is higher than the specified value, avoiding overwriting concurrent changes.
-    if (options.unchangedSince && connection.enabled.has('CONDSTORE') && !(connection.mailbox as MailboxObject).noModseq) {
+    if (options.unchangedSince && connection.enabled.has('CONDSTORE') && !mailbox.noModseq) {
         attributes.push([
             {
                 type: 'ATOM',
@@ -103,8 +104,7 @@ export default async function store(connection: ImapFlow, range: string, flags: 
         response.next();
         return true;
     } catch (err) {
-        await enhanceCommandError(err as ImapFlowError);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err as ImapFlowError);
         return false;
     }
 }

@@ -1,4 +1,4 @@
-import { encodePath, normalizePath, enhanceCommandError, parseUintValue, isUnsafeKey } from '../tools.js';
+import { encodePath, normalizePath, parseUintValue, isUnsafeKey, isAuthenticatedState, reportCommandError } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapResponse } from '../handler/types.js';
@@ -12,7 +12,7 @@ import type { QuotaResponse } from '../types.js';
  * @returns Quota information object, false if QUOTA not supported or on failure, or undefined if preconditions not met
  */
 export default async function quota(connection: ImapFlow, path: string | string[]): Promise<QuotaResponse | false | undefined> {
-    if (![connection.states.AUTHENTICATED, connection.states.SELECTED].includes(connection.state) || !path) {
+    if (!isAuthenticatedState(connection) || !path) {
         // nothing to do here
         return;
     }
@@ -127,8 +127,7 @@ export default async function quota(connection: ImapFlow, path: string | string[
 
         return map;
     } catch (err) {
-        await enhanceCommandError(err as ImapFlowError);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err as ImapFlowError);
         return false;
     }
 }

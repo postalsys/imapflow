@@ -1,4 +1,4 @@
-import { encodePath, normalizePath, getStatusCode, enhanceCommandError } from '../tools.js';
+import { encodePath, normalizePath, getStatusCode, isAuthenticatedState, reportCommandError } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapAttribute } from '../handler/types.js';
 import type { MailboxCreateResponse } from '../types.js';
@@ -12,7 +12,7 @@ import type { MailboxCreateResponse } from '../types.js';
  * @throws If the CREATE command fails (except when mailbox already exists)
  */
 export default async function create(connection: ImapFlow, path: string | string[]): Promise<MailboxCreateResponse | undefined> {
-    if (![connection.states.AUTHENTICATED, connection.states.SELECTED].includes(connection.state)) {
+    if (!isAuthenticatedState(connection)) {
         // nothing to do here
         return;
     }
@@ -83,8 +83,7 @@ export default async function create(connection: ImapFlow, path: string | string
             };
         }
 
-        await enhanceCommandError(err);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err);
         throw err;
     }
 }

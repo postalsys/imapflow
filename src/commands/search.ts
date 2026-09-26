@@ -1,4 +1,4 @@
-import { enhanceCommandError, hasCapability, isValidSequenceValue, EXPANDED_RANGE_LIMIT } from '../tools.js';
+import { hasCapability, isValidSequenceValue, EXPANDED_RANGE_LIMIT, reportCommandError } from '../tools.js';
 import { searchCompiler } from '../search-compiler.js';
 import { parseEsearchResponse } from './esearch-parser.js';
 import type { ImapFlow } from '../imap-flow.js';
@@ -99,8 +99,7 @@ export default async function search(
                 response.next();
                 return esearchResult;
             } catch (err) {
-                await enhanceCommandError(err as ImapFlowError);
-                connection.log.warn({ err, cid: connection.id });
+                await reportCommandError(connection, err as ImapFlowError);
                 return false;
             }
         }
@@ -227,8 +226,7 @@ export default async function search(
         // Sort numerically for consistent, predictable output order
         return Array.from(results).sort((a, b) => a - b);
     } catch (err) {
-        await enhanceCommandError(err as ImapFlowError);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err as ImapFlowError);
         return false;
     }
 }

@@ -1,4 +1,4 @@
-import { encodePath, normalizePath, buildStatusQueryAttributes, isRev2Active } from '../tools.js';
+import { encodePath, normalizePath, buildStatusQueryAttributes, isRev2Active, isAuthenticatedState } from '../tools.js';
 import { parseStatusList } from './status-fields.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
@@ -33,7 +33,7 @@ const MAILBOX_UPDATERS: { [key: string]: ((value: any, mailbox: MailboxObject, c
  * @throws {Error} If the mailbox does not exist
  */
 export default async function status(connection: ImapFlow, path: string | string[], query: StatusQuery | undefined): Promise<StatusObject | false> {
-    if (![connection.states.AUTHENTICATED, connection.states.SELECTED].includes(connection.state) || !path) {
+    if (!isAuthenticatedState(connection) || !path) {
         // nothing to do here
         return false;
     }

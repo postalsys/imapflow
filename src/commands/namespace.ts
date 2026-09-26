@@ -1,4 +1,4 @@
-import { hasCapability, getStringList } from '../tools.js';
+import { hasCapability, getStringList, isAuthenticatedState } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapAttribute, ImapAttributeList, ImapAttributeNode, ImapResponse } from '../handler/types.js';
 import type { NamespaceObject, NamespacesObject } from '../types.js';
@@ -28,7 +28,7 @@ export interface ListPrefixInfo {
  * @returns The primary personal namespace, or an error object on failure
  */
 export default async function namespace(connection: ImapFlow): Promise<NamespaceObject | NamespaceErrorResult | undefined> {
-    if (![connection.states.AUTHENTICATED, connection.states.SELECTED].includes(connection.state)) {
+    if (!isAuthenticatedState(connection)) {
         // nothing to do here
         return;
     }

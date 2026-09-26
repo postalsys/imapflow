@@ -1,4 +1,14 @@
-import { encodePath, normalizePath, enhanceCommandError, parseBigIntValue, parseUintValue, getStringList, MAX_UINT32_DIGITS, emitSafe } from '../tools.js';
+import {
+    encodePath,
+    normalizePath,
+    enhanceCommandError,
+    parseBigIntValue,
+    parseUintValue,
+    getStringList,
+    MAX_UINT32_DIGITS,
+    emitSafe,
+    isAuthenticatedState
+} from '../tools.js';
 import type { ImapFlow } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapAttributeList, ImapAttributeNode, ImapCompileNode, ImapResponse } from '../handler/types.js';
@@ -97,7 +107,7 @@ export default async function select(
     pathInput: string | string[],
     options?: SelectOptions | undefined
 ): Promise<MailboxObject | undefined> {
-    if (![connection.states.AUTHENTICATED, connection.states.SELECTED].includes(connection.state)) {
+    if (!isAuthenticatedState(connection)) {
         // nothing to do here
         return;
     }

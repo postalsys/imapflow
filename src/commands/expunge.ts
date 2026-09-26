@@ -1,7 +1,7 @@
-import { enhanceCommandError, hasCapability, parseBigIntValue } from '../tools.js';
+import { hasCapability, parseBigIntValue, reportCommandError, getSelectedMailbox } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapAttributeList, ImapCompileNode } from '../handler/types.js';
-import type { MailboxObject, MessageRangeOptions } from '../types.js';
+import type { MessageRangeOptions } from '../types.js';
 
 /**
  * Deletes specified messages by flagging them as Deleted and expunging.
@@ -13,7 +13,8 @@ import type { MailboxObject, MessageRangeOptions } from '../types.js';
  * @returns True on success, false on failure, or undefined if preconditions not met
  */
 export default async function expunge(connection: ImapFlow, range: string, options?: MessageRangeOptions | undefined): Promise<boolean | undefined> {
-    if (connection.state !== connection.states.SELECTED || !range) {
+    let mailbox = getSelectedMailbox(connection);
+    if (!mailbox || !range) {
         // nothing to do here
         return;
     }
@@ -44,7 +45,6 @@ export default async function expunge(connection: ImapFlow, range: string, optio
         if (responseCode.toUpperCase() === 'HIGHESTMODSEQ') {
             // A response code always comes with its section, see responseCode above
             let codeSection = section as ImapAttributeList;
-            let mailbox = connection.mailbox as MailboxObject;
             // Bounded digit runs only: isNaN() also passes '1e5', which BigInt() rejects with
             // a throw that the catch below would swallow, making messageDelete() report false
             // even though the server expunged the messages.
@@ -57,8 +57,7 @@ export default async function expunge(connection: ImapFlow, range: string, optio
         response.next();
         return true;
     } catch (err: any) {
-        await enhanceCommandError(err);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err);
         return false;
     }
 }

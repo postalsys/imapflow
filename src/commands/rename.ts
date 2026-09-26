@@ -1,6 +1,6 @@
-import { encodePath, normalizePath, enhanceCommandError } from '../tools.js';
+import { encodePath, normalizePath, isAuthenticatedState, reportCommandError, getSelectedMailbox } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
-import type { MailboxObject, MailboxRenameResponse } from '../types.js';
+import type { MailboxRenameResponse } from '../types.js';
 
 /**
  * Renames an existing mailbox.
@@ -12,7 +12,7 @@ import type { MailboxObject, MailboxRenameResponse } from '../types.js';
  * @throws If the RENAME command fails
  */
 export default async function rename(connection: ImapFlow, path: string | string[], newPath: string | string[]): Promise<MailboxRenameResponse | undefined> {
-    if (![connection.states.AUTHENTICATED, connection.states.SELECTED].includes(connection.state)) {
+    if (!isAuthenticatedState(connection)) {
         // nothing to do here
         return;
     }
@@ -24,7 +24,8 @@ export default async function rename(connection: ImapFlow, path: string | string
 
     // Must close/deselect the mailbox before renaming if it's currently selected,
     // as IMAP servers will not rename an active mailbox.
-    if (connection.state === connection.states.SELECTED && (connection.mailbox as MailboxObject).path === path) {
+    let selected = getSelectedMailbox(connection);
+    if (selected && selected.path === path) {
         await connection.run('CLOSE');
     }
 
@@ -41,8 +42,7 @@ export default async function rename(connection: ImapFlow, path: string | string
         response.next();
         return map;
     } catch (err: any) {
-        await enhanceCommandError(err);
-        connection.log.warn({ err, cid: connection.id });
+        await reportCommandError(connection, err);
         throw err;
     }
 }
