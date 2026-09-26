@@ -2,7 +2,6 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import imapCommands from '../src/imap-commands.js';
 import copyCommand from '../src/commands/copy.js';
 import moveCommand from '../src/commands/move.js';
 import expungeCommand from '../src/commands/expunge.js';
@@ -19,6 +18,7 @@ import selectCommand from '../src/commands/select.js';
 import listCommand from '../src/commands/list.js';
 import idleCommand from '../src/commands/idle.js';
 import authenticateCommand from '../src/commands/authenticate.js';
+import { createMockConnection } from './fixtures/mock-connection.js';
 
 // BigInt() is a standard JS function but triggers new-cap rule
 
@@ -26,82 +26,8 @@ import authenticateCommand from '../src/commands/authenticate.js';
 // Additional branch-coverage tests for lib/commands/*.js
 //
 // Each test targets one or more specific uncovered branches identified via c8.
-// The mock connection factory mirrors the one in commands-integration-test.js.
+// The mock connection factory is shared with test/commands/ (test/fixtures/mock-connection.ts).
 // ============================================================================
-
-const createMockConnection = (overrides = {}) => {
-    const states = {
-        NOT_AUTHENTICATED: 1,
-        AUTHENTICATED: 2,
-        SELECTED: 3,
-        LOGOUT: 4
-    };
-
-    const defaultMailbox = {
-        path: 'INBOX',
-        flags: new Set(['\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft']),
-        permanentFlags: new Set(['\\*']),
-        exists: 100,
-        recent: 5,
-        uidNext: 1000,
-        uidValidity: BigInt(12345),
-        noModseq: false
-    };
-
-    const connection: any = {
-        states,
-        state: (overrides as any).state || states.SELECTED,
-        id: 'test-connection-id',
-        capabilities: new Map((overrides as any).capabilities || [['IMAP4rev1', true]]),
-        enabled: new Set((overrides as any).enabled || []),
-        authCapabilities: new Map(),
-        folders: (overrides as any).folders || new Map(),
-        mailbox: (overrides as any).mailbox || { ...defaultMailbox },
-        namespace: (overrides as any).namespace || { delimiter: '/', prefix: '' },
-        expectCapabilityUpdate: (overrides as any).expectCapabilityUpdate || false,
-        log: {
-            warn: () => {},
-            info: () => {},
-            error: () => {},
-            debug: () => {},
-            trace: () => {}
-        },
-        close: (overrides as any).close || (() => {}),
-        emit: (overrides as any).emit || (() => {}),
-        write: (overrides as any).write || (() => {}),
-        currentSelectCommand: false,
-        // A live transport: command implementations that guard against polling or writing on a
-        // dead connection (idle.js) need this to look established.
-        socket: (overrides as any).socket || { destroyed: false },
-        // Mirrors ImapFlow.throttleWait(): resolves false on normal expiry, true when close()
-        // aborted the wait. The mock resolves immediately so throttle retries stay fast.
-        throttleWait: (overrides as any).throttleWait || (async () => false),
-        createNoConnectionError:
-            (overrides as any).createNoConnectionError || (() => Object.assign(new Error('Connection not available'), { code: 'NoConnection' })),
-        messageFlagsAdd: (overrides as any).messageFlagsAdd || (async () => {}),
-        messageCopy: (overrides as any).messageCopy || (async () => {}),
-        messageDelete: (overrides as any).messageDelete || (async () => {}),
-        run: (overrides as any).run || (async () => {}),
-        // Mirrors ImapFlow.runInternal(): dispatch through the command registry without the
-        // preCheck/auto-IDLE handshake that run() performs, so a fallback poll runs the real
-        // SELECT/STATUS implementation.
-        runInternal:
-            (overrides as any).runInternal ||
-            (async (command: any, ...args: any[]) => {
-                let handler = imapCommands.get(command.toUpperCase());
-                return handler ? await handler(connection, ...args) : false;
-            }),
-        exec:
-            (overrides as any).exec ||
-            (async () => ({
-                next: () => {},
-                response: { attributes: [] }
-            })),
-        ...overrides
-    };
-
-    return connection;
-};
 
 describe('commands-branches', () => {
     // ============================================================================

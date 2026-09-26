@@ -28,7 +28,7 @@ declarations. Both `import { ImapFlow } from 'imapflow'` and
 - `src/vendor-types.d.ts` - Minimal ambient declarations for the runtime dependencies that ship without types (libmime, libqp, libbase64, encoding-japanese)
 - `scripts/build.js` - The build: generates `src/package-info.ts`, runs `tsc` with `tsconfig.esm.json` and `tsconfig.cjs.json`, writes a `package.json` with the module format into each output directory, and rewrites CommonJS modules that only have a default export so `require()` returns the function or class itself
 - `dist/` - Build output, gitignored; it is what gets published to npm (`src/` is not part of the package)
-- `test/` - TypeScript tests (`*-test.ts`), run with `node --import tsx --test`. `test/fixtures/` holds shared helpers, `test/package/` checks the built `dist/` output and its type declarations, `test/integration/` needs Docker, `test/cloudflare/` runs the build on workerd through wrangler (its own job, see below)
+- `test/` - TypeScript tests (`*-test.ts`), run with `node --import tsx --test`. `test/fixtures/` holds shared helpers (`mock-connection.ts` is the mock connection the command tests run against), `test/commands/` has one file per command in `src/commands/`, `test/package/` checks the built `dist/` output and its type declarations, `test/integration/` needs Docker, `test/cloudflare/` runs the build on workerd through wrangler (its own job, see below)
 - `examples/` - Standalone usage examples (not production code, not linted). Type-checked with `checkJs` against the built declarations by `test/package/examples-test.ts` (`tsconfig.examples.json`)
 
 ## Technology Stack
