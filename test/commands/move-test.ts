@@ -100,6 +100,35 @@ describe('commands/move', () => {
         assert.ok(deleteCalled);
         assert.equal((result as any).destination, 'Archive');
     });
+    it('Commands: move fallback does not delete when COPY fails or is skipped', async () => {
+        for (const copyResult of [false, undefined]) {
+            let deleteCalled = false;
+            const connection: any = createMockConnection({
+                state: 3,
+                capabilities: new Map(), // No MOVE capability
+                messageCopy: async () => copyResult,
+                messageDelete: async () => {
+                    deleteCalled = true;
+                    return true;
+                }
+            });
+
+            const result = await moveCommand(connection, '1:10', 'Trash', {});
+            assert.equal(result, copyResult);
+            assert.equal(deleteCalled, false);
+        }
+    });
+    it('Commands: move fallback reports failure when delete fails', async () => {
+        const connection: any = createMockConnection({
+            state: 3,
+            capabilities: new Map(), // No MOVE capability
+            messageCopy: async (range: any, dest: any) => ({ path: 'INBOX', destination: dest }),
+            messageDelete: async () => false
+        });
+
+        const result = await moveCommand(connection, '1:10', 'Trash', {});
+        assert.equal(result, false);
+    });
     it('Commands: move fallback passes options', async () => {
         let copyOpts: any = null;
         let deleteOpts: any = null;

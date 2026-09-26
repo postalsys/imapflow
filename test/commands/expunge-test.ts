@@ -19,6 +19,21 @@ describe('commands/expunge', () => {
         assert.equal(result, true);
         assert.equal(execCalled, true);
     });
+    it('Commands: expunge skips EXPUNGE when flagging fails', async () => {
+        let execCalled = false;
+        const connection: any = createMockConnection({
+            state: 3,
+            messageFlagsAdd: async () => false,
+            exec: async () => {
+                execCalled = true;
+                return { next: () => {}, response: { attributes: [] } };
+            }
+        });
+
+        const result = await expungeCommand(connection, '1:*', {});
+        assert.equal(result, false);
+        assert.equal(execCalled, false);
+    });
     it('Commands: expunge with UID range', async () => {
         let execCmd = null;
         const connection: any = createMockConnection({

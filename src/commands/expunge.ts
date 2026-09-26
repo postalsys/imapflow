@@ -23,7 +23,11 @@ export default async function expunge(connection: ImapFlow, range: string, optio
 
     // Two-step deletion process per IMAP protocol:
     // Step 1: Mark the target messages with the \Deleted flag.
-    await connection.messageFlagsAdd(range, ['\\Deleted'], options);
+    // If that failed, EXPUNGE would not remove the target messages (and without
+    // UIDPLUS it would remove unrelated \Deleted messages), so report the failure instead.
+    if (!(await connection.messageFlagsAdd(range, ['\\Deleted'], options))) {
+        return false;
+    }
 
     // Step 2: Issue EXPUNGE to permanently remove \Deleted messages.
     // With UIDPLUS (RFC 4315): "UID EXPUNGE <uids>" removes only the specified UIDs,

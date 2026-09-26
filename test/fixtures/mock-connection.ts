@@ -58,7 +58,7 @@ export const createMockConnection = (overrides = {}) => {
         skipListAuxArgs: false,
         skipLsub: false,
         skipRev2: false,
-        messageFlagsAdd: (overrides as any).messageFlagsAdd || (async () => {}),
+        messageFlagsAdd: (overrides as any).messageFlagsAdd || (async () => true),
         messageCopy: (overrides as any).messageCopy || (async () => {}),
         messageDelete: (overrides as any).messageDelete || (async () => {}),
         // Mirrors ImapFlow.throttleWait(): resolves false on normal expiry, true when close()

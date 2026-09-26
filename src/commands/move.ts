@@ -40,8 +40,13 @@ export default async function move(
     // emulate MOVE using COPY + flag as \Deleted + EXPUNGE.
     if (!hasCapability(connection, 'MOVE')) {
         let result = await connection.messageCopy(range, destination, options);
-        await connection.messageDelete(range, Object.assign({ silent: true }, options));
-        return result;
+        if (!result) {
+            // The source must stay untouched when the copy failed, otherwise the messages are lost
+            return result;
+        }
+        let deleted = await connection.messageDelete(range, Object.assign({ silent: true }, options));
+        // Messages that were copied but not removed from the source mean the move did not complete
+        return deleted ? result : false;
     }
 
     let response: ExecResponse;
