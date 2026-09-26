@@ -411,7 +411,11 @@ describe('reliability-improvements', () => {
 
         let start = Date.now();
         let readerDone = client.reader().catch(() => {});
+        // The back-off timer is unref'd by design, so a ref'd guard keeps the event loop alive
+        // while the test waits for it (Node 22 cancels a test whose loop has gone idle)
+        let guard = setTimeout(() => {}, 5000);
         let rejected = await rejection;
+        clearTimeout(guard);
 
         // rejected after half the socket timeout, not after the hint
         assert.equal(rejected.code, 'ETHROTTLE');
