@@ -7,6 +7,7 @@ import { ImapFlow } from 'imapflow';
 console.log('VERSION');
 console.log(ImapFlow.version);
 
+/** @type {import('imapflow').ImapFlowOptions} */
 let config = {
     host: 'ethereal.email',
     port: 993,

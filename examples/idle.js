@@ -1,6 +1,7 @@
 import util from 'node:util';
 import { ImapFlow } from 'imapflow';
 
+/** @type {import('imapflow').ImapFlowOptions} */
 let config = {
     host: 'localhost',
     port: 9993,

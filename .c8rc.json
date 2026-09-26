@@ -5,5 +5,10 @@
     "reporter": ["text", "html"],
     "include": ["src/**/*.ts"],
     "exclude": ["src/package-info.ts", "src/**/types.ts", "src/**/*.d.ts"],
-    "exclude-after-remap": true
+    "exclude-after-remap": true,
+    "check-coverage": true,
+    "lines": 99.5,
+    "statements": 99.5,
+    "branches": 99,
+    "functions": 100
 }

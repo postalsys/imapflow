@@ -1,6 +1,7 @@
 import util from 'node:util';
 import { ImapFlow } from 'imapflow';
 
+/** @type {import('imapflow').ImapFlowOptions} */
 let config = {
     host: 'ethereal.email',
     port: 993,
@@ -62,7 +63,8 @@ c.connect()
         console.log('CONNECTION established');
         //console.log(c.folders);
         let path = 'INBOX';
-        setTimeout(() => c.writeSocket.destroy(), 100);
+        // simulate a dropped connection while the mailbox is being opened
+        setTimeout(() => c.close(), 100);
         try {
             await c.mailboxOpen(path);
             console.log('success 1');

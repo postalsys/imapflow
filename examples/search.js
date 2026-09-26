@@ -1,5 +1,6 @@
 import { ImapFlow } from 'imapflow';
 
+/** @type {import('imapflow').ImapFlowOptions} */
 let config = {
     host: 'ethereal.email',
     port: 993,
@@ -37,7 +38,7 @@ async function fetchMails() {
     try {
         for await (let message of client.fetch(
             { or: SEARCH_OBJS } /* pass SEARCH_OBS here */,
-            { envelope: true, uid: true, emailId: true } /* Another bug: emailID is not fetched! */,
+            { envelope: true, uid: true } /* emailId is included automatically when the server supports it */,
             { uid: true }
         )) {
             /* DO STUFF HERE */
