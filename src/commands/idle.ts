@@ -1,4 +1,4 @@
-import { guardedPromise, hasCapability, logConnectionError, restampConnectionError, unrefTimer, clearTimer } from '../tools.js';
+import { guardedPromise, hasCapability, logConnectionError, restampConnectionError, unrefTimer, clearTimer, getSelectedMailbox } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { SelectCommand } from '../handler/types.js';
@@ -287,7 +287,7 @@ async function runPollingFallback(connection: ImapFlow, maxIdleTime?: number | f
                 }
 
                 // The transport or the mailbox may be gone by the time the timer fires
-                if (!connection.socket || connection.socket.destroyed || connection.state !== connection.states.SELECTED || !connection.mailbox) {
+                if (!connection.socket || connection.socket.destroyed || !getSelectedMailbox(connection)) {
                     return cancel();
                 }
 

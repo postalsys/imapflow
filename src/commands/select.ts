@@ -1,13 +1,13 @@
 import {
     encodePath,
     normalizePath,
-    enhanceCommandError,
     parseBigIntValue,
     parseUintValue,
     getStringList,
     MAX_UINT32_DIGITS,
     emitSafe,
-    isAuthenticatedState
+    isAuthenticatedState,
+    reportCommandError
 } from '../tools.js';
 import type { ImapFlow } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
@@ -300,7 +300,7 @@ export default async function select(
         response.next();
         return map as MailboxObject;
     } catch (err) {
-        await enhanceCommandError(err as ImapFlowError);
+        await reportCommandError(connection, err as ImapFlowError);
 
         // If SELECT/EXAMINE fails while a mailbox was already selected, we must
         // reset to AUTHENTICATED state since the server has implicitly deselected
@@ -317,7 +317,6 @@ export default async function select(
             }
         }
 
-        connection.log.warn({ err, cid: connection.id });
         throw err;
     }
 }

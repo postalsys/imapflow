@@ -14,6 +14,8 @@ function makeConnection({ hasEsearch = true } = {}) {
     return {
         state: 'SELECTED',
         states: { SELECTED: 'SELECTED' },
+        // a SELECTED connection always has its mailbox
+        mailbox: { path: 'INBOX', exists: 0 },
         capabilities: caps,
         enabled: new Set(),
         exec: async () => ({ next: () => {} }),

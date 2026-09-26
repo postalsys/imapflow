@@ -53,12 +53,12 @@ export default async function fetch(
     const canUseBinary = connection.capabilities.has('BINARY') || isRev2Active(connection);
     const commandKey = canUseBinary && options.binary && !connection.disableBinary ? 'BINARY' : 'BODY';
 
-    // Retry logic for ETHROTTLE errors (server rate limiting) with exponential backoff
-    let retryCount = 0;
+    // Retry logic for ETHROTTLE errors (server rate limiting) with exponential backoff.
+    // Every pass returns or throws: the last throttled attempt throws instead of retrying.
     const maxRetries = 4;
     const baseDelay = 1000; // Start with 1 second delay
 
-    while (retryCount < maxRetries) {
+    for (let retryCount = 0; ; retryCount++) {
         let messages: FetchCommandResult = {
             count: 0,
             list: []
@@ -255,7 +255,7 @@ export default async function fetch(
             // is never mistaken for an empty result
             if (err.code === 'ETHROTTLE' && retryCount < maxRetries - 1) {
                 // Server returned a throttle error (rate limiting). Retry with exponential backoff.
-                // Delay doubles each retry: 1s, 2s, 4s, 8s (capped at 30s).
+                // Delay doubles each retry: 1s, 2s, 4s.
                 // If server provides a throttleReset hint, use that if longer.
                 const backoffDelay = Math.min(baseDelay * Math.pow(2, retryCount), 30000); // Cap at 30 seconds
 
@@ -263,7 +263,7 @@ export default async function fetch(
                 // server-controlled, so the wait goes through connection.throttleWait(), which caps
                 // it and keeps the timer tracked and abortable. The connection already waited
                 // part of the back-off before rejecting (throttleWaited), so only the rest is left.
-                const delay = Math.max(Math.max(err.throttleReset || 0, backoffDelay) - (err.throttleWaited || 0), 0);
+                const delay = Math.max(err.throttleReset || 0, backoffDelay) - (err.throttleWaited || 0);
 
                 connection.log.warn({
                     msg: 'Retrying throttled request with exponential backoff',
@@ -281,8 +281,6 @@ export default async function fetch(
                 if (aborted) {
                     throw connection.createNoConnectionError(connection.byeReason, { rejectedFrom: 'throttleAbort', command: 'FETCH' });
                 }
-
-                retryCount++;
                 continue;
             }
 

@@ -70,7 +70,8 @@ export default async function append(
     // If appending to the currently selected mailbox, we can listen for the
     // untagged EXISTS response to capture the new message's sequence number.
     let selected = getSelectedMailbox(connection);
-    let expectExists = !!selected && comparePaths(connection, selected.path, destination);
+    // The selected mailbox when appending to it, false otherwise
+    const targetMailbox = selected && comparePaths(connection, selected.path, destination) ? selected : false;
 
     // Validate and format flags. Only flags allowed by the mailbox's permanentFlags are included.
     flags = (Array.isArray(flags) ? flags : ([] as string[]).concat(flags || []))
@@ -123,12 +124,12 @@ export default async function append(
 
         // Update the connection's mailbox state and emit 'exists' event if the
         // count changed (notifies listeners about the new message).
-        if (expectExists && selected) {
-            let prevCount = selected.exists;
+        if (targetMailbox) {
+            let prevCount = targetMailbox.exists;
             if (map.seq !== prevCount) {
-                selected.exists = map.seq;
+                targetMailbox.exists = map.seq;
                 emitSafe(connection, 'exists', {
-                    path: selected.path,
+                    path: targetMailbox.path,
                     count: map.seq,
                     prevCount
                 });
@@ -140,7 +141,7 @@ export default async function append(
     try {
         response = await connection.exec('APPEND', attributes, {
             // Only listen for EXISTS if we're appending to the currently selected mailbox
-            untagged: expectExists ? { EXISTS: handleExistsUpdate } : false
+            untagged: targetMailbox ? { EXISTS: handleExistsUpdate } : false
         });
 
         // UIDPLUS (RFC 4315): the server may include APPENDUID response code in
@@ -168,7 +169,7 @@ export default async function append(
 
         // If we didn't get an EXISTS during APPEND (some servers don't send it
         // until the next command), issue a NOOP to flush pending notifications.
-        if (expectExists && !map.seq) {
+        if (targetMailbox && !map.seq) {
             try {
                 response = await connection.exec('NOOP', false, {
                     untagged: { EXISTS: handleExistsUpdate },

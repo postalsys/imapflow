@@ -404,17 +404,16 @@ describe('reliability-improvements', () => {
         // timeout handler while nothing can be read, and the connection would be torn down.
         let client = makeClient({ socketTimeout: 200 });
 
-        let rejected: any = null;
         let request: any = stubThrottleResponse(client, 60000);
-        request.reject = (err: any) => {
-            rejected = err;
-        };
+        let rejection = new Promise<any>(resolve => {
+            request.reject = resolve;
+        });
 
         let start = Date.now();
         let readerDone = client.reader().catch(() => {});
-        await new Promise(r => setTimeout(r, 300));
+        let rejected = await rejection;
 
-        assert.ok(rejected, 'rejected after half the socket timeout, not after the hint');
+        // rejected after half the socket timeout, not after the hint
         assert.equal(rejected.code, 'ETHROTTLE');
         assert.equal(rejected.throttleReset, 60000, 'the full hint is still reported');
         assert.equal(rejected.throttleWaited, 100, 'the part already waited is reported for the retry');

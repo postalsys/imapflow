@@ -67,7 +67,7 @@ export async function downloadMessage(
     if (part === '1') {
         // Special handling for part "1": in single-node emails (no childNodes),
         // the body is accessed via "TEXT" rather than "1", and headers via
-        // "HEADER" instead of "1.MIME". Check bodyStructure to detect client.
+        // "HEADER" instead of "1.MIME". Check bodyStructure to detect this.
         let response = await client.fetchOne(range, { uid: true, bodyStructure: true }, downloadOptions);
 
         if (!response) {

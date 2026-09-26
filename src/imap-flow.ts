@@ -3108,10 +3108,8 @@ export class ImapFlow extends EventEmitter {
         // The error travels on, though, through await chains and .then() links that
         // guardedPromise() knows nothing about. Read a crash stack ending here as "this is
         // the value that escaped", never as "this is the promise that escaped".
-        let byeReason = this.byeReason;
-
         for (let request of pendingRequests) {
-            request.reject(this.createNoConnectionError(byeReason, { rejectedFrom: 'pendingRequest', command: request.command }));
+            request.reject(this.createNoConnectionError(this.byeReason, { rejectedFrom: 'pendingRequest', command: request.command }));
         }
     }
 
@@ -3121,8 +3119,6 @@ export class ImapFlow extends EventEmitter {
      * @internal
      */
     closeLocks(): void {
-        let byeReason = this.byeReason;
-
         // Clear current lock - holder will see errors when they try operations.
         // Also clear the held-lock diagnostic timer so it doesn't fire post-close.
         if (this.currentLock && this.currentLock.heldWarnTimer) {
@@ -3139,7 +3135,7 @@ export class ImapFlow extends EventEmitter {
                     lock.acquireTimer = null;
                 }
                 if (typeof lock.reject === 'function') {
-                    lock.reject(this.createNoConnectionError(byeReason, { rejectedFrom: 'mailboxLock', path: lock.path }));
+                    lock.reject(this.createNoConnectionError(this.byeReason, { rejectedFrom: 'mailboxLock', path: lock.path }));
                 }
             }
         }
@@ -3201,7 +3197,7 @@ export class ImapFlow extends EventEmitter {
         // lifecycle, so each is destroyed exactly once:
         //   1. the compression PassThrough (writeSocket), if compression replaced it
         //   2. the raw socket, which is also writeSocket when compression is not active
-        // The compression streams themselves were destroyed above.
+        // The compression streams themselves were destroyed in closeStreams().
         if (this.writeSocket && this.writeSocket !== this.socket && !this.writeSocket.destroyed) {
             try {
                 this.writeSocket.destroy();
@@ -3222,6 +3218,7 @@ export class ImapFlow extends EventEmitter {
         // them even if the ImapFlow instance itself is still referenced.
         this.socket = null;
         this.writeSocket = null;
+        // closeStreams() leaves these set when destroying them failed
         this._inflate = null;
         this._deflate = null;
         this._streamerErrorHandler = null;

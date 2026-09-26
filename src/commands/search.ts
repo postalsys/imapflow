@@ -1,4 +1,4 @@
-import { hasCapability, isValidSequenceValue, EXPANDED_RANGE_LIMIT, reportCommandError } from '../tools.js';
+import { hasCapability, isValidSequenceValue, EXPANDED_RANGE_LIMIT, reportCommandError, getSelectedMailbox } from '../tools.js';
 import { searchCompiler } from '../search-compiler.js';
 import { parseEsearchResponse } from './esearch-parser.js';
 import type { ImapFlow } from '../imap-flow.js';
@@ -39,7 +39,8 @@ export default async function search(
     query: SearchObject | boolean | null | undefined,
     options?: SearchOptions | undefined
 ): Promise<number[] | ESearchResult | false> {
-    if (connection.state !== connection.states.SELECTED) {
+    const mailbox = getSelectedMailbox(connection);
+    if (!mailbox) {
         // nothing to do here
         return false;
     }
@@ -171,7 +172,7 @@ export default async function search(
                         // for message sequence numbers, while server-sent UID sets may
                         // not contain '*' at all (RFC 9051 section 4.1.1), so UID
                         // parts with '*' are dropped
-                        let existsCount = () => (connection.mailbox && connection.mailbox.exists) || 0;
+                        let existsCount = () => mailbox.exists || 0;
                         // The mailbox EXISTS count is itself server-supplied and can be
                         // absurdly large, so the budget is additionally capped at the same
                         // absolute ceiling expandRange() uses - a hostile server cannot

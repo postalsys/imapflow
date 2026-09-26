@@ -1,4 +1,4 @@
-import { encodePath, normalizePath, buildStatusQueryAttributes, isRev2Active, isAuthenticatedState } from '../tools.js';
+import { encodePath, normalizePath, buildStatusQueryAttributes, isRev2Active, isAuthenticatedState, emitSafe, getSelectedMailbox } from '../tools.js';
 import { parseStatusList } from './status-fields.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
@@ -12,7 +12,7 @@ const MAILBOX_UPDATERS: { [key: string]: ((value: any, mailbox: MailboxObject, c
         let prevCount = mailbox.exists;
         if (prevCount !== value) {
             mailbox.exists = value;
-            connection.emit('exists', { path, count: value, prevCount });
+            emitSafe(connection, 'exists', { path, count: value, prevCount });
         }
     },
     uidNext: (value: number, mailbox: MailboxObject) => {
@@ -71,8 +71,8 @@ export default async function status(connection: ImapFlow, path: string | string
                 STATUS: async (untagged: ImapResponse) => {
                     // If querying the currently selected mailbox, also update the
                     // connection's live mailbox state and emit events for changes.
-                    let currentMailbox =
-                        connection.state === connection.states.SELECTED && connection.mailbox && connection.mailbox.path === path ? connection.mailbox : false;
+                    let selected = getSelectedMailbox(connection);
+                    let currentMailbox = selected && selected.path === path ? selected : false;
 
                     let list = untagged.attributes && Array.isArray(untagged.attributes[1]) ? untagged.attributes[1] : false;
                     if (!list) {

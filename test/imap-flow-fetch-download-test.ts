@@ -5,6 +5,7 @@ import libbase64 from 'libbase64';
 import libqp from 'libqp';
 import libmime from 'libmime';
 import { finished } from 'node:stream';
+import { once } from 'node:events';
 import { chunkedFetchOne, installRejectionDetector, slowConsumer } from './fixtures/test-client.js';
 
 // Tests for the fetch generator and the download / downloadMany streaming
@@ -516,7 +517,9 @@ describe('imap-flow-fetch-download', () => {
         let errors: any[] = [];
         content.on('error', (err: any) => errors.push(err));
         content.resume();
-        await new Promise(r => setTimeout(r, 50));
+        await once(content, 'close');
+        // let the chunk loop settle, a late error would be emitted here
+        await new Promise(r => setImmediate(r));
         assert.equal(calls, 2);
         assert.deepEqual(errors, [], 'an aborted download is not reported as incomplete');
     });
