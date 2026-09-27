@@ -1261,7 +1261,7 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
             // extension data (not available for BODY requests)
 
             // body parameter parenthesized list
-            if (i < node.length - 1) {
+            if (i < node.length) {
                 if (node[i]) {
                     curNode.parameters = getStructuredParams(node[i] as ImapAttributeList);
                 }
@@ -1354,7 +1354,7 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
             // extension data (not available for BODY requests)
 
             // md5
-            if (i < node.length - 1) {
+            if (i < node.length) {
                 if (node[i]) {
                     curNode.md5 = (node[i]!.value || '').toString().toLowerCase();
                 }
@@ -1366,7 +1366,7 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
         // not available for BODY requests
 
         // body disposition
-        if (i < node.length - 1) {
+        if (i < node.length) {
             let disposition = node[i];
             if (Array.isArray(disposition) && disposition.length) {
                 curNode.disposition = ((disposition[0] && disposition[0].value) || '').toString().toLowerCase();
@@ -1378,7 +1378,7 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
         }
 
         // body language
-        if (i < node.length - 1) {
+        if (i < node.length) {
             if (node[i]) {
                 /* c8 ignore next */ // node[i] is truthy inside this guard, so the [] fallback is unreachable
                 curNode.language = ([] as ImapAttribute[]).concat(node[i] || []).map(val => ((val && val.value) || '').toString().toLowerCase());
@@ -1389,7 +1389,7 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
         // body location
         // NB! defined as a "string list" in RFC3501 but replaced in errata document with "string"
         // Errata: http://www.rfc-editor.org/errata_search.php?rfc=3501
-        if (i < node.length - 1) {
+        if (i < node.length) {
             if (node[i]) {
                 curNode.location = (node[i]!.value || '').toString();
             }

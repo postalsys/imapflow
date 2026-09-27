@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseBodystructure } from '../src/tools.js';
+import parser from '../src/handler/imap-parser.js';
 
 describe('bodystructure', () => {
     it('Process correct TEXT with line count', () => {
@@ -892,5 +893,65 @@ describe('bodystructure', () => {
         let bodyStruct: any = parseBodystructure(attribute);
 
         assert.deepEqual(bodyStruct.childNodes[1].dispositionParameters.filename, 'Trang_ghi_âm (8) (1).xlsx');
+    });
+});
+
+describe('bodystructure: trailing extension fields', () => {
+    // Extension fields are optional from the end, so a server may stop after any of them.
+    // Each case ends the list on a different field, which must still be read.
+    const parse = async (structure: string): Promise<any> => {
+        const response: any = await parser(`* 1 FETCH (BODYSTRUCTURE ${structure})`);
+        return parseBodystructure(response.attributes[1][1]);
+    };
+
+    it('reads md5 as the last field', async () => {
+        const node = await parse('("image" "png" NIL NIL NIL "base64" 100 "abc123")');
+        assert.equal(node.md5, 'abc123');
+    });
+
+    it('reads the disposition as the last field', async () => {
+        const node = await parse('("application" "pdf" ("name" "x.pdf") NIL NIL "base64" 1234 NIL ("attachment" ("filename" "x.pdf")))');
+        assert.equal(node.disposition, 'attachment');
+        assert.deepEqual(node.dispositionParameters, { filename: 'x.pdf' });
+    });
+
+    it('reads the language as the last field', async () => {
+        const node = await parse('("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 10 1 NIL NIL ("en" "de"))');
+        assert.deepEqual(node.language, ['en', 'de']);
+    });
+
+    it('reads the location as the last field', async () => {
+        const node = await parse('("image" "png" ("name" "a.png") NIL NIL "base64" 100 NIL ("inline" NIL) NIL "http://x/a.png")');
+        assert.equal(node.disposition, 'inline');
+        assert.equal(node.location, 'http://x/a.png');
+    });
+
+    it('reads the location of a text part without a line count', async () => {
+        const node = await parse('("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 10 NIL ("inline" NIL) NIL "loc")');
+        assert.equal(node.lineCount, undefined);
+        assert.equal(node.disposition, 'inline');
+        assert.equal(node.location, 'loc');
+    });
+
+    it('reads multipart parameters as the last field', async () => {
+        const node = await parse('(("text" "plain" NIL NIL NIL "7bit" 1 1) "mixed" ("boundary" "x"))');
+        assert.equal(node.type, 'multipart/mixed');
+        assert.deepEqual(node.parameters, { boundary: 'x' });
+    });
+
+    it('reads multipart disposition, language and location', async () => {
+        const node = await parse('(("text" "plain" NIL NIL NIL "7bit" 1 1) "mixed" ("boundary" "x") ("inline" NIL) "en" "mloc")');
+        assert.deepEqual(node.parameters, { boundary: 'x' });
+        assert.equal(node.disposition, 'inline');
+        assert.deepEqual(node.language, ['en']);
+        assert.equal(node.location, 'mloc');
+    });
+
+    it('leaves extension fields unset for the BODY form', async () => {
+        const node = await parse('("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 10 1)');
+        assert.equal(node.lineCount, 1);
+        for (const key of ['md5', 'disposition', 'language', 'location']) {
+            assert.equal(node[key], undefined, key);
+        }
     });
 });
