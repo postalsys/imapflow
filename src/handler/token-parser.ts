@@ -422,15 +422,20 @@ export class TokenParser {
                                     this.currentNode = this.createNode(this.currentNode, this.pos + i + 10);
                                     // just call this an ATOM, even though IMAPURL might be more correct
                                     this.currentNode.type = 'ATOM';
-                                    // jump i to the ']'
-                                    i = this.str.indexOf(']', i + 10);
-                                    if (i < 0) {
-                                        // Malformed REFERRAL with no closing ']'. Consume the rest
-                                        // of the string (there is no ']' to exclude) instead of
-                                        // computing a negative-index substring, which would yield
-                                        // garbage.
-                                        i = this.str.length;
+                                    // jump i to the ']' that closes the section. The URL itself can
+                                    // hold a bracketed IPv6 host (imap://[::1]/INBOX), so brackets
+                                    // opened inside the URL are matched before the closing one.
+                                    let depth = 0;
+                                    for (i = i + 10; i < this.str.length; i++) {
+                                        let urlChr = this.str.charAt(i);
+                                        if (urlChr === '[') {
+                                            depth++;
+                                        } else if (urlChr === ']' && depth-- === 0) {
+                                            break;
+                                        }
                                     }
+                                    // A malformed REFERRAL with no closing ']' leaves i at the end of
+                                    // the string, so the URL takes the rest of it.
                                     this.currentNode.endPos = this.pos + i - 1;
                                     this.currentNode.value = this.str.substring(this.currentNode.startPos! - this.pos, this.currentNode.endPos - this.pos + 1);
                                     this.currentNode = this.currentNode.parentNode!;

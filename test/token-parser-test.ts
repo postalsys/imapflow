@@ -367,6 +367,22 @@ describe('token-parser', () => {
         assert.equal(section[0].value, 'REFERRAL');
         assert.equal(section![1].value, 'imap://user@host/INBOX');
     });
+    it('Token Parser: REFERRAL URL with an IPv6 host keeps its brackets', async () => {
+        let r: any = await parser('* NO [REFERRAL imap://user@[::1]:143/INBOX] please use another server');
+        let section: any = r.attributes[0].section;
+        assert.equal(section[1].value, 'imap://user@[::1]:143/INBOX');
+        assert.equal(r.attributes[1].value, 'please use another server');
+    });
+    it('Token Parser: REFERRAL URL with an IPv6 host at the end of the input', async () => {
+        let r: any = await parser('* NO [REFERRAL imap://[::1]/INBOX]');
+        let section: any = r.attributes[0].section;
+        assert.equal(section[1].value, 'imap://[::1]/INBOX');
+    });
+    it('Token Parser: REFERRAL section closed without a following space', async () => {
+        let r: any = await parser('* NO [REFERRAL imap://[::1]/INBOX]text');
+        let section: any = r.attributes[0].section;
+        assert.equal(section[1].value, 'imap://[::1]/INBOX');
+    });
     it('Token Parser: malformed REFERRAL with no closing bracket consumes the rest', async () => {
         // Missing ']' previously produced a negative-index substring (garbage). The whole
         // remaining string should be captured as the URL instead, without throwing.
