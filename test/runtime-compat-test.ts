@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import tls from 'node:tls';
 import { makeClient, makeSocketStub } from './fixtures/test-client.js';
+import { ImapStream } from '../src/handler/imap-stream.js';
 
 // Behavior that differs between JavaScript runtimes. The library runs on Node.js, Bun and
 // Cloudflare Workers, and these cases pin the spots where a runtime detail (event ordering,
@@ -60,6 +61,51 @@ describe('runtime-compat', () => {
         assert.equal(calls, 1);
         assert.equal(client.reading, false);
         client.close();
+    });
+});
+
+describe('runtime-compat: input stream', () => {
+    it('Runtime: a chunk delivered while the input loop is winding down is still processed', async () => {
+        // Cloudflare Workers hand over the next socket chunk in the microtasks between the
+        // input loop finding its queue empty and the loop's promise settling (issue #408)
+        const stream = new ImapStream();
+        const lines: string[] = [];
+        stream.on('readable', () => {
+            let item;
+            while ((item = stream.read()) !== null) {
+                lines.push(item.payload.toString());
+                item.next();
+            }
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            stream._transform(Buffer.from('* OK first\r\n'), 'utf-8', () => {
+                // runs from the loop, before it re-checks the queue; the microtask lands after
+                // the loop has found the queue empty but before its promise settles
+                queueMicrotask(() => {
+                    stream._transform(Buffer.from('* OK second\r\n'), 'utf-8', err => (err ? reject(err) : resolve()));
+                });
+            });
+            setTimeout(() => reject(new Error('second chunk was never processed')), 1000).unref();
+        });
+
+        await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(lines, ['* OK first', '* OK second']);
+        assert.equal(stream.processingInput, false);
+        stream.destroy();
+    });
+
+    it('Runtime: a parse failure clears the input loop guard and fails the stream', async () => {
+        const stream = new ImapStream();
+        const failure = new Error('parse failed');
+        stream.processInputChunk = async () => {
+            throw failure;
+        };
+        const errored = new Promise(resolve => stream.once('error', resolve));
+        stream._transform(Buffer.from('* OK\r\n'), 'utf-8', () => {});
+        assert.equal(await errored, failure);
+        assert.equal(stream.processingInput, false);
+        assert.equal(stream.destroyed, true);
     });
 });
 

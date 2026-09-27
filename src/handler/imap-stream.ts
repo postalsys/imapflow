@@ -467,22 +467,32 @@ export class ImapStream extends Transform {
      * Drains the input queue by processing each queued chunk sequentially.
      * Yields to the event loop every 10 chunks to prevent CPU blocking on
      * large bursts of incoming data.
+     *
+     * The `processingInput` guard is cleared in the same synchronous step that finds the queue
+     * empty. Clearing it later (in a promise handler) leaves a gap of a few microtasks where a
+     * chunk delivered by the writable side is queued but no loop is started for it, so its
+     * transform callback is never called and the socket is never read again. Workers deliver
+     * the next chunk inside that gap.
      */
     async processInput(): Promise<void> {
-        let data: ImapStreamInputItem | undefined;
-        let processedCount = 0;
-        while (!this.destroyed && (data = this.inputQueue.shift())) {
-            this.activeInput = data;
-            await this.processInputChunk(data.chunk);
-            this.activeInput = null;
-            // mark chunk as processed
-            this.releaseInput(data);
+        try {
+            let data: ImapStreamInputItem | undefined;
+            let processedCount = 0;
+            while (!this.destroyed && (data = this.inputQueue.shift())) {
+                this.activeInput = data;
+                await this.processInputChunk(data.chunk);
+                this.activeInput = null;
+                // mark chunk as processed
+                this.releaseInput(data);
 
-            // Yield to event loop every 10 chunks to prevent CPU blocking
-            processedCount++;
-            if (processedCount % 10 === 0) {
-                await new Promise(resolve => setImmediate(resolve));
+                // Yield to event loop every 10 chunks to prevent CPU blocking
+                processedCount++;
+                if (processedCount % 10 === 0) {
+                    await new Promise(resolve => setImmediate(resolve));
+                }
             }
+        } finally {
+            this.processingInput = false;
         }
     }
 
@@ -530,9 +540,7 @@ export class ImapStream extends Transform {
 
         if (!this.processingInput) {
             this.processingInput = true;
-            this.processInput()
-                .catch(err => this.failStream(err))
-                .finally(() => (this.processingInput = false));
+            this.processInput().catch(err => this.failStream(err));
         }
     }
 
