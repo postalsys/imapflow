@@ -394,6 +394,18 @@ export interface ImapFlow {
     prependOnceListener(event: string | symbol, listener: (...args: any[]) => void): this;
     emit<K extends keyof ImapFlowEvents>(event: K, ...args: ImapFlowEvents[K]): boolean;
     emit(event: string | symbol, ...args: any[]): boolean;
+
+    /**
+     * Logs out and closes the connection when the scope of an `await using` declaration ends.
+     * Never throws, the connection is closed whether LOGOUT succeeds or not. Only present on
+     * runtimes that define `Symbol.asyncDispose` (Node.js 20.4 and newer).
+     *
+     * @example
+     * await using client = new ImapFlow({...});
+     * await client.connect();
+     * // client.logout() runs automatically when the scope exits, even on a throw
+     */
+    [Symbol.asyncDispose](): Promise<void>;
 }
 
 /**
@@ -4510,6 +4522,23 @@ export class ImapFlow extends EventEmitter {
  *     console.log(`${entry.cid} ${entry.msg}`);
  * });
  */
+
+// Installed outside the class body: a computed `[Symbol.asyncDispose]` key would turn into a
+// method named "undefined" on Node.js 20.0-20.3, which predate the symbol
+if (typeof Symbol.asyncDispose === 'symbol') {
+    ImapFlow.prototype[Symbol.asyncDispose] = async function (this: ImapFlow): Promise<void> {
+        if (this.usable) {
+            try {
+                await this.logout();
+            } catch (err) {
+                logConnectionError(this, 'LOGOUT failed while disposing', err as ImapFlowError);
+            }
+        }
+        // logout() already closes the connection; close() is idempotent and covers a client
+        // that never connected or whose logout was skipped
+        this.close();
+    };
+}
 
 // Both `import { ImapFlow } from 'imapflow'` and `import imapflow from 'imapflow'` work, the
 // latter matching the shape `require('imapflow')` has always had

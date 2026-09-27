@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ImapFlow } from '../src/imap-flow.js';
+import { makeClient as makeBareClient, makeSocketStub } from './fixtures/test-client.js';
 
 // Unit tests that exercise ImapFlow public/command methods against a real
 // ImapFlow instance with `run` (and occasionally lower-level helpers) stubbed.
@@ -770,5 +771,55 @@ describe('imap-flow-methods', () => {
         clearTimeout(keepAlive);
         assert.equal(client2._throttleWaits.size, 0);
         client2.close();
+    });
+
+    // ============================================================================
+    // Symbol.asyncDispose
+    // ============================================================================
+    it('Methods: asyncDispose logs out and closes when an await using scope exits on a throw', async () => {
+        let client = makeClient();
+        let calls = recordRun(client, true);
+        let closed = 0;
+        client.close = () => closed++;
+
+        await assert.rejects(async () => {
+            await using scoped = client;
+            assert.ok(scoped);
+            throw new Error('scope failure');
+        }, /scope failure/);
+
+        assert.deepEqual(calls, [['LOGOUT']]);
+        assert.equal(closed, 1);
+    });
+    it('Methods: asyncDispose swallows a LOGOUT failure and still closes', async () => {
+        let client = makeClient();
+        client.run = async () => {
+            throw new Error('write failed');
+        };
+        let closed = 0;
+        client.close = () => closed++;
+
+        await client[Symbol.asyncDispose]();
+
+        assert.equal(closed, 1, 'a failed LOGOUT must not leave the socket open');
+    });
+    it('Methods: asyncDispose does not send LOGOUT over a socket handed off by unbind()', async () => {
+        let client = makeClient();
+        client.socket = makeSocketStub();
+        let calls = recordRun(client, true);
+
+        client.unbind();
+        await client[Symbol.asyncDispose]();
+
+        assert.equal(calls.length, 0, 'the caller owns the socket after unbind()');
+    });
+    it('Methods: asyncDispose on a client that never connected does not throw', async () => {
+        let client = makeBareClient();
+        let calls = recordRun(client, true);
+
+        await client[Symbol.asyncDispose]();
+
+        assert.equal(calls.length, 0);
+        assert.equal(client.usable, false);
     });
 });
