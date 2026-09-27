@@ -318,12 +318,24 @@ export class ImapStream extends Transform {
      * pushed downstream as a readable object.
      *
      * @param chunk - The raw data chunk to process.
-     * @param startPos - The byte offset within the chunk to start processing from.
      */
-    async processInputChunk(chunk: Buffer, startPos?: number | undefined): Promise<void> {
-        startPos = startPos || 0;
+    async processInputChunk(chunk: Buffer): Promise<void> {
+        // Every state switch hands back the offset to resume from instead of recursing, so a
+        // chunk packed with thousands of small literals can not exhaust the call stack
+        let nextPos: number | null = 0;
+        while (nextPos !== null) {
+            nextPos = await this.processChunkSegment(chunk, nextPos);
+        }
+    }
+
+    /**
+     * Processes the chunk from `startPos` until the parser state changes or the chunk ends.
+     *
+     * @returns The offset to continue from after a state switch, or `null` when done with the chunk.
+     */
+    async processChunkSegment(chunk: Buffer, startPos: number): Promise<number | null> {
         if (this.destroyed || startPos >= chunk.length) {
-            return;
+            return null;
         }
 
         switch (this.state) {
@@ -336,7 +348,7 @@ export class ImapStream extends Transform {
                         // TCP chunk boundaries happen to fall.
                         let segment = chunk.subarray(lineStart, i + 1);
                         if (!this.checkLineLength(this.lineBytes + segment.length)) {
-                            return;
+                            return null;
                         }
 
                         this.lineBuffer.push(segment);
@@ -352,21 +364,21 @@ export class ImapStream extends Transform {
                         // would otherwise be emitted as part of the rejected command.
                         let isLiteralMarker = this.checkLiteralMarker(line);
                         if (this.destroyed) {
-                            return;
+                            return null;
                         }
 
                         // Count the line itself and, for a literal marker, the declared
                         // literal bytes against the cumulative per-response budget, so a
                         // response assembled from many tokens stays bounded as a whole
                         if (!this.checkResponseSize(line.length + (isLiteralMarker ? this.literalWaiting : 0))) {
-                            return;
+                            return null;
                         }
 
                         this.inputBuffer.push(line);
 
                         if (isLiteralMarker) {
                             // switch into literal mode and start over
-                            return await this.processInputChunk(chunk, lineStart);
+                            return lineStart;
                         }
 
                         // reached end of command input, emit it
@@ -404,7 +416,7 @@ export class ImapStream extends Transform {
                                 this.pendingPush = null;
 
                                 if (this.destroyed) {
-                                    return;
+                                    return null;
                                 }
                             }
                         }
@@ -420,7 +432,7 @@ export class ImapStream extends Transform {
                     // while a server streams a line that never terminates - only the much
                     // larger line cap would hold it back.
                     if (!this.checkLineLength(this.lineBytes + tail.length) || !this.checkResponseSize(this.lineBytes + tail.length, true)) {
-                        return;
+                        return null;
                     }
                     this.lineBytes += tail.length;
                     this.lineBuffer.push(tail);
@@ -442,12 +454,13 @@ export class ImapStream extends Transform {
                     this.state = LINE;
 
                     if (remainingInChunk > bytesToRead) {
-                        return await this.processInputChunk(chunk, startPos + bytesToRead);
+                        return startPos + bytesToRead;
                     }
                 }
                 break;
             }
         }
+        return null;
     }
 
     /**

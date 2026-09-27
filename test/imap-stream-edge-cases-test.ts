@@ -617,4 +617,18 @@ describe('imap-stream-edge-cases', () => {
         assert.equal(err.code, 'ResponseTooLarge');
         assert.equal((err as any).responseSize, 55);
     });
+    it('A chunk packed with many literals does not exhaust the call stack', (t, done) => {
+        // Each literal is a parser state switch, and a ~210KB chunk holds 30000 of them
+        const count = 30000;
+        runStreamTest(
+            done,
+            cmd => {
+                assert.equal(cmd.literals.length, count);
+            },
+            async stream => {
+                stream.end(Buffer.from('* 1 FETCH (' + 'X {0}\r\n'.repeat(count) + ')\r\n'));
+            },
+            1
+        );
+    });
 });
