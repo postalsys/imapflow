@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.1.0](https://github.com/postalsys/imapflow/compare/v2.0.8...v2.1.0) (2026-09-27)
+
+
+### Features
+
+* export ImapFlowErrorCode with the error codes the library sets ([50c909c](https://github.com/postalsys/imapflow/commit/50c909c30a8cda4731c397f1a77c3bf3d2d17102))
+* support `await using` through Symbol.asyncDispose ([baadd4b](https://github.com/postalsys/imapflow/commit/baadd4bd73a8d9c46aab2966beb55698a42e71b2))
+
+
+### Bug Fixes
+
+* accept a number or string uidValidity for QRESYNC ([e87d0c2](https://github.com/postalsys/imapflow/commit/e87d0c216e48e2dda23d94a7c942682ec28258ca))
+* give a special-use type to its next candidate when the best is taken ([5b0d357](https://github.com/postalsys/imapflow/commit/5b0d357ec1f30cd7b43a7ad06e3a22a9ac244bad))
+* keep a bracketed IPv6 host in a REFERRAL URL ([1e90b70](https://github.com/postalsys/imapflow/commit/1e90b706f72c54e4d1397e11e0c0b2aabc2f2549))
+* keep auto-IDLE off a socket handed over by unbind() ([a47b3ae](https://github.com/postalsys/imapflow/commit/a47b3ae99e5e1e00fd8b804a8072aeccc34c6a5a))
+* parse a chunk of many literals in a loop instead of recursing ([db4c704](https://github.com/postalsys/imapflow/commit/db4c704291054cff5a9d87386a093d113ea69fc3))
+* process a chunk that arrives while the input loop is winding down ([c73f3ea](https://github.com/postalsys/imapflow/commit/c73f3ea18f5557abf91414a0faf98da7150e3f4f)), closes [#408](https://github.com/postalsys/imapflow/issues/408)
+* read the last extension field of a BODYSTRUCTURE part ([d5cf6c0](https://github.com/postalsys/imapflow/commit/d5cf6c0282cf35df2de7eb153fed24ecd09448d3))
+* reject connect() right away on a BYE greeting ([dc5d80e](https://github.com/postalsys/imapflow/commit/dc5d80e6f6efdebe92f461e23f41dc64bce6c4aa))
+
 ## [2.0.8](https://github.com/postalsys/imapflow/compare/v2.0.7...v2.0.8) (2026-09-27)
 
 
