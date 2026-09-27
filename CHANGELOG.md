@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.8](https://github.com/postalsys/imapflow/compare/v2.0.7...v2.0.8) (2026-09-27)
+
+
+### Bug Fixes
+
+* do not expunge the source when the MOVE fallback's COPY fails ([11bbf84](https://github.com/postalsys/imapflow/commit/11bbf84fb0501f7392a5ced9787562cfcdcf7c9f)), closes [#406](https://github.com/postalsys/imapflow/issues/406)
+* surface throttle, truncation and listener failures instead of hiding them ([03a0624](https://github.com/postalsys/imapflow/commit/03a0624d0f381e935bbc3b4e12002272426abbae))
+* **types:** describe the quota response the way getQuota() returns it ([a2363b6](https://github.com/postalsys/imapflow/commit/a2363b6658d25d1a05a177a8dec556faf3df597b))
+
 ## [2.0.7](https://github.com/postalsys/imapflow/compare/v2.0.6...v2.0.7) (2026-09-25)
 
 
