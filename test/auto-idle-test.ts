@@ -548,4 +548,28 @@ describe('auto-idle', () => {
             client.close();
         });
     });
+    it('Auto-IDLE: unbind() disarms the timer and keeps it disarmed after the handoff', async () => {
+        await withFakeTimers(async timers => {
+            let client = makeIdleReadyClient({ autoIdleDelay: 300 });
+            let started = 0;
+            client.idle = async () => {
+                started++;
+            };
+
+            client.autoidle();
+            assert.equal(timers.pending().length, 1, 'auto-IDLE is armed in SELECTED state');
+
+            client.unbind();
+            assert.equal(timers.pending().length, 0, 'unbind() clears the pending auto-IDLE timer');
+
+            // a lock release or a finished download calls autoidle() again after the handoff
+            client.autoidle();
+            assert.equal(timers.pending().length, 0, 'auto-IDLE is not re-armed on an unbound client');
+
+            await timers.drain();
+            assert.equal(started, 0, 'no IDLE is written onto the handed-over socket');
+
+            client.close();
+        });
+    });
 });

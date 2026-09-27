@@ -2687,7 +2687,7 @@ export class ImapFlow extends EventEmitter {
     /** @internal */
     autoidle(): void {
         clearTimer(this.idleStartTimer);
-        if (this.options.disableAutoIdle || this.state !== this.states.SELECTED) {
+        if (this.options.disableAutoIdle || !this.usable || this.state !== this.states.SELECTED) {
             return;
         }
 
@@ -2701,7 +2701,7 @@ export class ImapFlow extends EventEmitter {
             // missed clearTimeout would inject IDLE between a caller's own commands. Declining
             // postpones rather than cancels: whatever made the connection busy calls autoidle()
             // again when it finishes.
-            if (this.state !== this.states.SELECTED || this.connectionBusy()) {
+            if (!this.usable || this.state !== this.states.SELECTED || this.connectionBusy()) {
                 return;
             }
             this.idle().catch(err => logConnectionError(this, 'Auto-IDLE failed', err));
@@ -4379,7 +4379,8 @@ export class ImapFlow extends EventEmitter {
 
     /**
      * Detaches sockets from the IMAP pipeline. Useful for upgrading the connection
-     * (e.g., STARTTLS) or transferring socket ownership.
+     * (e.g., STARTTLS) or transferring socket ownership. Call it while the connection is not
+     * idling: an IDLE in progress is not broken first, so the server still expects `DONE`.
      *
      * @returns Socket objects: `readSocket` is the read socket (inflated socket if compression is enabled, raw socket otherwise),
      *   `writeSocket` the write socket and `socket` the raw underlying socket (same as readSocket/writeSocket when compression is disabled)
@@ -4395,6 +4396,12 @@ export class ImapFlow extends EventEmitter {
         // compression is active, the PassThrough writeSocket - so the connection
         // is fully released to the caller.
         this.clearSocketHandlers();
+
+        // The socket now belongs to the caller. Marking the client unusable keeps
+        // auto-IDLE (armed now, or re-armed by a lock release or a finished download)
+        // and a later dispose from writing IDLE or LOGOUT onto it.
+        this.usable = false;
+        clearTimer(this.idleStartTimer);
 
         const readSocket: Readable = this._inflate || socket;
         const writeSocket: WriteSocket = this.writeSocket || socket;
