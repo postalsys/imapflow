@@ -8,7 +8,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/search', () => {
     it('Commands: search with ALL', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 execArgs = { cmd, attrs };
@@ -27,7 +27,7 @@ describe('commands/search', () => {
         assert.equal(execArgs.cmd, 'SEARCH');
     });
     it('Commands: search collects results from an ESEARCH reply to plain SEARCH', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -53,7 +53,7 @@ describe('commands/search', () => {
         assert.deepEqual(result, [1, 2, 3, 5]);
     });
     it('Commands: search returns empty array for an ESEARCH reply without ALL', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -78,7 +78,7 @@ describe('commands/search', () => {
         assert.deepEqual(result, []);
     });
     it('Commands: search caps a hostile ESEARCH ALL range at the mailbox size', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             mailbox: { path: 'INBOX', exists: 100 },
@@ -101,7 +101,7 @@ describe('commands/search', () => {
         assert.equal(result[99] as any, 100);
     });
     it('Commands: search resolves * in an ESEARCH ALL sequence-set', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             mailbox: { path: 'INBOX', exists: 5 },
@@ -121,7 +121,7 @@ describe('commands/search', () => {
         assert.deepEqual(result, [3, 4, 5]);
     });
     it('Commands: search drops * from ESEARCH UID results', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             mailbox: { path: 'INBOX', exists: 5, uidNext: 1000 },
@@ -147,7 +147,7 @@ describe('commands/search', () => {
         assert.deepEqual(result, [7]);
     });
     it('Commands: search discards invalid single values in an ESEARCH ALL set', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             mailbox: { path: 'INBOX', exists: 5 },
@@ -168,7 +168,7 @@ describe('commands/search', () => {
         assert.deepEqual(result, [4]);
     });
     it('Commands: search truncates single-value ESEARCH ALL entries at the mailbox size', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             mailbox: { path: 'INBOX', exists: 2 },
@@ -189,7 +189,7 @@ describe('commands/search', () => {
         assert.deepEqual(result, [1, 2]);
     });
     it('Commands: search ignores an ESEARCH reply without attributes on the plain path', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -210,7 +210,7 @@ describe('commands/search', () => {
         assert.deepEqual(result, [2]);
     });
     it('Commands: search treats an ESEARCH ALL set without a mailbox size as empty', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             // No exists value at all - the budget is zero, nothing may be collected
@@ -231,7 +231,7 @@ describe('commands/search', () => {
     });
     it('Commands: search with UID option', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 execCmd = cmd;
@@ -247,7 +247,7 @@ describe('commands/search', () => {
         assert.equal(execCmd, 'UID SEARCH');
     });
     it('Commands: search with query object', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 // Check that search compiler was used
@@ -263,7 +263,7 @@ describe('commands/search', () => {
         assert.ok(Array.isArray(result));
     });
     it('Commands: search skips when not selected', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2 // AUTHENTICATED
         });
 
@@ -271,7 +271,7 @@ describe('commands/search', () => {
         assert.equal(result, false);
     });
     it('Commands: search handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 const err: any = new Error('Search failed');
@@ -284,14 +284,14 @@ describe('commands/search', () => {
         assert.equal(result, false);
     });
     it('Commands: search returns false for invalid query', async () => {
-        const connection: any = createMockConnection({ state: 3 });
+        const connection = createMockConnection({ state: 3 });
 
         const result = await searchCommand(connection, 'invalid-query' as any, {});
         assert.equal(result, false);
     });
     it('Commands: search error with serverResponseCode', async () => {
         let capturedErr: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 const err: any = new Error('Search failed');

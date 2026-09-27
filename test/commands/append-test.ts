@@ -10,7 +10,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/append', () => {
     it('Commands: append basic', async () => {
         let appendCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2, // AUTHENTICATED
             mailbox: { path: 'OtherFolder' }, // Different folder to avoid EXISTS handling
             exec: async (cmd: any) => {
@@ -31,7 +31,7 @@ describe('commands/append', () => {
     });
     it('Commands: append with Buffer content', async () => {
         let contentAttr: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'OtherFolder' },
             exec: async (cmd: any, attrs: any) => {
@@ -52,20 +52,20 @@ describe('commands/append', () => {
         assert.equal((contentAttr as any).value.toString(), 'Test message');
     });
     it('Commands: append skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+        const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
 
         const result = await appendCommand(connection, 'INBOX', 'content');
         assert.equal(result, undefined);
     });
     it('Commands: append skips when no destination', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await appendCommand(connection, '', 'content');
         assert.equal(result, undefined);
     });
     it('Commands: append with flags', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'OtherFolder', permanentFlags: new Set(['\\*']) },
             exec: async (cmd: any, attrs: any) => {
@@ -89,7 +89,7 @@ describe('commands/append', () => {
     });
     it('Commands: append with internal date', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'OtherFolder' },
             exec: async (cmd: any, attrs: any) => {
@@ -112,7 +112,7 @@ describe('commands/append', () => {
         assert.ok(dateAttr.value.includes('2024'));
     });
     it('Commands: append checks APPENDLIMIT', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['APPENDLIMIT', 100]]), // 100 byte limit
             mailbox: { path: 'INBOX' }
@@ -130,7 +130,7 @@ describe('commands/append', () => {
     });
     it('Commands: append allows content within APPENDLIMIT', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['APPENDLIMIT', 1000]]),
             mailbox: { path: 'INBOX' },
@@ -148,7 +148,7 @@ describe('commands/append', () => {
         assert.equal(execCalled, true);
     });
     it('Commands: append with APPENDUID response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'INBOX' },
             exec: async () => ({
@@ -173,7 +173,7 @@ describe('commands/append', () => {
     });
     it('Commands: append to current mailbox triggers EXISTS', async () => {
         let existsEmitted = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'INBOX', exists: 10 },
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -198,7 +198,7 @@ describe('commands/append', () => {
     });
     it('Commands: append runs NOOP to get sequence if not in EXISTS', async () => {
         let noopCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 10 },
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -223,7 +223,7 @@ describe('commands/append', () => {
     });
     it('Commands: append searches for UID if seq but no uid', async () => {
         let searchCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 10 },
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -248,7 +248,7 @@ describe('commands/append', () => {
     });
     it('Commands: append with BINARY and NULL bytes', async () => {
         let literalAttr: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['BINARY', true]]),
             mailbox: { path: 'INBOX' },
@@ -269,7 +269,7 @@ describe('commands/append', () => {
     });
     it('Commands: append without BINARY uses regular literal', async () => {
         let literalAttr: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map(), // No BINARY
             mailbox: { path: 'INBOX' },
@@ -288,7 +288,7 @@ describe('commands/append', () => {
         assert.equal(literalAttr.isLiteral8, false);
     });
     it('Commands: append handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'OtherFolder' },
             exec: async () => {
@@ -307,7 +307,7 @@ describe('commands/append', () => {
     });
     it('Commands: append filters invalid flags', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: {
                 path: 'OtherFolder',
@@ -334,7 +334,7 @@ describe('commands/append', () => {
     });
     it('Commands: append works from SELECTED state', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'OtherFolder', exists: 10 },
             exec: async () => {
@@ -352,7 +352,7 @@ describe('commands/append', () => {
         assert.equal(result.destination, 'INBOX');
     });
     it('Commands: append error with serverResponseCode', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'OtherFolder' },
             exec: async () => {
@@ -380,7 +380,7 @@ describe('commands/append', () => {
         }
     });
     it('Commands: append with invalid APPENDUID values', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'OtherFolder' },
             exec: async () => ({
@@ -407,7 +407,7 @@ describe('commands/append', () => {
     });
     it('Commands: append NOOP error is caught', async () => {
         let noopCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 10 },
             exec: async (cmd: any) => {
@@ -434,7 +434,7 @@ describe('commands/append', () => {
     });
     it('Commands: append EXISTS updates mailbox count', async () => {
         let emittedEvent: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 10 },
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -474,7 +474,7 @@ describe('commands/append', () => {
     });
     it('Commands: append does not emit exists when count unchanged', async () => {
         let emittedEvent = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 10 },
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -509,7 +509,7 @@ describe('commands/append', () => {
     });
     it('Commands: append with both flags and date', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'OtherFolder' },
             exec: async (cmd: any, attrs: any) => {
@@ -533,7 +533,7 @@ describe('commands/append', () => {
     });
     it('Commands: append with disableBinary does not use literal8', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'OtherFolder' },
             capabilities: new Map([['BINARY', true]]),

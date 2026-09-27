@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import type { ImapFlow } from '../src/imap-flow.js';
 import * as tools from '../src/tools.js';
 import { parser } from '../src/handler/imap-handler.js';
 import crypto from 'node:crypto';
@@ -7,101 +8,102 @@ import iconv from 'iconv-lite';
 import type { MailboxObject } from '../src/types.js';
 
 // Mock connection for testing
-let createMockConnection = (options = {}) => ({
-    enabled: new Set((options as any).enabled || ((options as any).utf8 ? ['UTF8=ACCEPT'] : [])),
-    capabilities: new Map((options as any).capabilities || []),
-    namespace: (options as any).namespace || null
-});
+let createMockConnection = (options = {}) =>
+    ({
+        enabled: new Set((options as any).enabled || ((options as any).utf8 ? ['UTF8=ACCEPT'] : [])),
+        capabilities: new Map((options as any).capabilities || []),
+        namespace: (options as any).namespace || null
+    }) as unknown as ImapFlow;
 
 describe('tools', () => {
     // ============================================
     // encodePath / decodePath tests
     // ============================================
     it('Tools: encodePath with ASCII path', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let result = tools.encodePath(connection, 'INBOX');
         assert.equal(result, 'INBOX');
     });
     it('Tools: encodePath with ASCII path (no UTF8)', () => {
-        let connection: any = createMockConnection({ utf8: false });
+        let connection = createMockConnection({ utf8: false });
         let result = tools.encodePath(connection, 'Sent/Gesendete');
         // ASCII path should remain unchanged
         assert.equal(result, 'Sent/Gesendete');
     });
     it('Tools: encodePath encodes Unicode to modified UTF-7 on rev1 (no UTF8)', () => {
-        let connection: any = createMockConnection({ utf8: false });
+        let connection = createMockConnection({ utf8: false });
         // 'õ' (U+00F5) -> UTF-16BE 00F5 -> modified-base64 'APU'
         assert.equal(tools.encodePath(connection, 'Tõrva'), 'T&APU-rva');
         // a literal '&' must be escaped as '&-'
-        assert.equal(tools.encodePath(connection as any, 'Test&Folder'), 'Test&-Folder');
+        assert.equal(tools.encodePath(connection, 'Test&Folder'), 'Test&-Folder');
     });
     it('Tools: encodePath with Unicode when UTF8=ACCEPT enabled', () => {
-        let connection: any = createMockConnection({ utf8: true });
+        let connection = createMockConnection({ utf8: true });
         let result = tools.encodePath(connection, 'Posteingang/Ordner');
         // With UTF8=ACCEPT, path should remain unchanged
         assert.equal(result, 'Posteingang/Ordner');
     });
     it('Tools: encodePath with null/undefined', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         assert.equal(tools.encodePath(connection, null as any), '');
-        assert.equal(tools.encodePath(connection as any, undefined), '');
+        assert.equal(tools.encodePath(connection, undefined), '');
     });
     it('Tools: decodePath with ASCII path', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let result = tools.decodePath(connection, 'INBOX');
         assert.equal(result, 'INBOX');
     });
     it('Tools: decodePath with ampersand', () => {
-        let connection: any = createMockConnection({ utf8: false });
+        let connection = createMockConnection({ utf8: false });
         // modified UTF-7: '&-' is the escaped form of a literal ampersand
         assert.equal(tools.decodePath(connection, 'Test&-Folder'), 'Test&Folder');
         // and an encoded sequence round-trips back to Unicode
-        assert.equal(tools.decodePath(connection as any, 'T&APU-rva'), 'Tõrva');
+        assert.equal(tools.decodePath(connection, 'T&APU-rva'), 'Tõrva');
     });
     it('Tools: decodePath with UTF8=ACCEPT enabled', () => {
-        let connection: any = createMockConnection({ utf8: true });
+        let connection = createMockConnection({ utf8: true });
         let result = tools.decodePath(connection, 'Test&Folder');
         // With UTF8=ACCEPT, should not decode
         assert.equal(result, 'Test&Folder');
     });
     it('Tools: decodePath with null/undefined', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         assert.equal(tools.decodePath(connection, null as any), '');
-        assert.equal(tools.decodePath(connection as any, undefined), '');
+        assert.equal(tools.decodePath(connection, undefined), '');
     });
 
     // ============================================
     // normalizePath tests
     // ============================================
     it('Tools: normalizePath with INBOX (case insensitive)', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         assert.equal(tools.normalizePath(connection, 'inbox'), 'INBOX');
-        assert.equal(tools.normalizePath(connection as any, 'INBOX'), 'INBOX');
-        assert.equal(tools.normalizePath(connection as any, 'InBox'), 'INBOX');
+        assert.equal(tools.normalizePath(connection, 'INBOX'), 'INBOX');
+        assert.equal(tools.normalizePath(connection, 'InBox'), 'INBOX');
     });
     it('Tools: normalizePath with array path', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             namespace: { delimiter: '/', prefix: '' }
         });
         let result = tools.normalizePath(connection, ['Folder', 'Subfolder']);
         assert.equal(result, 'Folder/Subfolder');
     });
     it('Tools: normalizePath with namespace prefix', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             namespace: { delimiter: '.', prefix: 'INBOX.' }
         });
         let result = tools.normalizePath(connection, 'Sent');
         assert.equal(result, 'INBOX.Sent');
     });
     it('Tools: normalizePath skip namespace', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             namespace: { delimiter: '.', prefix: 'INBOX.' }
         });
         let result = tools.normalizePath(connection, 'Sent', true);
         assert.equal(result, 'Sent');
     });
     it('Tools: normalizePath already has prefix', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             namespace: { delimiter: '.', prefix: 'INBOX.' }
         });
         let result = tools.normalizePath(connection, 'INBOX.Sent');
@@ -112,19 +114,19 @@ describe('tools', () => {
     // comparePaths tests
     // ============================================
     it('Tools: comparePaths equal paths', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         assert.equal(tools.comparePaths(connection, 'INBOX', 'INBOX'), true);
-        assert.equal(tools.comparePaths(connection as any, 'inbox', 'INBOX'), true);
+        assert.equal(tools.comparePaths(connection, 'inbox', 'INBOX'), true);
     });
     it('Tools: comparePaths different paths', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         assert.equal(tools.comparePaths(connection, 'INBOX', 'Sent'), false);
     });
     it('Tools: comparePaths with null/undefined', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         assert.equal(tools.comparePaths(connection, null as any, 'INBOX'), false);
-        assert.equal(tools.comparePaths(connection as any, 'INBOX', null as any), false);
-        assert.equal(tools.comparePaths(connection as any, null as any, null as any), false);
+        assert.equal(tools.comparePaths(connection, 'INBOX', null as any), false);
+        assert.equal(tools.comparePaths(connection, null as any, null as any), false);
     });
 
     // ============================================
@@ -148,12 +150,12 @@ describe('tools', () => {
     });
     it('Tools: isRev2Active for rev2-only server', () => {
         // rev2 without rev1 means rev2 is the base protocol, no ENABLE needed
-        let connection: any = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
+        let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
         assert.equal(tools.isRev2Active(connection), true);
     });
     it('Tools: isRev2Active for dual server without ENABLE', () => {
         // Advertising both keeps the session in rev1 mode until ENABLE IMAP4rev2
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [
                 ['IMAP4rev1', true],
                 ['IMAP4rev2', true]
@@ -162,7 +164,7 @@ describe('tools', () => {
         assert.equal(tools.isRev2Active(connection), false);
     });
     it('Tools: isRev2Active for dual server with ENABLE', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [
                 ['IMAP4rev1', true],
                 ['IMAP4rev2', true]
@@ -172,21 +174,21 @@ describe('tools', () => {
         assert.equal(tools.isRev2Active(connection), true);
     });
     it('Tools: isRev2Active for rev1-only server', () => {
-        let connection: any = createMockConnection({ capabilities: [['IMAP4rev1', true]] });
+        let connection = createMockConnection({ capabilities: [['IMAP4rev1', true]] });
         assert.equal(tools.isRev2Active(connection), false);
     });
     it('Tools: hasCapability with advertised token', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [
                 ['IMAP4rev1', true],
                 ['UIDPLUS', true]
             ]
         });
         assert.equal(tools.hasCapability(connection, 'UIDPLUS'), true);
-        assert.equal(tools.hasCapability(connection as any, 'MOVE'), false);
+        assert.equal(tools.hasCapability(connection, 'MOVE'), false);
     });
     it('Tools: hasCapability folds extensions into active rev2', () => {
-        let connection: any = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
+        let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
         // RFC 9051 Appendix E folds these into base IMAP4rev2 - the complete set
         for (let capability of [
             'ENABLE',
@@ -207,10 +209,10 @@ describe('tools', () => {
             assert.equal(tools.hasCapability(connection, capability), true, `${capability} should be folded into rev2`);
         }
         // BINARY is intentionally not folded
-        assert.equal(tools.hasCapability(connection as any, 'BINARY'), false);
+        assert.equal(tools.hasCapability(connection, 'BINARY'), false);
     });
     it('Tools: hasCapability does not fold on unenabled dual server', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [
                 ['IMAP4rev1', true],
                 ['IMAP4rev2', true]
@@ -220,12 +222,12 @@ describe('tools', () => {
         assert.equal(tools.hasCapability(connection, 'UIDPLUS'), false);
     });
     it('Tools: encodePath keeps UTF-8 when rev2 is active', () => {
-        let connection: any = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
+        let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
         // rev2 mailbox names are native UTF-8, modified UTF-7 must not be applied
         assert.equal(tools.encodePath(connection, 'T\u00f5rva'), 'T\u00f5rva');
     });
     it('Tools: decodePath keeps ampersand sequences when rev2 is active', () => {
-        let connection: any = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
+        let connection = createMockConnection({ capabilities: [['IMAP4rev2', true]] });
         // Under rev2 an "&"-sequence is a literal name, not modified UTF-7
         assert.equal(tools.decodePath(connection, 'A&AOQ-B'), 'A&AOQ-B');
     });

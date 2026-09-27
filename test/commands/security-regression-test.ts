@@ -43,7 +43,7 @@ const selectWithOkCodes = (sections: any) =>
 
 describe('commands/security-regression', () => {
     it('Commands: quota ignores prototype-chain and fixed-field resource names', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -87,7 +87,7 @@ describe('commands/security-regression', () => {
         assert.equal((result as any)!.storage.limit, 500 * 1024);
     });
     it('Commands: select ignores unknown response codes on the mailbox object', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2, // AUTHENTICATED
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             run: async () => [],
@@ -192,7 +192,7 @@ describe('commands/security-regression', () => {
         assert.deepEqual((Array.from as any)(result.permanentFlags), ['\\Seen', '\\Draft']);
     });
     it('Commands: select survives NIL entries inside a FLAGS response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             run: async () => [],
@@ -212,7 +212,7 @@ describe('commands/security-regression', () => {
         // "A1 OK" parses to an object with no `attributes` property at all. Reading through it in
         // the command body would land in the outer catch, which tears down the mailbox state the
         // server has actually selected and rejects the caller with a TypeError.
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             run: async () => [],
@@ -265,7 +265,7 @@ describe('commands/security-regression', () => {
     it('Commands: append survives a malformed APPENDUID', async () => {
         // BigInt('1e5') throws where isNaN('1e5') passes, and append rethrows - the message is
         // already stored at that point, so a retrying caller would duplicate it
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             exec: async () => ({
@@ -289,7 +289,7 @@ describe('commands/security-regression', () => {
         // Number('9'.repeat(400)) is Infinity, and resolveRange('*') would then compile the literal
         // string "Infinity" into every later range-based command
         let emitted: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 5, flags: new Set(), permanentFlags: new Set(['\\*']) },
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
@@ -307,7 +307,7 @@ describe('commands/security-regression', () => {
         assert.equal(emitted.filter((entry: any) => entry[0] === 'exists').length, 0, 'no exists event may be emitted for an unusable count');
     });
     it('Commands: expunge survives a malformed HIGHESTMODSEQ', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', highestModseq: 100n },
             exec: async () => ({
@@ -323,7 +323,7 @@ describe('commands/security-regression', () => {
         assert.equal(connection.mailbox.highestModseq, 100n, 'the unusable value is not stored');
     });
     it('Commands: status skips one malformed field and keeps the rest', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.STATUS) {
@@ -345,7 +345,7 @@ describe('commands/security-regression', () => {
     });
     it('Commands: status ignores an overflowing MESSAGES count for the selected mailbox', async () => {
         let emitted: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 5 },
             emit: (name: any, payload: any) => emitted.push([name, payload]),
@@ -367,7 +367,7 @@ describe('commands/security-regression', () => {
     it('Commands: search drops out-of-range values from an untagged SEARCH', async () => {
         // isNaN() passes '1e400' (Infinity), '-3' and '2.5'; a single one of those makes the
         // sequence set compiled from this result invalid and fails the caller's follow-up command
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.SEARCH) {
@@ -412,7 +412,7 @@ describe('commands/security-regression', () => {
     it('Commands: list keeps a LIST-STATUS block when one field is malformed', async () => {
         // BigInt('1e5') throws where isNaN('1e5') passes, and the throw happened before the block
         // was stored - so one bad field made the whole mailbox's status vanish from the listing
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['LIST-STATUS', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -449,7 +449,7 @@ describe('commands/security-regression', () => {
     });
     it('Commands: quota ignores a NIL resource value', async () => {
         // A parsed NIL is null, which must not be recorded as a usage of 0
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -471,7 +471,7 @@ describe('commands/security-regression', () => {
         // The item name is server-controlled and is used as a lookup key. Uppercasing it before the
         // lookup is what keeps a name like "constructor" from resolving to an inherited member, so
         // the matching has to stay case-insensitive AND prototype-safe at the same time.
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.STATUS) {
@@ -504,7 +504,7 @@ describe('commands/security-regression', () => {
         // The updaters exist to keep the selected mailbox current. Running them for a STATUS of a
         // different mailbox would overwrite exists/uidNext/highestModseq with another folder's counts.
         let emitted: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 5, uidNext: 100, highestModseq: 7n },
             emit: (name: any, payload: any) => emitted.push([name, payload]),
@@ -531,7 +531,7 @@ describe('commands/security-regression', () => {
     it('Commands: search drops unusable ESEARCH COUNT, MIN and MAX values', async () => {
         // isNaN() passes '1e400' (Infinity) and '-1'; a COUNT of Infinity or a negative MIN is not a
         // usable answer and must not reach the caller
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['ESEARCH', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -559,7 +559,7 @@ describe('commands/security-regression', () => {
     });
     it('Commands: quota drops unusable resource values', async () => {
         // isNaN() passes '1e5' and ' 12 '; neither is a usable octet count
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -585,7 +585,7 @@ describe('commands/security-regression', () => {
         // The special-use hint map is keyed by server-supplied mailbox paths. On a plain object a
         // mailbox literally named "constructor" resolves to Object.prototype.constructor - truthy -
         // and the client would attach a special-use flag the server never sent.
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {

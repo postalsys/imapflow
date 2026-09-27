@@ -8,7 +8,7 @@ const decodeSaslPayload = (execArgs: any) => Buffer.from(execArgs.args[1].value,
 
 describe('commands/authenticate', () => {
     it('Commands: authenticate skips when already authenticated', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2 // AUTHENTICATED
         });
 
@@ -17,7 +17,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate with OAUTHBEARER', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1, // NOT_AUTHENTICATED
             capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
             servername: 'imap.example.com',
@@ -39,7 +39,7 @@ describe('commands/authenticate', () => {
     it('Commands: OAUTHBEARER payload reports the port actually in use', async () => {
         // Regression: the port field was hardcoded to 993 - see lib/commands/authenticate.js.
         let execArgs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
             servername: 'imap.example.com',
@@ -61,7 +61,7 @@ describe('commands/authenticate', () => {
     it('Commands: OAUTHBEARER payload falls back to host when servername is false', async () => {
         // imap-flow.js sets servername = false for a bare-IP host, which rendered as "host=false".
         let execArgs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
             servername: false,
@@ -82,7 +82,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate with XOAUTH2', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=XOAUTH2', true]]),
             servername: 'imap.example.com',
@@ -101,7 +101,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate with XOAUTH (legacy)', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=XOAUTH', true]]),
             servername: 'imap.example.com',
@@ -118,7 +118,7 @@ describe('commands/authenticate', () => {
         assert.equal(execArgs.args[0].value, 'XOAUTH2');
     });
     it('Commands: authenticate OAuth handles error response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
             servername: 'imap.example.com',
@@ -154,7 +154,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate OAuth handles malformed error response', async () => {
         let debugLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
             servername: 'imap.example.com',
@@ -190,7 +190,7 @@ describe('commands/authenticate', () => {
         }
     });
     it('Commands: authenticate OAuth error with serverResponseCode', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
             servername: 'imap.example.com',
@@ -232,7 +232,7 @@ describe('commands/authenticate', () => {
     it('Commands: authenticate with PLAIN', async () => {
         let execArgs: any = null;
         let writtenData = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=PLAIN', true]]),
             authCapabilities: new Map(),
@@ -264,7 +264,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate with PLAIN and authzid', async () => {
         let writtenData = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=PLAIN', true]]),
             authCapabilities: new Map(),
@@ -295,7 +295,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate with PLAIN forced via loginMethod', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([
                 ['AUTH=LOGIN', true],
@@ -324,7 +324,7 @@ describe('commands/authenticate', () => {
         let execArgs: any = null;
         let writeCount = 0;
         let writtenValues: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=LOGIN', true]]),
             authCapabilities: new Map(),
@@ -362,7 +362,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate with LOGIN handles user name prompt', async () => {
         let writtenValues: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=LOGIN', true]]),
             authCapabilities: new Map(),
@@ -393,7 +393,7 @@ describe('commands/authenticate', () => {
         assert.equal(writtenValues[1], 'testpass');
     });
     it('Commands: authenticate with LOGIN throws on unknown question', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=LOGIN', true]]),
             authCapabilities: new Map(),
@@ -422,7 +422,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate with LOGIN forced via loginMethod', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([
                 ['AUTH=PLAIN', true],
@@ -453,7 +453,7 @@ describe('commands/authenticate', () => {
         assert.equal(execArgs.args[0].value, 'LOGIN');
     });
     it('Commands: authenticate PLAIN handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=PLAIN', true]]),
             authCapabilities: new Map(),
@@ -492,7 +492,7 @@ describe('commands/authenticate', () => {
         }
     });
     it('Commands: authenticate LOGIN handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=LOGIN', true]]),
             authCapabilities: new Map(),
@@ -528,7 +528,7 @@ describe('commands/authenticate', () => {
         }
     });
     it('Commands: authenticate throws unsupported mechanism', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map() // No auth capabilities
         });
@@ -541,7 +541,7 @@ describe('commands/authenticate', () => {
         }
     });
     it('Commands: authenticate throws unsupported for accessToken without OAuth capability', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=PLAIN', true]]) // No OAuth capability
         });
@@ -555,7 +555,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate prefers PLAIN over LOGIN by default', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([
                 ['AUTH=LOGIN', true],
@@ -582,7 +582,7 @@ describe('commands/authenticate', () => {
     });
     it('Commands: authenticate prefers OAuth when accessToken provided', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([
                 ['AUTH=PLAIN', true],

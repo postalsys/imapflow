@@ -11,7 +11,7 @@ describe('commands/misc', () => {
     // CAPABILITY Command Tests
     // ============================================
     it('Commands: capability returns cached when available', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([
                 ['IMAP4rev1', true],
                 ['IDLE', true]
@@ -24,7 +24,7 @@ describe('commands/misc', () => {
         assert.equal(result.get('IDLE'), true);
     });
     it('Commands: capability fetches when empty', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map(),
             exec: async () => ({ next: () => {} })
         });
@@ -34,7 +34,7 @@ describe('commands/misc', () => {
     });
     it('Commands: capability fetches when update expected', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['IMAP4rev1', true]]),
             expectCapabilityUpdate: true,
             exec: async () => {
@@ -47,7 +47,7 @@ describe('commands/misc', () => {
         assert.equal(execCalled, true);
     });
     it('Commands: capability handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map(),
             exec: async () => {
                 throw new Error('Command failed');
@@ -63,7 +63,7 @@ describe('commands/misc', () => {
     // ============================================
     it('Commands: noop success', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             exec: async (cmd: any) => {
                 assert.equal(cmd, 'NOOP');
                 execCalled = true;
@@ -76,7 +76,7 @@ describe('commands/misc', () => {
         assert.equal(execCalled, true);
     });
     it('Commands: noop handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             exec: async () => {
                 throw new Error('Command failed');
             }
@@ -91,7 +91,7 @@ describe('commands/misc', () => {
     // ============================================
     it('Commands: compress success', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['COMPRESS=DEFLATE', true]]),
             exec: async () => {
                 execCalled = true;
@@ -104,7 +104,7 @@ describe('commands/misc', () => {
         assert.equal(execCalled, true);
     });
     it('Commands: compress skips when not supported', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map() // No COMPRESS=DEFLATE
         });
 
@@ -113,7 +113,7 @@ describe('commands/misc', () => {
         assert.equal(result, false);
     });
     it('Commands: compress handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['COMPRESS=DEFLATE', true]]),
             exec: async () => {
                 throw new Error('Compress failed');
@@ -130,7 +130,7 @@ describe('commands/misc', () => {
         // session is unrecoverable in both directions and must fail closed.
         let closeAfterCalled = false;
         let nextCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['COMPRESS=DEFLATE', true]]),
             closeAfter: () => {
                 closeAfterCalled = true;
@@ -161,7 +161,7 @@ describe('commands/misc', () => {
     // ============================================
     it('Commands: starttls success', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['STARTTLS', true]]),
             exec: async () => {
                 execCalled = true;
@@ -174,7 +174,7 @@ describe('commands/misc', () => {
         assert.equal(execCalled, true);
     });
     it('Commands: starttls skips when not supported', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map() // No STARTTLS
         });
 
@@ -183,7 +183,7 @@ describe('commands/misc', () => {
         assert.equal(result, false);
     });
     it('Commands: starttls handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['STARTTLS', true]]),
             exec: async () => {
                 throw new Error('STARTTLS failed');

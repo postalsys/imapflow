@@ -7,7 +7,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 
 describe('commands/id', () => {
     it('Commands: id skips when no ID capability', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map() // No ID capability
         });
 
@@ -16,7 +16,7 @@ describe('commands/id', () => {
     });
     it('Commands: id sends client info', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any) => {
                 execArgs = { cmd, args };
@@ -32,7 +32,7 @@ describe('commands/id', () => {
     });
     it('Commands: id sends null when no clientInfo', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any) => {
                 execArgs = { cmd, args };
@@ -46,7 +46,7 @@ describe('commands/id', () => {
     });
     it('Commands: id sends null for empty clientInfo', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any) => {
                 execArgs = { cmd, args };
@@ -59,7 +59,7 @@ describe('commands/id', () => {
         assert.equal(execArgs!.args[0], null);
     });
     it('Commands: id parses server response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.ID) {
@@ -79,7 +79,7 @@ describe('commands/id', () => {
         assert.equal((result as any)!.vendor, 'ACME');
     });
     it('Commands: id updates serverInfo', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             serverInfo: {},
             exec: async (cmd: any, args: any, opts: any) => {
@@ -93,11 +93,11 @@ describe('commands/id', () => {
         });
 
         await idCommand(connection, { name: 'TestClient' });
-        assert.equal((connection as any).serverInfo.name, 'ImapServer');
-        assert.equal((connection as any).serverInfo['support-url'], 'https://example.com');
+        assert.equal(connection.serverInfo?.name, 'ImapServer');
+        assert.equal(connection.serverInfo?.['support-url'], 'https://example.com');
     });
     it('Commands: id handles non-array server response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.ID) {
@@ -116,7 +116,7 @@ describe('commands/id', () => {
     });
     it('Commands: id formats date value', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any) => {
                 execArgs = { cmd, args };
@@ -132,7 +132,7 @@ describe('commands/id', () => {
         assert.ok(execArgs!.args[0].includes('date'));
     });
     it('Commands: id normalizes key names to lowercase', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.ID) {
@@ -149,7 +149,7 @@ describe('commands/id', () => {
         assert.equal((result as any)!.version, '1.0');
     });
     it('Commands: id trims key names', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.ID) {
@@ -166,7 +166,7 @@ describe('commands/id', () => {
     });
     it('Commands: id handles error', async () => {
         let warnLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async () => {
                 throw new Error('ID command failed');
@@ -186,7 +186,7 @@ describe('commands/id', () => {
     });
     it('Commands: id filters empty values', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any) => {
                 execArgs = { cmd, args };
@@ -202,7 +202,7 @@ describe('commands/id', () => {
     });
     it('Commands: id replaces whitespace in values', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),
             exec: async (cmd: any, args: any) => {
                 execArgs = { cmd, args };

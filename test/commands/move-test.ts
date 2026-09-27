@@ -10,7 +10,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/move', () => {
     it('Commands: move with MOVE capability', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async (cmd: any) => {
@@ -24,7 +24,7 @@ describe('commands/move', () => {
     });
     it('Commands: move with UID and MOVE capability', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async (cmd: any) => {
@@ -38,7 +38,7 @@ describe('commands/move', () => {
     });
     it('Commands: move uses MOVE via folded rev2 capability', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             // No MOVE token - RFC 9051 folds MOVE into base IMAP4rev2
             capabilities: new Map([['IMAP4rev2', true]]),
@@ -52,13 +52,13 @@ describe('commands/move', () => {
         assert.equal(execCmd, 'MOVE');
     });
     it('Commands: move skips when not selected', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await moveCommand(connection, '1:10', 'Archive', {});
         assert.equal(result, undefined);
     });
     it('Commands: move skips when no range', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]])
         });
@@ -67,7 +67,7 @@ describe('commands/move', () => {
         assert.equal(result, undefined);
     });
     it('Commands: move skips when no destination', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]])
         });
@@ -78,7 +78,7 @@ describe('commands/move', () => {
     it('Commands: move fallback without MOVE capability', async () => {
         let copyCalled = false;
         let deleteCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(), // No MOVE capability
             messageCopy: async (range: any, dest: any) => {
@@ -103,7 +103,7 @@ describe('commands/move', () => {
     it('Commands: move fallback does not delete when COPY fails or is skipped', async () => {
         for (const copyResult of [false, undefined]) {
             let deleteCalled = false;
-            const connection: any = createMockConnection({
+            const connection = createMockConnection({
                 state: 3,
                 capabilities: new Map(), // No MOVE capability
                 messageCopy: async () => copyResult,
@@ -119,7 +119,7 @@ describe('commands/move', () => {
         }
     });
     it('Commands: move fallback reports failure when delete fails', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(), // No MOVE capability
             messageCopy: async (range: any, dest: any) => ({ path: 'INBOX', destination: dest }),
@@ -132,7 +132,7 @@ describe('commands/move', () => {
     it('Commands: move fallback passes options', async () => {
         let copyOpts: any = null;
         let deleteOpts: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(), // No MOVE capability
             messageCopy: async (range: any, dest: any, opts: any) => {
@@ -151,7 +151,7 @@ describe('commands/move', () => {
         assert.equal(deleteOpts!.silent, true);
     });
     it('Commands: move with COPYUID response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async () => ({
@@ -175,7 +175,7 @@ describe('commands/move', () => {
         assert.equal((result as any)!.uidMap.get(3), 102);
     });
     it('Commands: move handles COPYUID in untagged response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -203,7 +203,7 @@ describe('commands/move', () => {
         assert.equal((result as any)!.uidMap.get(7), 202);
     });
     it('Commands: move returns correct map structure', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async () => ({
@@ -218,7 +218,7 @@ describe('commands/move', () => {
     });
     it('Commands: move handles error', async () => {
         let warnLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async () => {
@@ -241,7 +241,7 @@ describe('commands/move', () => {
     });
     it('Commands: move handles error with status code', async () => {
         let capturedErr = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async () => {
@@ -276,7 +276,7 @@ describe('commands/move', () => {
     });
     it('Commands: move normalizes destination path', async () => {
         let capturedAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             namespace: { delimiter: '/', prefix: 'INBOX/' },
@@ -291,7 +291,7 @@ describe('commands/move', () => {
         assert.ok(capturedAttrs);
     });
     it('Commands: move handles COPYUID with invalid uidValidity', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async () => ({
@@ -316,7 +316,7 @@ describe('commands/move', () => {
         assert.equal(result.uidValidity, undefined);
     });
     it('Commands: move handles COPYUID with mismatched UID counts', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async () => ({
@@ -342,7 +342,7 @@ describe('commands/move', () => {
         assert.equal(result.uidMap, undefined); // Not set due to mismatch
     });
     it('Commands: move handles COPYUID with missing source/destination UIDs', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async () => ({

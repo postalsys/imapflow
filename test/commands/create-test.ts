@@ -9,7 +9,7 @@ describe('commands/create', () => {
     // ============================================
     it('Commands: create success', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -23,13 +23,13 @@ describe('commands/create', () => {
         assert.equal(execArgs.cmd, 'CREATE');
     });
     it('Commands: create skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 });
+        const connection = createMockConnection({ state: 1 });
 
         const result = await createCommand(connection, 'NewFolder');
         assert.equal(result, undefined);
     });
     it('Commands: create handles ALREADYEXISTS', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Mailbox already exists');
@@ -53,7 +53,7 @@ describe('commands/create', () => {
         assert.equal(result.created, false);
     });
     it('Commands: create throws on other errors', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Create failed');
@@ -78,7 +78,7 @@ describe('commands/create', () => {
     // CREATE Command Tests
     // ============================================
     it('Commands: create skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+        const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
 
         const result = await createCommand(connection, 'NewFolder');
         assert.equal(result, undefined);
@@ -86,7 +86,7 @@ describe('commands/create', () => {
     it('Commands: create mailbox success', async () => {
         let execArgs: any = null;
         let subscribeCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2, // AUTHENTICATED
             exec: async (cmd: any, args: any) => {
                 execArgs = { cmd, args };
@@ -111,7 +111,7 @@ describe('commands/create', () => {
         assert.ok(subscribeCalled);
     });
     it('Commands: create works in SELECTED state', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             exec: async () => ({
                 next: () => {},
@@ -125,7 +125,7 @@ describe('commands/create', () => {
         assert.equal(result.created, true);
     });
     it('Commands: create with MAILBOXID response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => ({
                 next: () => {},
@@ -147,7 +147,7 @@ describe('commands/create', () => {
     });
     it('Commands: create normalizes path', async () => {
         let capturedArgs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             namespace: { delimiter: '/', prefix: 'INBOX/' },
             exec: async (cmd: any, args: any) => {
@@ -164,7 +164,7 @@ describe('commands/create', () => {
         assert.ok(capturedArgs);
     });
     it('Commands: create handles ALREADYEXISTS', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Mailbox already exists');
@@ -196,7 +196,7 @@ describe('commands/create', () => {
     });
     it('Commands: create throws on other errors', async () => {
         let warnLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Permission denied');
@@ -232,7 +232,7 @@ describe('commands/create', () => {
         }
     });
     it('Commands: create handles empty section', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => ({
                 next: () => {},
@@ -253,7 +253,7 @@ describe('commands/create', () => {
         assert.equal(result.mailboxId, undefined);
     });
     it('Commands: create handles invalid MAILBOXID format', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => ({
                 next: () => {},
@@ -278,7 +278,7 @@ describe('commands/create', () => {
         assert.equal(result.mailboxId, undefined);
     });
     it('Commands: create handles null key in section', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => ({
                 next: () => {},

@@ -24,7 +24,7 @@ const commandError = (message: any, responseStatus: any, code: any) => {
 describe('commands/list', () => {
     it('Commands: list basic', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 execCalled = true;
@@ -44,7 +44,7 @@ describe('commands/list', () => {
     });
     it('Commands: list with XLIST capability', async () => {
         let usedListCommand = '';
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['XLIST', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -66,7 +66,7 @@ describe('commands/list', () => {
     });
     it('Commands: list prefers LIST over XLIST when SPECIAL-USE available', async () => {
         let usedListCommand = '';
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['XLIST', true],
@@ -91,7 +91,7 @@ describe('commands/list', () => {
     });
     it('Commands: list with statusQuery', async () => {
         let listAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['LIST-STATUS', true],
@@ -126,7 +126,7 @@ describe('commands/list', () => {
     });
     it('Commands: list statusQuery parses inline SIZE and DELETED on rev2 sessions', async () => {
         let listAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -164,7 +164,7 @@ describe('commands/list', () => {
         assert.strictEqual(inbox.status!.deleted, 3);
     });
     it('Commands: list tolerates an OLDNAME extended data item', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -187,7 +187,7 @@ describe('commands/list', () => {
     });
     it('Commands: list with CONDSTORE status query', async () => {
         let listAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['LIST-STATUS', true],
@@ -215,7 +215,7 @@ describe('commands/list', () => {
     });
     it('Commands: list with listOnly option', async () => {
         let lsubCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LSUB') {
@@ -235,7 +235,7 @@ describe('commands/list', () => {
         assert.ok(Array.isArray(result));
     });
     it('Commands: list with specialUseHints', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -257,7 +257,7 @@ describe('commands/list', () => {
         assert.equal(sentFolder.specialUse, '\\Sent');
     });
     it('Commands: list handles INBOX specially', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if ((cmd === 'LIST' || cmd === 'LSUB') && opts && opts.untagged) {
@@ -281,7 +281,7 @@ describe('commands/list', () => {
     });
     it('Commands: list runs separate INBOX query when using namespace', async () => {
         let listCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST') {
@@ -323,7 +323,7 @@ describe('commands/list', () => {
         ]) {
             let listCalls = 0;
             let lsubCalls = 0;
-            const connection: any = createMockConnection({
+            const connection = createMockConnection({
                 state: 3,
                 capabilities: new (Map as any)(capabilities),
                 exec: async (cmd: any, attrs: any) => {
@@ -352,7 +352,7 @@ describe('commands/list', () => {
         }
     });
     it('Commands: list handles LSUB merging', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -376,7 +376,7 @@ describe('commands/list', () => {
         assert.equal(folder.listed, true);
     });
     it('Commands: list handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 throw new Error('List failed');
@@ -391,7 +391,7 @@ describe('commands/list', () => {
         }
     });
     it('Commands: list handles empty attributes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -408,7 +408,7 @@ describe('commands/list', () => {
     });
     it('Commands: list status fallback when LIST-STATUS not supported', async () => {
         let statusCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(), // No LIST-STATUS
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -436,7 +436,7 @@ describe('commands/list', () => {
         assert.equal(statusCalls, 1);
     });
     it('Commands: list handles STATUS errors gracefully', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(),
             run: async (cmd: any) => {
@@ -464,7 +464,7 @@ describe('commands/list', () => {
         assert.ok(inbox.status.error);
     });
     it('Commands: list sorts by special use', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -489,7 +489,7 @@ describe('commands/list', () => {
         assert.equal(result[0].specialUse, '\\Inbox');
     });
     it('Commands: list handles delimiter in path', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -513,7 +513,7 @@ describe('commands/list', () => {
     });
     it('Commands: list skips Noselect folders for status', async () => {
         let statusCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(),
             run: async (cmd: any) => {
@@ -537,7 +537,7 @@ describe('commands/list', () => {
         assert.equal(statusCalls, 0);
     });
     it('Commands: list adds Noselect to NonExistent mailboxes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -564,7 +564,7 @@ describe('commands/list', () => {
         assert.equal(inbox.flags.has('\\Noselect'), false);
     });
     it('Commands: list LSUB merge adds Noselect to NonExistent', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -593,7 +593,7 @@ describe('commands/list', () => {
     it('Commands: list uses RETURN (SUBSCRIBED) instead of LSUB on IMAP4rev2', async () => {
         let lsubCalled = false;
         let listAttrs = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -631,7 +631,7 @@ describe('commands/list', () => {
     it('Commands: list uses RETURN (SUBSCRIBED) with LIST-EXTENDED', async () => {
         let lsubCalled = false;
         let listAttrs = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -666,7 +666,7 @@ describe('commands/list', () => {
         // the retry ladder covers a server that does not
         let lsubCalled = false;
         let listAttrs: any = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -697,7 +697,7 @@ describe('commands/list', () => {
         // options are tried and subscription state comes from LSUB
         let lsubCalled = false;
         let listCalls: any[] = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -728,7 +728,7 @@ describe('commands/list', () => {
     });
     it('Commands: list listOnly does not add RETURN args on IMAP4rev2', async () => {
         let listAttrs: any = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -750,7 +750,7 @@ describe('commands/list', () => {
     });
     it('Commands: list survives LSUB rejection', async () => {
         let lsubCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LSUB') {
@@ -782,13 +782,13 @@ describe('commands/list', () => {
 
         // The rejection is remembered - a follow-up listing skips LSUB entirely
         assert.equal(connection.skipLsub, true);
-        await listCommand(connection as any, '', '*');
+        await listCommand(connection, '', '*');
         assert.equal(lsubCalls, 1);
     });
     it('Commands: list keeps a genuinely empty subscription set', async () => {
         // LSUB answers, it just has nothing to report. That is a real "nothing is
         // subscribed", not the unknown state, so it must not be overwritten
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -807,7 +807,7 @@ describe('commands/list', () => {
         // The server accepts the RETURN option but reports no \Subscribed at all, which is
         // why the listing falls back to LSUB - and that is rejected too. Accepting the
         // command is not the same as answering it, so this is the unknown state
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -830,7 +830,7 @@ describe('commands/list', () => {
         assert.equal(result.find((entry: any) => entry.path === 'Folder1').subscribed, true);
     });
     it('Commands: list leaves phantom folders out of the assumed subscription', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             enabled: new Set(['IMAP4REV2']),
@@ -856,7 +856,7 @@ describe('commands/list', () => {
     it('Commands: list keeps subscription flags volunteered by a plain LIST', async () => {
         // No RETURN option was granted and LSUB is not available on rev2, but the server
         // reported \Subscribed on its own - that is real state and must not be widened
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             enabled: new Set(['IMAP4REV2']),
@@ -879,7 +879,7 @@ describe('commands/list', () => {
         assert.ok(!result.find((entry: any) => entry.path === 'Folder2').subscribed);
     });
     it('Commands: list fails when LSUB dies without a server rejection', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LSUB') {
@@ -905,7 +905,7 @@ describe('commands/list', () => {
         assert.ok(!connection.skipLsub);
     });
     it('Commands: list rewrites a parsed error response into text', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 // Same shape as the reader loop attaches for a tagged BAD
@@ -927,7 +927,7 @@ describe('commands/list', () => {
     it('Commands: list retries with plain LIST when RETURN is rejected', async () => {
         let listCalls = 0;
         let lsubCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -976,7 +976,7 @@ describe('commands/list', () => {
         // the offending option - a follow-up listing goes straight to plain LIST
         assert.equal(connection.skipListSubscribedArg, true);
         assert.ok(!connection.skipListStatusArgs);
-        await listCommand(connection as any, '', '*');
+        await listCommand(connection, '', '*');
         assert.equal(listCalls, 4);
     });
     it('Commands: list never falls back to LSUB on a rev2 session', async () => {
@@ -985,7 +985,7 @@ describe('commands/list', () => {
         // having already proved it rejects RETURN (SUBSCRIBED). The listing therefore
         // carries no subscription state - and the LSUB that rev1 would fall back to is not
         // part of rev2, so asking anyway only risks upsetting the session.
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev2', true],
@@ -1014,7 +1014,7 @@ describe('commands/list', () => {
     });
     it('Commands: list does not retry extended LIST on transport errors', async () => {
         let listCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any) => {
@@ -1039,7 +1039,7 @@ describe('commands/list', () => {
     });
     it('Commands: list does not retry extended LIST on NO responses', async () => {
         let listCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any) => {
@@ -1064,7 +1064,7 @@ describe('commands/list', () => {
     });
     it('Commands: list does not treat throttling as a RETURN rejection', async () => {
         let listCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any) => {
@@ -1091,7 +1091,7 @@ describe('commands/list', () => {
     it('Commands: list drops RETURN option groups one stage at a time', async () => {
         let listAttempts: any = [];
         let lsubCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -1145,7 +1145,7 @@ describe('commands/list', () => {
         assert.equal(result.length, 1);
 
         // Next listing converges: SUBSCRIBED-only first, no STATUS args
-        const result2 = await listCommand(connection as any, '', '*', { statusQuery: { messages: true } });
+        const result2 = await listCommand(connection, '', '*', { statusQuery: { messages: true } });
         assert.equal(listAttempts.length, 5);
         assert.ok(listAttempts[4].includes('SUBSCRIBED'));
         assert.ok(!listAttempts[4].includes('STATUS'));
@@ -1153,7 +1153,7 @@ describe('commands/list', () => {
     });
     it('Commands: list does not latch flags when the reduced retry also dies', async () => {
         let listCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -1187,7 +1187,7 @@ describe('commands/list', () => {
     });
     it('Commands: list tolerates LSUB NO without latching', async () => {
         let lsubCalls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LSUB') {
@@ -1208,11 +1208,11 @@ describe('commands/list', () => {
         assert.equal(result.length, 1);
         // NO is transient - the next listing must try LSUB again
         assert.ok(!connection.skipLsub);
-        await listCommand(connection as any, '', '*');
+        await listCommand(connection, '', '*');
         assert.equal(lsubCalls, 2);
     });
     it('Commands: list rethrows throttled LSUB without latching', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LSUB') {
@@ -1237,7 +1237,7 @@ describe('commands/list', () => {
         assert.ok(!connection.skipLsub);
     });
     it('Commands: list folds LSUB-delivered Subscribed flag into the property', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -1263,7 +1263,7 @@ describe('commands/list', () => {
     });
     it('Commands: list retries INBOX fixup plain without latching', async () => {
         let listAttempts: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -1307,7 +1307,7 @@ describe('commands/list', () => {
     });
     it('Commands: list discards partial results from a rejected INBOX fixup', async () => {
         let listAttempts = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -1357,7 +1357,7 @@ describe('commands/list', () => {
     });
     it('Commands: list latches only the auxiliary options when the server rejects them', async () => {
         let listAttempts: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -1402,7 +1402,7 @@ describe('commands/list', () => {
         assert.equal(folder!.status!.messages, 3);
 
         // The next listing goes straight to the auxiliary-free extended form
-        await listCommand(connection as any, '', '*', { statusQuery: { messages: true } });
+        await listCommand(connection, '', '*', { statusQuery: { messages: true } });
         assert.equal(listAttempts.length, 3);
         assert.ok(listAttempts[2].includes('STATUS'));
         assert.ok(listAttempts[2].includes('SUBSCRIBED'));
@@ -1410,7 +1410,7 @@ describe('commands/list', () => {
     });
     it('Commands: list falls back to LSUB when RETURN (SUBSCRIBED) is silently ignored', async () => {
         let lsubCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['IMAP4rev1', true],
@@ -1439,7 +1439,7 @@ describe('commands/list', () => {
     });
     it('Commands: list skips the LSUB safety net on rev2 sessions', async () => {
         let lsubCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1461,7 +1461,7 @@ describe('commands/list', () => {
         assert.equal(lsubCalled, false);
     });
     it('Commands: list honors special-use flags on rev2-only servers', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1483,7 +1483,7 @@ describe('commands/list', () => {
     it('Commands: list uses inline STATUS on rev2-only servers and omits RECENT', async () => {
         let listAttrs: any = false;
         let statusCommands = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev2', true]]),
             run: async (cmd: any) => {
@@ -1521,7 +1521,7 @@ describe('commands/list', () => {
         assert.equal(result.find((e: any) => e.path === 'INBOX').status.recent, 0);
     });
     it('Commands: list does not let NonExistent phantoms win special-use by name', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -1550,7 +1550,7 @@ describe('commands/list', () => {
     });
     it('Commands: list does not STATUS NonExistent mailboxes', async () => {
         let statusPaths: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(),
             run: async (cmd: any, path: any) => {
@@ -1577,7 +1577,7 @@ describe('commands/list', () => {
         assert.deepEqual(statusPaths, ['INBOX']);
     });
     it('Commands: list XLIST removes Inbox flag from non-INBOX', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['XLIST', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1604,7 +1604,7 @@ describe('commands/list', () => {
         assert.equal(folder.specialUse, '\\Inbox');
     });
     it('Commands: list LSUB path with leading delimiter', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1633,7 +1633,7 @@ describe('commands/list', () => {
         assert.equal(folder.subscribed, true);
     });
     it('Commands: list sorts non-special-use after special-use', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1658,7 +1658,7 @@ describe('commands/list', () => {
         assert.ok(inboxIndex < zFolderIndex, 'Special use folders should sort before non-special-use');
     });
     it('Commands: list sorts alphabetically when no special use', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1687,7 +1687,7 @@ describe('commands/list', () => {
         assert.ok(middleIndex < zebraIndex, 'Middle should come before Zebra');
     });
     it('Commands: list sorts nested folders by parent path', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1721,7 +1721,7 @@ describe('commands/list', () => {
         assert.ok(bIndex < bNestedIndex || aNestedIndex < bNestedIndex, 'Parent folders sort correctly');
     });
     it('Commands: list handles LSUB with empty attributes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1744,7 +1744,7 @@ describe('commands/list', () => {
         assert.ok(result.length >= 1);
     });
     it('Commands: list handles STATUS NaN values in LSUB response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['SPECIAL-USE', true],
@@ -1783,7 +1783,7 @@ describe('commands/list', () => {
         assert.equal(folder.status!.recent, undefined);
     });
     it('Commands: list STATUS parses UIDVALIDITY UNSEEN HIGHESTMODSEQ', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['LIST-STATUS', true],
@@ -1827,7 +1827,7 @@ describe('commands/list', () => {
         assert.equal(folder.status.highestModseq, BigInt(999999999));
     });
     it('Commands: list LSUB folder not in LIST entries', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1856,7 +1856,7 @@ describe('commands/list', () => {
         assert.ok(inbox);
     });
     it('Commands: list sort b has specialUse a does not', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1883,7 +1883,7 @@ describe('commands/list', () => {
         assert.equal(result[0].specialUse, '\\Inbox');
     });
     it('Commands: list sort fallback path comparison', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['SPECIAL-USE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -1908,7 +1908,7 @@ describe('commands/list', () => {
         assert.ok(childIndex < deepIndex, 'Shorter path should sort before longer when parent matches');
     });
     it('Commands: list STATUS handles unknown key in response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([
                 ['SPECIAL-USE', true],

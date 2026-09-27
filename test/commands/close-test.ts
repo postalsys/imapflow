@@ -6,7 +6,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/close', () => {
     it('Commands: close success', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             exec: async (cmd: any) => {
                 assert.equal(cmd, 'CLOSE');
@@ -20,7 +20,7 @@ describe('commands/close', () => {
         assert.equal(execCalled, true);
     });
     it('Commands: close skips when not selected', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2 // AUTHENTICATED, not SELECTED
         });
 
@@ -28,7 +28,7 @@ describe('commands/close', () => {
         assert.equal(result, undefined);
     });
     it('Commands: close handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 throw new Error('Command failed');
@@ -41,7 +41,7 @@ describe('commands/close', () => {
     it('Commands: close emits mailboxClose event', async () => {
         let emittedMailbox: any = null;
         const testMailbox = { path: 'INBOX', uidValidity: 12345n };
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: testMailbox,
             currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
@@ -63,7 +63,7 @@ describe('commands/close', () => {
     });
     it('Commands: close without mailbox does not emit event', async () => {
         let eventEmitted = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: false, // No mailbox
             exec: async () => ({ next: () => {} }),
@@ -79,7 +79,7 @@ describe('commands/close', () => {
         assert.equal(eventEmitted, false);
     });
     it('Commands: close reports success when the mailboxClose listener throws', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX' },
             exec: async () => ({ next: () => {} }),

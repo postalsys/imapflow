@@ -6,7 +6,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/rename', () => {
     it('Commands: rename success', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -21,13 +21,13 @@ describe('commands/rename', () => {
         assert.equal(execArgs.cmd, 'RENAME');
     });
     it('Commands: rename skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 });
+        const connection = createMockConnection({ state: 1 });
 
         const result = await renameCommand(connection, 'OldName', 'NewName');
         assert.equal(result, undefined);
     });
     it('Commands: rename throws on error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Rename failed');
@@ -50,7 +50,7 @@ describe('commands/rename', () => {
     it('Commands: rename closes mailbox when renaming current mailbox', async () => {
         let closeCalled = false;
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'OldFolder' },
             run: async (cmd: any) => {
@@ -73,7 +73,7 @@ describe('commands/rename', () => {
     });
     it('Commands: rename does not close when renaming different mailbox', async () => {
         let closeCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'INBOX' },
             run: async (cmd: any) => {
@@ -90,7 +90,7 @@ describe('commands/rename', () => {
     });
     it('Commands: rename works in SELECTED state', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'INBOX' },
             exec: async (cmd: any) => {
@@ -104,7 +104,7 @@ describe('commands/rename', () => {
         assert.equal(execCmd, 'RENAME');
     });
     it('Commands: rename error with serverResponseCode', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Rename failed');
@@ -132,7 +132,7 @@ describe('commands/rename', () => {
     });
     it('Commands: rename normalizes paths', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, args: any) => {
                 execArgs = args;

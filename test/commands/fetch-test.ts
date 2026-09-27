@@ -9,7 +9,7 @@ describe('commands/fetch', () => {
     it('Commands: fetch basic query', async () => {
         let execCalled = false;
         let execCommand = '';
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             exec: async (cmd: any, attrs: any, opts: any) => {
                 execCalled = true;
@@ -37,7 +37,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with UID option', async () => {
         let execCommand = '';
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any) => {
                 execCommand = cmd;
@@ -49,20 +49,20 @@ describe('commands/fetch', () => {
         assert.equal(execCommand, 'UID FETCH');
     });
     it('Commands: fetch skips when not selected', async () => {
-        const connection: any = createMockConnection({ state: 2 }); // AUTHENTICATED, not SELECTED
+        const connection = createMockConnection({ state: 2 }); // AUTHENTICATED, not SELECTED
 
         const result = await fetchCommand(connection, '1:*', { uid: true });
         assert.equal(result, undefined);
     });
     it('Commands: fetch skips when no range', async () => {
-        const connection: any = createMockConnection({ state: 3 });
+        const connection = createMockConnection({ state: 3 });
 
         const result = await fetchCommand(connection, null as any, { uid: true });
         assert.equal(result, undefined);
     });
     it('Commands: fetch with envelope query', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -78,7 +78,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with bodyStructure query', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -93,7 +93,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with size query', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -108,7 +108,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with source query', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -123,7 +123,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with source partial', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -139,7 +139,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with BINARY capability', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['BINARY', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -155,7 +155,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with binary uses BINARY on rev2-only servers without the token', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             // rev2-only server: no BINARY token, but RFC 9051 folds the FETCH side of
             // the BINARY extension into base IMAP4rev2
@@ -172,7 +172,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with binary keeps BODY for non-numeric sections', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['BINARY', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -218,7 +218,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with binary keeps BODY on unenabled dual rev1+rev2 servers', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             // dual server without ENABLE IMAP4rev2 - rev2 semantics are not active, so
             // the BINARY fold must not apply
@@ -240,7 +240,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with OBJECTID capability', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['OBJECTID', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -256,7 +256,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with X-GM-EXT-1 capability', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['X-GM-EXT-1', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -272,7 +272,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with threadId query', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['OBJECTID', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -288,7 +288,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with threadId and X-GM-EXT-1 fallback', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['X-GM-EXT-1', true]]), // No OBJECTID, but has X-GM-EXT-1
             exec: async (cmd: any, attrs: any) => {
@@ -304,7 +304,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with labels query', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['X-GM-EXT-1', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -320,7 +320,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with CONDSTORE enabled', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             enabled: new Set(['CONDSTORE']),
             exec: async (cmd: any, attrs: any) => {
@@ -336,7 +336,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with headers array', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -351,7 +351,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with headers true', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -366,7 +366,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with bodyParts', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -381,7 +381,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with bodyParts object', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -396,7 +396,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with bodyParts skips invalid', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -411,7 +411,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with changedSince', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             enabled: new Set(['CONDSTORE']),
             exec: async (cmd: any, attrs: any) => {
@@ -427,7 +427,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with changedSince and QRESYNC', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             enabled: new Set(['CONDSTORE', 'QRESYNC']),
             exec: async (cmd: any, attrs: any) => {
@@ -443,7 +443,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with onUntaggedFetch callback', async () => {
         let callbackCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.FETCH) {
@@ -476,7 +476,7 @@ describe('commands/fetch', () => {
         assert.equal(callbackCalled, true);
     });
     it('Commands: fetch callback error propagates', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.FETCH) {
@@ -512,7 +512,7 @@ describe('commands/fetch', () => {
         }
     });
     it('Commands: fetch handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 throw new Error('Fetch failed');
@@ -528,7 +528,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch retries on throttle error', async () => {
         let attempts = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 attempts++;
@@ -548,7 +548,7 @@ describe('commands/fetch', () => {
     });
     it('Commands: fetch with all/fast/full query', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -568,7 +568,7 @@ describe('commands/fetch', () => {
         // The retry used to wait on a bare setTimeout that close() could not abort: a short-lived
         // process stayed alive for up to five minutes after close(), still holding the retry
         let calls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 1, flags: new Set(), permanentFlags: new Set(), noModseq: true },
             // the wait reports aborted, which is what close() does to every tracked back-off
@@ -599,7 +599,7 @@ describe('commands/fetch', () => {
         // fetchOne() and download() read as "message not found"
         let calls = 0;
         let waits: number[] = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 1, flags: new Set(), permanentFlags: new Set(), noModseq: true },
             throttleWait: async (delay: number) => {
@@ -621,7 +621,7 @@ describe('commands/fetch', () => {
     it('Commands: fetch only waits out the part of the back-off the connection has not', async () => {
         let waits: number[] = [];
         let calls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 1, flags: new Set(), permanentFlags: new Set(), noModseq: true },
             throttleWait: async (delay: number) => {

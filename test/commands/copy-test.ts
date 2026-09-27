@@ -6,7 +6,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/copy', () => {
     it('Commands: copy success', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -24,7 +24,7 @@ describe('commands/copy', () => {
     });
     it('Commands: copy with UID', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -36,7 +36,7 @@ describe('commands/copy', () => {
         assert.equal(execCmd, 'UID COPY');
     });
     it('Commands: copy with COPYUID response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => ({
                 next: () => {},
@@ -58,25 +58,25 @@ describe('commands/copy', () => {
         assert.equal((result as any)!.uidMap.get(3), 102);
     });
     it('Commands: copy skips when not selected', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await copyCommand(connection, '1:10', 'Archive', {});
         assert.equal(result, undefined);
     });
     it('Commands: copy skips when no range', async () => {
-        const connection: any = createMockConnection({ state: 3 });
+        const connection = createMockConnection({ state: 3 });
 
         const result = await copyCommand(connection, null as any, 'Archive', {});
         assert.equal(result, undefined);
     });
     it('Commands: copy skips when no destination', async () => {
-        const connection: any = createMockConnection({ state: 3 });
+        const connection = createMockConnection({ state: 3 });
 
         const result = await copyCommand(connection, '1:10', null as any, {});
         assert.equal(result, undefined);
     });
     it('Commands: copy handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 const err: any = new Error('Copy failed');
@@ -89,7 +89,7 @@ describe('commands/copy', () => {
         assert.equal(result, false);
     });
     it('Commands: copy error with serverResponseCode', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 const err: any = new Error('Copy failed');
@@ -112,7 +112,7 @@ describe('commands/copy', () => {
         assert.equal(result, false);
     });
     it('Commands: copy with partial COPYUID response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX' },
             exec: async () => ({
@@ -140,7 +140,7 @@ describe('commands/copy', () => {
         assert.equal(result.uidMap, undefined);
     });
     it('Commands: copy with invalid uidValidity', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX' },
             exec: async () => ({
@@ -164,7 +164,7 @@ describe('commands/copy', () => {
         assert.equal(result.uidValidity, undefined);
     });
     it('Commands: copy with mismatched UID counts', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX' },
             exec: async () => ({
@@ -191,7 +191,7 @@ describe('commands/copy', () => {
         assert.equal(result.uidMap, undefined); // Not set due to mismatch
     });
     it('Commands: copy with non-COPYUID response code', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX' },
             exec: async () => ({

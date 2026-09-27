@@ -7,7 +7,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/subscribe', () => {
     it('Commands: subscribe success', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -20,14 +20,14 @@ describe('commands/subscribe', () => {
         assert.equal(execCmd, 'SUBSCRIBE');
     });
     it('Commands: subscribe skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 });
+        const connection = createMockConnection({ state: 1 });
 
         const result = await subscribeCommand(connection, 'Folder');
         assert.equal(result, undefined);
     });
     it('Commands: unsubscribe success', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -40,14 +40,14 @@ describe('commands/subscribe', () => {
         assert.equal(execCmd, 'UNSUBSCRIBE');
     });
     it('Commands: unsubscribe skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 });
+        const connection = createMockConnection({ state: 1 });
 
         const result = await unsubscribeCommand(connection, 'Folder');
         assert.equal(result, undefined);
     });
     it('Commands: subscribe works in SELECTED state', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -60,7 +60,7 @@ describe('commands/subscribe', () => {
         assert.equal(execCmd, 'SUBSCRIBE');
     });
     it('Commands: subscribe returns false on error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Subscribe failed');
@@ -78,7 +78,7 @@ describe('commands/subscribe', () => {
     });
     it('Commands: subscribe error with serverResponseCode', async () => {
         let capturedErr: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Subscribe failed');
@@ -109,7 +109,7 @@ describe('commands/subscribe', () => {
     });
     it('Commands: subscribe normalizes path', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, args: any) => {
                 execArgs = args;
@@ -124,7 +124,7 @@ describe('commands/subscribe', () => {
     });
     it('Commands: unsubscribe works in SELECTED state', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -137,7 +137,7 @@ describe('commands/subscribe', () => {
         assert.equal(execCmd, 'UNSUBSCRIBE');
     });
     it('Commands: unsubscribe returns false on error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Unsubscribe failed');
@@ -155,7 +155,7 @@ describe('commands/subscribe', () => {
     });
     it('Commands: unsubscribe error with serverResponseCode', async () => {
         let capturedErr: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Unsubscribe failed');
@@ -186,7 +186,7 @@ describe('commands/subscribe', () => {
     });
     it('Commands: unsubscribe normalizes path', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, args: any) => {
                 execArgs = args;

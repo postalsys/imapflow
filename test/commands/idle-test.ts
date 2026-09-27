@@ -7,7 +7,7 @@ describe('commands/idle', () => {
     it('Commands: idle with IDLE capability', async () => {
         let execCommand = '';
         let idlingSet = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -28,7 +28,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle uses IDLE on rev2-only servers without the IDLE token', async () => {
         let execCommand = '';
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             // IDLE is part of base IMAP4rev2 - no separate token required
             capabilities: new Map([['IMAP4rev2', true]]),
@@ -46,14 +46,14 @@ describe('commands/idle', () => {
         assert.equal(execCommand, 'IDLE');
     });
     it('Commands: idle skips when not selected', async () => {
-        const connection: any = createMockConnection({ state: 2 }); // AUTHENTICATED
+        const connection = createMockConnection({ state: 2 }); // AUTHENTICATED
 
         const result = await idleCommand(connection);
         assert.equal(result, undefined);
     });
     it('Commands: idle falls back to NOOP without IDLE capability', async () => {
         let noopCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(), // No IDLE
             currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
@@ -83,7 +83,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle preCheck breaks IDLE', async () => {
         let doneSent = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -105,10 +105,10 @@ describe('commands/idle', () => {
 
         await idleCommand(connection as any);
         assert.equal(doneSent, true);
-        assert.equal((connection as any).idling, false);
+        assert.equal(connection.idling, false);
     });
     it('Commands: idle handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async () => {
@@ -118,11 +118,11 @@ describe('commands/idle', () => {
 
         const result = await idleCommand(connection);
         assert.equal(result, false);
-        assert.equal((connection as any).idling, false);
+        assert.equal(connection.idling, false);
     });
     it('Commands: idle with maxIdleTime restarts loop', async () => {
         let idleCount = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -140,11 +140,11 @@ describe('commands/idle', () => {
         });
 
         // Very short maxIdleTime to trigger restart
-        await idleCommand(connection as any, 5);
+        await idleCommand(connection, 5);
         assert.ok(idleCount >= 1);
     });
     it('Commands: idle without currentSelectCommand returns immediately', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(), // No IDLE
             currentSelectCommand: false // No select command
@@ -156,7 +156,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle NOOP fallback uses STATUS when configured', async () => {
         let statusCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(),
             currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
@@ -179,7 +179,7 @@ describe('commands/idle', () => {
         // SELECT polling goes through the real select implementation, so it applies the same
         // mailbox state transitions as a caller-issued select instead of replaying wire arguments.
         let selectCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(),
             // The mailbox is already open, so its folder metadata is cached (no LIST round trip)
@@ -203,7 +203,7 @@ describe('commands/idle', () => {
         assert.equal(connection.mailbox.delimiter, '/', 'cached folder metadata was merged in, as with a normal SELECT');
     });
     it('Commands: idle sets preCheck function', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -224,7 +224,7 @@ describe('commands/idle', () => {
         await idleCommand(connection as any);
     });
     it('Commands: idle clears preCheck on completion', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -244,7 +244,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle NOOP fallback handles error', async () => {
         let errorLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(),
             currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
@@ -266,7 +266,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle clears wait queue on normal completion', async () => {
         let preCheckResolved = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -292,7 +292,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle rejects wait queue on error', async () => {
         let preCheckRejected = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -317,7 +317,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle onPlusTag calls preCheck if doneRequested', async () => {
         let doneSent = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -343,7 +343,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle calls onSend callback', async () => {
         let onSendCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -370,7 +370,7 @@ describe('commands/idle', () => {
     });
     it('Commands: idle clears preCheck and queue on normal completion', async () => {
         let waitQueueResolved = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -398,7 +398,7 @@ describe('commands/idle', () => {
     it('Commands: idle with maxIdleTime triggers preCheck after timeout', async () => {
         let preCheckCalled = false;
         let loopCount = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             idling: false,
@@ -423,12 +423,12 @@ describe('commands/idle', () => {
         });
 
         // Use very short maxIdleTime
-        await idleCommand(connection as any, 10);
+        await idleCommand(connection, 10);
         assert.ok(preCheckCalled || loopCount > 1, 'preCheck should be called by timer or loop should restart');
     });
     it('Commands: idle stillIdling triggers loop restart', async () => {
         let loopCount = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             idling: false,
@@ -451,17 +451,18 @@ describe('commands/idle', () => {
             write: () => {}
         });
 
-        await idleCommand(connection as any, 5);
+        await idleCommand(connection, 5);
         // Loop should have run at least once (could run twice if timer works)
         assert.ok(loopCount >= 1, 'IDLE loop should have run');
     });
     it('Commands: idle releases queued waiters when the server refuses IDLE', async () => {
         let waiter: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             exec: async () => {
                 // a command is waiting for IDLE to break when the server answers IDLE with BAD
+                assert.ok(connection.preCheck);
                 waiter = connection.preCheck().then(
                     () => 'resolved',
                     () => 'rejected'

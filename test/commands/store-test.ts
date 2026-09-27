@@ -6,7 +6,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/store', () => {
     it('Commands: store add flags', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -21,7 +21,7 @@ describe('commands/store', () => {
     });
     it('Commands: store drops the Recent flag from the wire', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -39,7 +39,7 @@ describe('commands/store', () => {
     });
     it('Commands: store remove flags', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -56,7 +56,7 @@ describe('commands/store', () => {
         // sent: a flag does not need to be permitted to be removed. Regression guard — the check used
         // to test the rewritten wire-form operation instead of options.operation and dropped the flag.
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { permanentFlags: new Set(['\\Seen']) },
             exec: async (cmd: any, attrs: any) => {
@@ -79,7 +79,7 @@ describe('commands/store', () => {
         // Control for the regression above: the permanentFlags guard must still apply to non-remove
         // operations. Adding a flag the mailbox does not permit yields no command and a false result.
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { permanentFlags: new Set(['\\Seen']) },
             exec: async () => {
@@ -94,7 +94,7 @@ describe('commands/store', () => {
     });
     it('Commands: store set flags', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -109,7 +109,7 @@ describe('commands/store', () => {
     });
     it('Commands: store with UID', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -122,7 +122,7 @@ describe('commands/store', () => {
     });
     it('Commands: store with silent', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -135,7 +135,7 @@ describe('commands/store', () => {
     });
     it('Commands: store with Gmail labels', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['X-GM-EXT-1', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -148,7 +148,7 @@ describe('commands/store', () => {
         assert.ok(execArgs.attrs[1].value.includes('X-GM-LABELS'));
     });
     it('Commands: store skips when labels not supported', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map() // No X-GM-EXT-1
         });
@@ -157,20 +157,20 @@ describe('commands/store', () => {
         assert.equal(result, false);
     });
     it('Commands: store skips when not selected', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await storeCommand(connection, '1:10', ['\\Seen'], {});
         assert.equal(result, false);
     });
     it('Commands: store skips when no range', async () => {
-        const connection: any = createMockConnection({ state: 3 });
+        const connection = createMockConnection({ state: 3 });
 
         const result = await storeCommand(connection, null as any, ['\\Seen'], {});
         assert.equal(result, false);
     });
     it('Commands: store with CONDSTORE', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             enabled: new Set(['CONDSTORE']),
             exec: async (cmd: any, attrs: any) => {
@@ -183,7 +183,7 @@ describe('commands/store', () => {
         assert.ok(execArgs.attrs.some((a: any) => Array.isArray(a) && a.some(x => x.value === 'UNCHANGEDSINCE')));
     });
     it('Commands: store handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 const err: any = new Error('Store failed');
@@ -197,7 +197,7 @@ describe('commands/store', () => {
     });
     it('Commands: store error with serverResponseCode', async () => {
         let capturedErr: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 const err: any = new Error('Store failed');
@@ -228,7 +228,7 @@ describe('commands/store', () => {
     });
     it('Commands: store filters flags that cannot be used', async () => {
         let execAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: {
                 permanentFlags: new Set(['\\Seen']) // Only \\Seen is allowed
@@ -250,7 +250,7 @@ describe('commands/store', () => {
     });
     it('Commands: store remove operation uses minus prefix', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 execAttrs = attrs;
@@ -267,7 +267,7 @@ describe('commands/store', () => {
         assert.equal(flagsList.length, 2);
     });
     it('Commands: store returns false when no valid flags for add', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: {
                 permanentFlags: new Set() // No flags allowed
@@ -280,7 +280,7 @@ describe('commands/store', () => {
     });
     it('Commands: store allows empty flags for set operation', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: {
                 permanentFlags: new Set() // No flags allowed, all get filtered
@@ -297,7 +297,7 @@ describe('commands/store', () => {
         assert.equal(execCalled, true);
     });
     it('Commands: store returns false with empty flags for remove', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: {
                 permanentFlags: new Set()
@@ -310,7 +310,7 @@ describe('commands/store', () => {
     });
     it('Commands: store default operation is add', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
                 execAttrs = attrs;
@@ -324,7 +324,7 @@ describe('commands/store', () => {
     });
     it('Commands: store with labels uses X-GM-LABELS', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['X-GM-EXT-1', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -339,7 +339,7 @@ describe('commands/store', () => {
     });
     it('Commands: store silent does not apply to labels', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['X-GM-EXT-1', true]]),
             exec: async (cmd: any, attrs: any) => {

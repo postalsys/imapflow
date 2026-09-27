@@ -11,7 +11,7 @@ import { withFakeTimers } from './fixtures/fake-timers.js';
 const createConnection = (overrides = {}) => {
     const states: any = { NOT_AUTHENTICATED: 1, AUTHENTICATED: 2, SELECTED: 3, LOGOUT: 4 };
 
-    const connection: any[] = {
+    const connection: any = {
         states,
         state: states.SELECTED,
         id: 'polling-test',
@@ -42,7 +42,7 @@ const createConnection = (overrides = {}) => {
         // command registry - so a poll runs the real SELECT/STATUS implementation.
         runInternal: async (command: any, ...args: any[]) => {
             let handler = imapCommands.get(command.toUpperCase());
-            return handler ? await handler(connection as any, ...args) : false;
+            return handler ? await handler(connection, ...args) : false;
         },
         exec: async (command: any, attributes: any, options: any) => {
             (connection as any).commands.push(command);
@@ -63,7 +63,7 @@ describe('idle-polling', () => {
     it('Polling: break before the first poll stops the loop', (t, done) => {
         (async () => {
             await withFakeTimers(async timers => {
-                let connection: any[] = createConnection({
+                let connection: any = createConnection({
                     exec: async (command: any) => {
                         (connection as any).commands.push(command);
                         // break while the very first poll is still in flight
@@ -72,12 +72,12 @@ describe('idle-polling', () => {
                     }
                 });
 
-                let idlePromise = idleCommand(connection as any, 60000);
+                let idlePromise = idleCommand(connection, 60000);
                 await timers.drain();
                 await idlePromise;
 
                 assert.deepEqual((connection as any).commands, ['NOOP'], 'only the immediate first poll ran');
-                assert.equal((connection as any).idling, false, 'idling reset after the break');
+                assert.equal(connection.idling, false, 'idling reset after the break');
                 assert.equal((connection as any).preCheck, false, 'the session released preCheck');
                 assert.equal(timers.count(), 0, 'no polling timer is left armed');
 
@@ -94,7 +94,7 @@ describe('idle-polling', () => {
             await withFakeTimers(async timers => {
                 let releasePoll: any;
                 let pollStarted: any;
-                let connection: any[] = createConnection({
+                let connection: any = createConnection({
                     exec: async (command: any) => {
                         (connection as any).commands.push(command);
                         await new Promise(resolve => {
@@ -108,7 +108,7 @@ describe('idle-polling', () => {
                 });
 
                 let started = new Promise(resolve => (pollStarted = resolve));
-                let idlePromise = idleCommand(connection as any, 60000);
+                let idlePromise = idleCommand(connection, 60000);
                 await started;
 
                 // Cancel while the poll is still awaiting its response, then let it finish
@@ -118,7 +118,7 @@ describe('idle-polling', () => {
 
                 assert.deepEqual((connection as any).commands, ['NOOP'], 'the in-flight poll completed but scheduled nothing');
                 assert.equal(timers.count(), 0, 'the completing poll did not arm a new timer');
-                assert.equal((connection as any).idling, false, 'idling reset');
+                assert.equal(connection.idling, false, 'idling reset');
 
                 await timers.fire();
                 assert.deepEqual((connection as any).commands, ['NOOP'], 'no later command is sent');
@@ -155,7 +155,7 @@ describe('idle-polling', () => {
             await withFakeTimers(async timers => {
                 let releasePoll: any;
                 let pollStarted: any;
-                let connection: any[] = createConnection({
+                let connection: any = createConnection({
                     exec: async (command: any) => {
                         (connection as any).commands.push(command);
                         if ((connection as any).commands.length === 1) {
@@ -169,12 +169,12 @@ describe('idle-polling', () => {
                 });
 
                 let started = new Promise(resolve => (pollStarted = resolve));
-                let firstSession = idleCommand(connection as any, 60000);
+                let firstSession = idleCommand(connection, 60000);
                 await started;
 
                 // Cancel the first session while its poll is in flight, then immediately re-enter IDLE
                 await ((connection as any).preCheck as any)();
-                let secondSession = idleCommand(connection as any, 60000);
+                let secondSession = idleCommand(connection, 60000);
                 await timers.drain();
 
                 let newPreCheck = (connection as any).preCheck;
@@ -185,11 +185,11 @@ describe('idle-polling', () => {
                 await firstSession;
 
                 assert.equal((connection as any).preCheck, newPreCheck, 'the stale session left the newer preCheck in place');
-                assert.equal((connection as any).idling, true, 'the stale session did not clear the newer idling state');
+                assert.equal(connection.idling, true, 'the stale session did not clear the newer idling state');
 
                 await ((connection as any).preCheck as any)();
                 await secondSession;
-                assert.equal((connection as any).idling, false, 'the newer session cleaned up on its own break');
+                assert.equal(connection.idling, false, 'the newer session cleaned up on its own break');
                 done();
             });
         })().catch(done);
@@ -330,7 +330,7 @@ describe('idle-polling', () => {
     it('Polling: a rejected poll resets idling', (t, done) => {
         (async () => {
             await withFakeTimers(async timers => {
-                let connection: any[] = createConnection({
+                let connection: any = createConnection({
                     exec: async (command: any) => {
                         (connection as any).commands.push(command);
                         let err: any = new Error('Connection not available');
@@ -339,11 +339,11 @@ describe('idle-polling', () => {
                     }
                 });
 
-                let idlePromise = idleCommand(connection as any, 60000);
+                let idlePromise = idleCommand(connection, 60000);
                 await timers.drain();
                 await idlePromise;
 
-                assert.equal((connection as any).idling, false, 'idling reset after a rejected poll');
+                assert.equal(connection.idling, false, 'idling reset after a rejected poll');
                 assert.equal((connection as any).preCheck, false, 'preCheck released after a rejected poll');
                 assert.equal(timers.count(), 0, 'nothing left scheduled');
                 done();
@@ -456,7 +456,7 @@ describe('idle-polling', () => {
                 // would tie the poll rate to how often the caller runs commands instead of to the poll
                 // interval - with a short autoIdleDelay, a command every few seconds means a poll every
                 // few seconds.
-                let second = idleCommand(connection as any, 60000);
+                let second = idleCommand(connection, 60000);
                 await timers.drain();
                 assert.deepEqual(connection.commands, ['NOOP'], 'the restarted session does not poll again');
                 assert.equal(timers.count(), 1, 'it waits out the remainder of the interval instead');
@@ -467,7 +467,7 @@ describe('idle-polling', () => {
 
                 // Once a full interval has elapsed, a fresh session polls at once again
                 (connection as any)._lastPollAt = Date.now() - 61000;
-                let third = idleCommand(connection as any, 60000);
+                let third = idleCommand(connection, 60000);
                 await timers.drain();
                 assert.deepEqual(connection.commands, ['NOOP', 'NOOP'], 'a session starting after the interval polls right away');
 
@@ -481,7 +481,7 @@ describe('idle-polling', () => {
         (async () => {
             await withFakeTimers(async timers => {
                 let failNext = true;
-                let connection: any[] = createConnection({
+                let connection: any = createConnection({
                     exec: async (command: any) => {
                         (connection as any).commands.push(command);
                         if (failNext) {
@@ -494,12 +494,12 @@ describe('idle-polling', () => {
 
                 // The failing poll cancels its own session. The attempt checked nothing, so it must not
                 // count as a poll: only a completed poll moves the schedule stamp forward.
-                let first = idleCommand(connection as any, 60000);
+                let first = idleCommand(connection, 60000);
                 await timers.drain();
                 await first;
                 assert.deepEqual((connection as any).commands, ['NOOP'], 'the first poll ran and failed');
 
-                let second = idleCommand(connection as any, 60000);
+                let second = idleCommand(connection, 60000);
                 await timers.drain();
                 assert.deepEqual((connection as any).commands, ['NOOP', 'NOOP'], 'the next session retries immediately instead of waiting out an interval');
 
@@ -519,7 +519,7 @@ describe('idle-polling', () => {
                 // plus one interval away.
                 connection._lastPollAt = Date.now() + 60 * 60 * 1000;
 
-                let idlePromise = idleCommand(connection as any, 60000);
+                let idlePromise = idleCommand(connection, 60000);
                 await timers.drain();
                 assert.deepEqual(connection.commands, [], 'no immediate poll - the schedule is resumed');
                 assert.equal(timers.count(), 1, 'a poll timer is armed');

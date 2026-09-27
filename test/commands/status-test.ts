@@ -10,7 +10,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/status', () => {
     it('Commands: status basic', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2, // AUTHENTICATED
             exec: async (cmd: any, attrs: any, opts: any) => {
                 execCalled = true;
@@ -31,26 +31,26 @@ describe('commands/status', () => {
         assert.equal(result.unseen, 10);
     });
     it('Commands: status skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+        const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
 
         const result = await statusCommand(connection, 'INBOX', { messages: true });
         assert.equal(result, false);
     });
     it('Commands: status skips when no path', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await statusCommand(connection, '', { messages: true });
         assert.equal(result, false);
     });
     it('Commands: status skips when no query attributes', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await statusCommand(connection, 'INBOX', {});
         assert.equal(result, false);
     });
     it('Commands: status returns synthetic recent on rev2 sessions', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async () => {
@@ -67,7 +67,7 @@ describe('commands/status', () => {
     });
     it('Commands: status merges synthetic recent into rev2 query results', async () => {
         let queryAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['IMAP4rev2', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -88,7 +88,7 @@ describe('commands/status', () => {
     });
     it('Commands: status requests and parses SIZE and DELETED on rev2 sessions', async () => {
         let queryAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             // rev2-only server: STATUS=SIZE is folded in and DELETED is a base rev2
             // status item (RFC 9051 Appendix E item 3)
@@ -115,7 +115,7 @@ describe('commands/status', () => {
     });
     it('Commands: status requests SIZE with the STATUS=SIZE token on rev1 sessions', async () => {
         let queryAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             // RFC 8438 server: SIZE is available via the capability token, DELETED is
             // rev2-only and must be dropped
@@ -139,7 +139,7 @@ describe('commands/status', () => {
     });
     it('Commands: status requests DELETED with QUOTA=RES-MESSAGE on rev1 sessions', async () => {
         let queryAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             // RFC 9208: the DELETED status item is mandatory when QUOTA=RES-MESSAGE
             // is advertised, even without IMAP4rev2
@@ -162,7 +162,7 @@ describe('commands/status', () => {
     });
     it('Commands: status drops SIZE and DELETED on rev1 sessions without support', async () => {
         let queryAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 queryAttrs = JSON.stringify(attrs);
@@ -181,14 +181,14 @@ describe('commands/status', () => {
         assert.equal(result.messages, 100);
     });
     it('Commands: status skips when all query values are false', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await statusCommand(connection, 'INBOX', { messages: false, unseen: false });
         assert.equal(result, false);
     });
     it('Commands: status with all standard query attributes', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 queryAttrs = attrs;
@@ -238,7 +238,7 @@ describe('commands/status', () => {
     });
     it('Commands: status with HIGHESTMODSEQ and CONDSTORE', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['CONDSTORE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -259,7 +259,7 @@ describe('commands/status', () => {
         assert.equal(result.highestModseq, BigInt('9876543210'));
     });
     it('Commands: status ignores HIGHESTMODSEQ without CONDSTORE', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map(), // No CONDSTORE
             exec: async () => ({ next: () => {} })
@@ -271,7 +271,7 @@ describe('commands/status', () => {
     });
     it('Commands: status updates current mailbox when SELECTED', async () => {
         let existsEmitted = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'INBOX', exists: 50, uidNext: 500 },
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -296,7 +296,7 @@ describe('commands/status', () => {
     });
     it('Commands: status does not emit exists when count unchanged', async () => {
         let existsEmitted = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 100 }, // Same as response
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -316,7 +316,7 @@ describe('commands/status', () => {
         assert.equal(existsEmitted, false);
     });
     it('Commands: status handles error with NO response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             run: async () => [], // LIST returns empty - folder doesn't exist
             exec: async () => {
@@ -334,7 +334,7 @@ describe('commands/status', () => {
         }
     });
     it('Commands: status returns false on other errors', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Some error');
@@ -347,7 +347,7 @@ describe('commands/status', () => {
         assert.equal(result, false);
     });
     it('Commands: status handles empty STATUS response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.STATUS) {
@@ -367,7 +367,7 @@ describe('commands/status', () => {
         assert.equal(result.messages, undefined);
     });
     it('Commands: status handles invalid entry values', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.STATUS) {
@@ -402,7 +402,7 @@ describe('commands/status', () => {
     });
     it('Commands: status encodes path with special characters', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any) => {
                 execAttrs = attrs;
@@ -417,7 +417,7 @@ describe('commands/status', () => {
     });
     it('Commands: status works from SELECTED state', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'OtherFolder' }, // Different folder
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -436,7 +436,7 @@ describe('commands/status', () => {
         assert.equal(result.messages, 50);
     });
     it('Commands: status updates HIGHESTMODSEQ for current mailbox', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['CONDSTORE', true]]),
             mailbox: { path: 'INBOX', highestModseq: BigInt(100) },
@@ -454,7 +454,7 @@ describe('commands/status', () => {
         assert.equal(connection.mailbox.highestModseq, BigInt(200));
     });
     it('Commands: status handles NaN values in response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.STATUS) {
@@ -497,7 +497,7 @@ describe('commands/status', () => {
         assert.equal(result.unseen, undefined);
     });
     it('Commands: status handles NaN HIGHESTMODSEQ', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['CONDSTORE', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -516,7 +516,7 @@ describe('commands/status', () => {
     });
     it('Commands: status filters falsy query values', async () => {
         let queryAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any) => {
                 queryAttrs = attrs;
@@ -539,7 +539,7 @@ describe('commands/status', () => {
         assert.equal(queryList.length, 2);
     });
     it('Commands: status handles missing entry value', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.STATUS) {
@@ -568,7 +568,7 @@ describe('commands/status', () => {
         assert.equal(result.recent, 5);
     });
     it('Commands: status handles missing key in response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.STATUS) {
@@ -593,7 +593,7 @@ describe('commands/status', () => {
         assert.equal(result.messages, 20);
     });
     it('Commands: status handles unknown key in response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (opts && opts.untagged && opts.untagged.STATUS) {

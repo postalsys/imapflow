@@ -6,7 +6,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/login', () => {
     it('Commands: login success', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1, // NOT_AUTHENTICATED
             exec: async (cmd: any, attrs: any) => {
                 execArgs = { cmd, attrs };
@@ -22,7 +22,7 @@ describe('commands/login', () => {
         assert.equal(execArgs!.attrs[1].sensitive, true);
     });
     it('Commands: login skips when already authenticated', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2 // AUTHENTICATED
         });
 
@@ -30,7 +30,7 @@ describe('commands/login', () => {
         assert.equal(result, undefined);
     });
     it('Commands: login handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             exec: async () => {
                 const err: any = new Error('Auth failed');
@@ -47,7 +47,7 @@ describe('commands/login', () => {
         }
     });
     it('Commands: login error includes serverResponseCode', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             exec: async () => {
                 const err: any = new Error('Auth failed');

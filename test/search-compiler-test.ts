@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import type { ImapFlow } from '../src/imap-flow.js';
 import { searchCompiler } from '../src/search-compiler.js';
 
 // Mock mailbox for testing
@@ -9,11 +10,12 @@ let createMockMailbox = () => ({
 });
 
 // Helper to create mock connection with customizable capabilities
-let createMockConnection = (options = {}) => ({
-    capabilities: new Map((options as any).capabilities || [['IMAP4rev1', true]]),
-    enabled: new Set((options as any).enabled || []),
-    mailbox: (options as any).mailbox || createMockMailbox()
-});
+let createMockConnection = (options = {}) =>
+    ({
+        capabilities: new Map((options as any).capabilities || [['IMAP4rev1', true]]),
+        enabled: new Set((options as any).enabled || []),
+        mailbox: (options as any).mailbox || createMockMailbox()
+    }) as unknown as ImapFlow;
 
 // Helper to find attribute by value (recurses into sub-arrays for parenthesized groups)
 let findAttr: any = (attrs: any, value: any) => {
@@ -34,7 +36,7 @@ describe('search-compiler', () => {
     // Basic functionality tests
     // ============================================
     it('Search Compiler: Basic functionality', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         assert.doesNotThrow(() => {
             let compiled = searchCompiler(connection, { seen: false });
@@ -42,19 +44,19 @@ describe('search-compiler', () => {
         });
     });
     it('Search Compiler: Empty query', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {});
 
         assert.ok(Array.isArray(compiled));
         assert.equal(compiled.length, 0);
     });
     it('Search Compiler: Null/undefined query', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         let compiled1 = searchCompiler(connection, null as any);
         assert.ok(Array.isArray(compiled1));
 
-        let compiled2 = searchCompiler(connection as any, undefined as any);
+        let compiled2 = searchCompiler(connection, undefined as any);
         assert.ok(Array.isArray(compiled2));
     });
 
@@ -62,7 +64,7 @@ describe('search-compiler', () => {
     // SEQ (sequence) tests
     // ============================================
     it('Search Compiler: SEQ with string', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { seq: '1:100' });
 
         assert.ok(hasAttr(compiled, '1:100'));
@@ -70,13 +72,13 @@ describe('search-compiler', () => {
         assert.equal(seqAttr.type, 'SEQUENCE');
     });
     it('Search Compiler: SEQ with number', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { seq: 42 });
 
         assert.ok(hasAttr(compiled, '42'));
     });
     it('Search Compiler: SEQ passes invalid values through to the compiler guard', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         // An invalid sequence string used to be dropped silently here, which turned the
         // filter into an unrestricted search matching every message. It is now emitted as
@@ -88,7 +90,7 @@ describe('search-compiler', () => {
 
         // Junk values pass through too, so they fail loudly at the compiler instead of
         // silently widening the search
-        let junk = searchCompiler(connection as any, { seq: {} } as any);
+        let junk = searchCompiler(connection, { seq: {} } as any);
         assert.ok(
             junk.find(a => (a as any).type === 'SEQUENCE'),
             'a junk value must not be dropped'
@@ -96,11 +98,11 @@ describe('search-compiler', () => {
 
         // Zero is not a valid IMAP sequence number but it is a valid filter value,
         // so it must reach the compiler guard rather than be dropped as falsy
-        let zero: any = searchCompiler(connection as any, { seq: 0 });
+        let zero: any = searchCompiler(connection, { seq: 0 });
         assert.equal((zero.find((a: any) => (a as any).type === 'SEQUENCE') as any).value, '0', 'zero must not be dropped');
     });
     it('Search Compiler: SEQ array compiles to a single comma-joined set', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { seq: [1, 3] } as any);
 
         let seqAttr: any = compiled.find(a => (a as any).type === 'SEQUENCE');
@@ -108,7 +110,7 @@ describe('search-compiler', () => {
         assert.equal(seqAttr.value, '1,3');
     });
     it('Search Compiler: SEQ empty string compiles to nothing', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { seq: '' });
 
         assert.ok(!compiled.find(a => (a as any).type === 'SEQUENCE'), 'an empty set adds no SEQUENCE attribute');
@@ -119,25 +121,25 @@ describe('search-compiler', () => {
     // Boolean flag tests
     // ============================================
     it('Search Compiler: SEEN flag true', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { seen: true });
 
         assert.ok(hasAttr(compiled, 'SEEN'));
     });
     it('Search Compiler: SEEN flag false adds UNSEEN', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { seen: false });
 
         assert.ok(hasAttr(compiled, 'UNSEEN'));
     });
     it('Search Compiler: UNSEEN flag false adds SEEN', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { unseen: false } as any);
 
         assert.ok(hasAttr(compiled, 'SEEN'));
     });
     it('Search Compiler: All boolean flags', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         // Test all toggleable flags
         let flags = ['answered', 'deleted', 'draft', 'flagged', 'seen'];
@@ -147,7 +149,7 @@ describe('search-compiler', () => {
         });
     });
     it('Search Compiler: UN-prefixed flags', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         let compiled = searchCompiler(connection, {
             unanswered: true,
@@ -166,25 +168,25 @@ describe('search-compiler', () => {
     // Simple boolean flags (ALL, NEW, OLD, RECENT)
     // ============================================
     it('Search Compiler: ALL flag', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { all: true });
 
         assert.ok(hasAttr(compiled, 'ALL'));
     });
     it('Search Compiler: NEW flag', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { new: true });
 
         assert.ok(hasAttr(compiled, 'NEW'));
     });
     it('Search Compiler: OLD flag', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { old: true });
 
         assert.ok(hasAttr(compiled, 'OLD'));
     });
     it('Search Compiler: RECENT flag', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { recent: true });
 
         assert.ok(hasAttr(compiled, 'RECENT'));
@@ -192,7 +194,7 @@ describe('search-compiler', () => {
     it('Search Compiler: NEW/OLD/RECENT throw on rev2 sessions', () => {
         // IMAP4rev2 (RFC 9051) removed the \Recent flag and these search keys -
         // a rev2 server would reject the whole search with a tagged BAD
-        let connection: any = createMockConnection({ enabled: ['IMAP4REV2'] });
+        let connection = createMockConnection({ enabled: ['IMAP4REV2'] });
         for (let key of ['new', 'old', 'recent']) {
             try {
                 searchCompiler(connection, { [key]: true });
@@ -202,12 +204,12 @@ describe('search-compiler', () => {
             }
         }
         // Falsy values compile to nothing and must not throw
-        assert.equal(searchCompiler(connection as any, { recent: false }).length, 0);
+        assert.equal(searchCompiler(connection, { recent: false }).length, 0);
         // ALL is still part of the rev2 grammar
-        assert.ok(hasAttr(searchCompiler(connection as any, { all: true }), 'ALL'));
+        assert.ok(hasAttr(searchCompiler(connection, { all: true }), 'ALL'));
     });
     it('Search Compiler: Simple flags ignored when falsy', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             all: false,
             new: false,
@@ -222,28 +224,28 @@ describe('search-compiler', () => {
     // Numeric comparison tests
     // ============================================
     it('Search Compiler: LARGER', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { larger: 10000 });
 
         assert.ok(hasAttr(compiled, 'LARGER'));
         assert.ok(hasAttr(compiled, '10000'));
     });
     it('Search Compiler: SMALLER', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { smaller: 5000 });
 
         assert.ok(hasAttr(compiled, 'SMALLER'));
         assert.ok(hasAttr(compiled, '5000'));
     });
     it('Search Compiler: MODSEQ', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { modseq: 123456 });
 
         assert.ok(hasAttr(compiled, 'MODSEQ'));
         assert.ok(hasAttr(compiled, '123456'));
     });
     it('Search Compiler: Numeric ignores falsy values', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             larger: 0,
             smaller: null,
@@ -257,54 +259,54 @@ describe('search-compiler', () => {
     // Text search tests
     // ============================================
     it('Search Compiler: FROM', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { from: 'user@example.com' });
 
         assert.ok(hasAttr(compiled, 'FROM'));
         assert.ok(hasAttr(compiled, 'user@example.com'));
     });
     it('Search Compiler: TO', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { to: 'recipient@example.com' });
 
         assert.ok(hasAttr(compiled, 'TO'));
         assert.ok(hasAttr(compiled, 'recipient@example.com'));
     });
     it('Search Compiler: CC', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { cc: 'cc@example.com' });
 
         assert.ok(hasAttr(compiled, 'CC'));
     });
     it('Search Compiler: BCC', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { bcc: 'bcc@example.com' });
 
         assert.ok(hasAttr(compiled, 'BCC'));
     });
     it('Search Compiler: SUBJECT', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { subject: 'Test Subject' });
 
         assert.ok(hasAttr(compiled, 'SUBJECT'));
         assert.ok(hasAttr(compiled, 'Test Subject'));
     });
     it('Search Compiler: BODY', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { body: 'search text' });
 
         assert.ok(hasAttr(compiled, 'BODY'));
         assert.ok(hasAttr(compiled, 'search text'));
     });
     it('Search Compiler: TEXT', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { text: 'full text search' });
 
         assert.ok(hasAttr(compiled, 'TEXT'));
         assert.ok(hasAttr(compiled, 'full text search'));
     });
     it('Search Compiler: Text fields ignore falsy', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             from: '',
             to: null,
@@ -318,7 +320,7 @@ describe('search-compiler', () => {
     // UID tests
     // ============================================
     it('Search Compiler: UID with string', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { uid: '1:*' });
 
         assert.ok(hasAttr(compiled, 'UID'));
@@ -326,14 +328,14 @@ describe('search-compiler', () => {
         assert.equal((uidValueAttr as any).type, 'SEQUENCE');
     });
     it('Search Compiler: UID with number', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { uid: 12345 });
 
         assert.ok(hasAttr(compiled, 'UID'));
         assert.ok(hasAttr(compiled, '12345'));
     });
     it('Search Compiler: UID array compiles to a single comma-joined set', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { uid: [5, 7, 9] } as any);
 
         // Separate tokens ("UID 5 7 9") would be parsed by the server as extra
@@ -344,7 +346,7 @@ describe('search-compiler', () => {
         assert.equal(uidValueAttr.type, 'SEQUENCE');
     });
     it('Search Compiler: UID accepts the SEARCHRES $ marker', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { uid: '$' });
 
         assert.ok(hasAttr(compiled, 'UID'));
@@ -357,7 +359,7 @@ describe('search-compiler', () => {
     // EMAILID / THREADID tests
     // ============================================
     it('Search Compiler: EMAILID with OBJECTID', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['OBJECTID', true]]
         });
         let compiled = searchCompiler(connection, { emailId: 'M1234567890' });
@@ -366,7 +368,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'M1234567890'));
     });
     it('Search Compiler: EMAILID falls back to X-GM-MSGID', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { emailId: '1234567890' });
@@ -375,13 +377,13 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, '1234567890'));
     });
     it('Search Compiler: EMAILID ignored without capability', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { emailId: '12345' });
 
         assert.equal(compiled.length, 0);
     });
     it('Search Compiler: THREADID with OBJECTID', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['OBJECTID', true]]
         });
         let compiled = searchCompiler(connection, { threadId: 'T1234567890' });
@@ -390,7 +392,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'T1234567890'));
     });
     it('Search Compiler: THREADID falls back to X-GM-THRID', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { threadId: '9876543210' });
@@ -403,7 +405,7 @@ describe('search-compiler', () => {
     // Gmail raw search tests
     // ============================================
     it('Search Compiler: GMRAW with X-GM-EXT-1', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { gmraw: 'in:inbox is:unread' });
@@ -412,7 +414,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'in:inbox is:unread'));
     });
     it('Search Compiler: GMAILRAW alias', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { gmailraw: 'has:attachment' });
@@ -421,7 +423,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'has:attachment'));
     });
     it('Search Compiler: GMRAW throws without capability', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         try {
             searchCompiler(connection, { gmraw: 'test' });
@@ -436,7 +438,7 @@ describe('search-compiler', () => {
     // Gmail label search tests
     // ============================================
     it('Search Compiler: LABELS has compiles to label: via X-GM-RAW', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { labels: { has: ['Horizon'] } });
@@ -445,7 +447,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'label:Horizon'));
     });
     it('Search Compiler: LABELS not compiles to -label: via X-GM-RAW', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { labels: { not: ['Horizon'] } });
@@ -454,18 +456,18 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, '-label:Horizon'));
     });
     it('Search Compiler: LABELS with a non-object value is ignored', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         // Neither a falsy value nor a plain string is a { has, not } filter - both
         // must compile to nothing even without the Gmail extension
         let compiledNull = searchCompiler(connection, { labels: null } as any);
         assert.equal(compiledNull.length, 0);
 
-        let compiledString = searchCompiler(connection as any, { labels: 'Horizon' } as any);
+        let compiledString = searchCompiler(connection, { labels: 'Horizon' } as any);
         assert.equal(compiledString.length, 0);
     });
     it('Search Compiler: LABELS has and not combined', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { labels: { has: ['Imported'], not: ['Horizon'] } });
@@ -473,7 +475,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'label:Imported -label:Horizon'));
     });
     it('Search Compiler: LABELS quotes multi-word names', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { labels: { has: ['Some Label'] } });
@@ -481,7 +483,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'label:"Some Label"'));
     });
     it('Search Compiler: LABELS coexists with gmraw', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]]
         });
         let compiled = searchCompiler(connection, { gmraw: 'has:attachment', labels: { not: ['Horizon'] } });
@@ -490,7 +492,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, '-label:Horizon'));
     });
     it('Search Compiler: LABELS throws without capability', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         try {
             searchCompiler(connection, { labels: { not: ['Horizon'] } });
@@ -501,7 +503,7 @@ describe('search-compiler', () => {
         }
     });
     it('Search Compiler: empty LABELS is a no-op without capability', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { labels: {} });
 
         assert.ok(!hasAttr(compiled, 'X-GM-RAW'));
@@ -512,20 +514,20 @@ describe('search-compiler', () => {
     // Date search tests
     // ============================================
     it('Search Compiler: SINCE', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { since: new Date('2023-06-15') });
 
         assert.ok(hasAttr(compiled, 'SINCE'));
         assert.ok(hasAttr(compiled, '15-Jun-2023'));
     });
     it('Search Compiler: BEFORE', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { before: new Date('2023-06-15T00:00:00.000Z') });
 
         assert.ok(hasAttr(compiled, 'BEFORE'));
     });
     it('Search Compiler: BEFORE with non-midnight time adjusts date', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         // Non-midnight time should advance to next day
         let compiled = searchCompiler(connection, { before: new Date('2023-06-15T12:30:00.000Z') });
 
@@ -534,31 +536,31 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, '16-Jun-2023'));
     });
     it('Search Compiler: ON', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { on: new Date('2023-06-15') });
 
         assert.ok(hasAttr(compiled, 'ON'));
     });
     it('Search Compiler: SENTBEFORE', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { sentbefore: new Date('2023-06-15T00:00:00.000Z') } as any);
 
         assert.ok(hasAttr(compiled, 'SENTBEFORE'));
     });
     it('Search Compiler: SENTON', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { senton: new Date('2023-06-15') } as any);
 
         assert.ok(hasAttr(compiled, 'SENTON'));
     });
     it('Search Compiler: SENTSINCE', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { sentsince: new Date('2023-06-15') } as any);
 
         assert.ok(hasAttr(compiled, 'SENTSINCE'));
     });
     it('Search Compiler: SINCE with WITHIN extension', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['WITHIN', true]]
         });
         let recentDate = new Date(Date.now() - 3600 * 1000); // 1 hour ago
@@ -567,7 +569,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'YOUNGER'));
     });
     it('Search Compiler: BEFORE with WITHIN extension', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['WITHIN', true]]
         });
         let oldDate = new Date(Date.now() - 86400 * 1000); // 1 day ago
@@ -576,7 +578,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'OLDER'));
     });
     it('Search Compiler: Date with invalid value ignored', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { since: 'invalid-date' });
 
         // formatDate returns undefined for invalid dates
@@ -588,7 +590,7 @@ describe('search-compiler', () => {
         // advertised BEFORE/SINCE compiled a literal "OLDER NaN"/"YOUNGER NaN" token
         for (let capabilities of [[['IMAP4rev1', true]], [['WITHIN', true]]]) {
             for (let key of ['before', 'since', 'on', 'sentBefore', 'sentOn', 'sentSince']) {
-                let connection: any = createMockConnection({ capabilities });
+                let connection = createMockConnection({ capabilities });
                 let compiled = searchCompiler(connection, { [key]: new Date('not-a-date') });
 
                 assert.deepEqual(compiled, [], `${key} should compile to no attributes`);
@@ -596,7 +598,7 @@ describe('search-compiler', () => {
         }
     });
     it('Search Compiler: invalid date drops only its own criterion', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { seen: true, before: new Date('not-a-date') });
 
         assert.deepEqual(compiled, [{ type: 'ATOM', value: 'SEEN' }]);
@@ -611,10 +613,10 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(asString, '16-Jun-2023'));
     });
     it('Search Compiler: date string and Date object compile alike for WITHIN', () => {
-        let connection: any = createMockConnection({ capabilities: [['WITHIN', true]] });
+        let connection = createMockConnection({ capabilities: [['WITHIN', true]] });
         let recentDate = new Date(Date.now() - 3600 * 1000); // 1 hour ago
         let asDate = searchCompiler(connection, { since: recentDate });
-        let asString = searchCompiler(connection as any, { since: recentDate.toISOString() });
+        let asString = searchCompiler(connection, { since: recentDate.toISOString() });
 
         // The string form used to skip the WITHIN shortcut and compile SINCE instead
         assert.ok(hasAttr(asDate, 'YOUNGER'));
@@ -629,20 +631,20 @@ describe('search-compiler', () => {
     // KEYWORD tests
     // ============================================
     it('Search Compiler: KEYWORD', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { keyword: '$CustomFlag' });
 
         assert.ok(hasAttr(compiled, 'KEYWORD'));
         assert.ok(hasAttr(compiled, '$CustomFlag'));
     });
     it('Search Compiler: UNKEYWORD', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { unkeyword: '$CustomFlag' } as any);
 
         assert.ok(hasAttr(compiled, 'UNKEYWORD'));
     });
     it('Search Compiler: KEYWORD with standard flag', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, { keyword: '\\Seen' });
 
         assert.ok(hasAttr(compiled, 'KEYWORD'));
@@ -653,7 +655,7 @@ describe('search-compiler', () => {
     // HEADER tests
     // ============================================
     it('Search Compiler: HEADER with value', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             header: {
                 'X-Custom-Header': 'custom-value'
@@ -665,7 +667,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'custom-value'));
     });
     it('Search Compiler: HEADER existence check', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             header: {
                 'X-Priority': true // Check header exists
@@ -677,7 +679,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, ''));
     });
     it('Search Compiler: HEADER multiple headers', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             header: {
                 'X-Mailer': 'Outlook',
@@ -689,7 +691,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'X-PRIORITY'));
     });
     it('Search Compiler: HEADER ignores non-string values', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             header: {
                 'X-Number': 123,
@@ -702,12 +704,12 @@ describe('search-compiler', () => {
         assert.ok(!hasAttr(compiled, 'X-NULL'));
     });
     it('Search Compiler: HEADER with null/invalid object', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         let compiled1 = searchCompiler(connection, { header: null } as any);
         assert.equal(compiled1.length, 0);
 
-        let compiled2 = searchCompiler(connection as any, { header: 'not-an-object' } as any);
+        let compiled2 = searchCompiler(connection, { header: 'not-an-object' } as any);
         assert.equal(compiled2.length, 0);
     });
 
@@ -715,7 +717,7 @@ describe('search-compiler', () => {
     // NOT operator tests
     // ============================================
     it('Search Compiler: NOT operator', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             not: { from: 'spam@example.com' }
         });
@@ -725,7 +727,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'spam@example.com'));
     });
     it('Search Compiler: NOT with nested conditions', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled: any = searchCompiler(connection, {
             not: {
                 seen: true,
@@ -742,12 +744,12 @@ describe('search-compiler', () => {
         assert.ok(Array.isArray(compiled[1]), 'compound NOT should be parenthesized');
     });
     it('Search Compiler: NOT ignored when falsy', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         let compiled1 = searchCompiler(connection, { not: null } as any);
         assert.equal(compiled1.length, 0);
 
-        let compiled2 = searchCompiler(connection as any, { not: false } as any);
+        let compiled2 = searchCompiler(connection, { not: false } as any);
         assert.equal(compiled2.length, 0);
     });
 
@@ -755,7 +757,7 @@ describe('search-compiler', () => {
     // OR operator tests
     // ============================================
     it('Search Compiler: OR with two conditions', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             or: [{ from: 'alice@example.com' }, { from: 'bob@example.com' }]
         });
@@ -766,7 +768,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'bob@example.com'));
     });
     it('Search Compiler: OR with single condition', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             or: [{ from: 'only@example.com' }]
         });
@@ -777,7 +779,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'only@example.com'));
     });
     it('Search Compiler: OR with three conditions', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             or: [{ from: 'a@example.com' }, { from: 'b@example.com' }, { from: 'c@example.com' }]
         });
@@ -789,7 +791,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'c@example.com'));
     });
     it('Search Compiler: OR with four conditions', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             or: [{ from: 'a@example.com' }, { from: 'b@example.com' }, { from: 'c@example.com' }, { from: 'd@example.com' }]
         });
@@ -799,19 +801,19 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'd@example.com'));
     });
     it('Search Compiler: OR ignored when empty', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
 
         let compiled1 = searchCompiler(connection, { or: [] });
         assert.equal(compiled1.length, 0);
 
-        let compiled2 = searchCompiler(connection as any, { or: null } as any);
+        let compiled2 = searchCompiler(connection, { or: null } as any);
         assert.equal(compiled2.length, 0);
 
-        let compiled3 = searchCompiler(connection as any, { or: 'not-an-array' } as any);
+        let compiled3 = searchCompiler(connection, { or: 'not-an-array' } as any);
         assert.equal(compiled3.length, 0);
     });
     it('Search Compiler: OR with null entry in array', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             or: [{ from: 'test@example.com' }, null]
         } as any);
@@ -824,7 +826,7 @@ describe('search-compiler', () => {
     // Unicode / CHARSET tests
     // ============================================
     it('Search Compiler: Unicode adds CHARSET UTF-8', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set() // UTF8=ACCEPT not enabled
         });
         let compiled = searchCompiler(connection, { from: 'test@example.com' });
@@ -833,11 +835,11 @@ describe('search-compiler', () => {
         assert.ok(!hasAttr(compiled, 'CHARSET'));
 
         // With unicode
-        let compiled2 = searchCompiler(connection as any, { subject: 'Test' });
+        let compiled2 = searchCompiler(connection, { subject: 'Test' });
         assert.ok(!hasAttr(compiled2, 'CHARSET'));
     });
     it('Search Compiler: Unicode in subject adds CHARSET', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set() // UTF8=ACCEPT not enabled
         });
         let compiled = searchCompiler(connection, { subject: 'Test' });
@@ -845,7 +847,7 @@ describe('search-compiler', () => {
         assert.ok(!hasAttr(compiled, 'CHARSET'));
     });
     it('Search Compiler: Unicode text triggers CHARSET', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set() // UTF8=ACCEPT not enabled
         });
         let compiled = searchCompiler(connection, { from: 'user@example.com' });
@@ -853,7 +855,7 @@ describe('search-compiler', () => {
         assert.ok(!hasAttr(compiled, 'CHARSET'));
     });
     it('Search Compiler: Unicode skipped when UTF8=ACCEPT enabled', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set(['UTF8=ACCEPT'])
         });
         let compiled = searchCompiler(connection, { subject: 'Test' });
@@ -865,7 +867,7 @@ describe('search-compiler', () => {
         // sending CHARSET UTF-8 is "redundant" but explicitly "permitted for improved
         // compatibility" - pin the compiler's choice to send it until UTF8=ACCEPT is
         // actually ENABLEd
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['IMAP4rev2', true]],
             enabled: new Set()
         });
@@ -876,7 +878,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'UTF-8'));
     });
     it('Search Compiler: GMRAW with Unicode adds CHARSET', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]],
             enabled: new Set()
         });
@@ -886,7 +888,7 @@ describe('search-compiler', () => {
         assert.ok(!hasAttr(compiled, 'CHARSET'));
     });
     it('Search Compiler: HEADER with Unicode adds CHARSET', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set()
         });
         let compiled = searchCompiler(connection, {
@@ -896,7 +898,7 @@ describe('search-compiler', () => {
         assert.ok(!hasAttr(compiled, 'CHARSET'));
     });
     it('Search Compiler: non-ASCII text field adds CHARSET UTF-8', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set() // UTF8=ACCEPT not enabled
         });
         // Non-ASCII subject must flip hasUnicode and prepend CHARSET UTF-8
@@ -905,14 +907,14 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'UTF-8'));
     });
     it('Search Compiler: non-ASCII body field adds CHARSET UTF-8', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set()
         });
         let compiled = searchCompiler(connection, { body: 'Grüße' });
         assert.ok(hasAttr(compiled, 'CHARSET'));
     });
     it('Search Compiler: non-ASCII GMRAW adds CHARSET UTF-8', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]],
             enabled: new Set()
         });
@@ -921,7 +923,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'X-GM-RAW'));
     });
     it('Search Compiler: non-ASCII LABELS adds CHARSET UTF-8', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             capabilities: [['X-GM-EXT-1', true]],
             enabled: new Set()
         });
@@ -937,7 +939,7 @@ describe('search-compiler', () => {
     // Complex query tests
     // ============================================
     it('Search Compiler: Complex combined query', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             seen: false,
             from: 'sender@example.com',
@@ -951,7 +953,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'LARGER'));
     });
     it('Search Compiler: OR combined with other criteria', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             seen: true,
             or: [{ from: 'a@example.com' }, { from: 'b@example.com' }]
@@ -965,7 +967,7 @@ describe('search-compiler', () => {
     // OR tree structure tests
     // ============================================
     it('Search Compiler: OR with 3 conditions builds binary tree', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             or: [{ from: 'alice' }, { to: 'bob' }, { subject: 'test' }]
         });
@@ -979,7 +981,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'SUBJECT'), 'should contain SUBJECT');
     });
     it('Search Compiler: OR with 5 conditions produces 4 OR atoms', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             or: [{ from: 'a' }, { from: 'b' }, { from: 'c' }, { from: 'd' }, { from: 'e' }]
         });
@@ -994,7 +996,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'e'), 'should contain e');
     });
     it('Search Compiler: OR with compound conditions wraps in parentheses', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled: any = searchCompiler(connection, {
             or: [
                 { to: 'a@example.com', from: 'b@example.com' },
@@ -1014,7 +1016,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled[2], 'FROM'), 'second group should have FROM');
     });
     it('Search Compiler: OR with single-key conditions stays flat', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled: any = searchCompiler(connection, {
             or: [{ from: 'a@example.com' }, { from: 'b@example.com' }]
         });
@@ -1025,7 +1027,7 @@ describe('search-compiler', () => {
         assert.equal(compiled[1].value, 'FROM');
     });
     it('Search Compiler: OR with 5 compound conditions from issue #106', () => {
-        let connection: any = createMockConnection();
+        let connection = createMockConnection();
         let compiled = searchCompiler(connection, {
             or: [
                 { to: 'myemail@domain.com', from: '@anotherdomain.com' },
@@ -1055,7 +1057,7 @@ describe('search-compiler', () => {
     // Unicode CHARSET in HEADER searches
     // ============================================
     it('Search Compiler: Unicode header search without UTF8=ACCEPT adds CHARSET', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set()
         });
         let compiled: any = searchCompiler(connection, {
@@ -1071,7 +1073,7 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'caf\u00e9'), 'should contain the unicode value');
     });
     it('Search Compiler: Unicode header search with UTF8=ACCEPT skips CHARSET', () => {
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             enabled: new Set(['UTF8=ACCEPT'])
         });
         let compiled = searchCompiler(connection, {

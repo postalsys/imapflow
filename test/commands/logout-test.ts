@@ -6,7 +6,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/logout', () => {
     it('Commands: logout success', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             exec: async (cmd: any) => {
                 assert.equal(cmd, 'LOGOUT');
                 execCalled = true;
@@ -19,7 +19,7 @@ describe('commands/logout', () => {
         assert.equal(execCalled, true);
     });
     it('Commands: logout handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             exec: async () => {
                 throw new Error('Command failed');
             }
@@ -30,7 +30,7 @@ describe('commands/logout', () => {
     });
     it('Commands: logout returns early when already in LOGOUT state', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 4, // LOGOUT
             exec: async () => {
                 execCalled = true;
@@ -44,7 +44,7 @@ describe('commands/logout', () => {
     });
     it('Commands: logout handles NOT_AUTHENTICATED state', async () => {
         let closeCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1, // NOT_AUTHENTICATED (mock states: 1=NOT_AUTH, 2=AUTH, 3=SELECTED, 4=LOGOUT)
             exec: async () => ({ next: () => {} }),
             close: () => {
@@ -58,7 +58,7 @@ describe('commands/logout', () => {
         assert.equal(closeCalled, true);
     });
     it('Commands: logout handles NoConnection error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             exec: async () => {
                 const err: any = new Error('No connection');
                 err.code = 'NoConnection';

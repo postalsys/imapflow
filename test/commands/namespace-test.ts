@@ -7,13 +7,13 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 
 describe('commands/namespace', () => {
     it('Commands: namespace skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+        const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
 
         const result = await namespaceCommand(connection);
         assert.equal(result, undefined);
     });
     it('Commands: namespace with NAMESPACE capability', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2, // AUTHENTICATED
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -43,7 +43,7 @@ describe('commands/namespace', () => {
         assert.equal((connection as any).namespaces.shared[0].prefix, 'Shared.');
     });
     it('Commands: namespace uses the real command on rev2-only servers without the token', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             // NAMESPACE is folded into base IMAP4rev2 (RFC 9051 Appendix E) - a
             // rev2-only server gets a real NAMESPACE command, not the LIST fallback
@@ -65,7 +65,7 @@ describe('commands/namespace', () => {
         assert.equal((result as any).delimiter, '/');
     });
     it('Commands: namespace fallback without capability', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2, // AUTHENTICATED
             capabilities: new Map(), // No NAMESPACE capability
             exec: async (cmd: any, args: any, opts: any) => {
@@ -86,7 +86,7 @@ describe('commands/namespace', () => {
         assert.equal((connection as any).namespaces.shared, false);
     });
     it('Commands: namespace fallback adds delimiter to prefix', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map(),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -104,7 +104,7 @@ describe('commands/namespace', () => {
         assert.equal(result.delimiter, '.');
     });
     it('Commands: namespace handles empty response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -128,7 +128,7 @@ describe('commands/namespace', () => {
         assert.equal((result as any).delimiter, '.');
     });
     it('Commands: namespace handles NIL namespaces', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -156,7 +156,7 @@ describe('commands/namespace', () => {
             // RFC 2342 §5: NIL delimiter means the namespace has no hierarchy.
             // The token parser emits a literal `null` for NIL.
 
-            const connection: any = createMockConnection({
+            const connection = createMockConnection({
                 state: 2,
                 capabilities: new Map([['NAMESPACE', true]]),
                 exec: async (cmd: any, args: any, opts: any) => {
@@ -212,7 +212,7 @@ describe('commands/namespace', () => {
             // Edge case: only a NIL-delimiter entry in the personal section.
             // connection.namespace must still be set and usable downstream.
 
-            const connection: any = createMockConnection({
+            const connection = createMockConnection({
                 state: 2,
                 capabilities: new Map([['NAMESPACE', true]]),
                 exec: async (cmd: any, args: any, opts: any) => {
@@ -254,7 +254,7 @@ describe('commands/namespace', () => {
             // NIL delimiter is also valid in the `other` and `shared` sections,
             // not just `personal`.
 
-            const connection: any = createMockConnection({
+            const connection = createMockConnection({
                 state: 2,
                 capabilities: new Map([['NAMESPACE', true]]),
                 exec: async (cmd: any, args: any, opts: any) => {
@@ -295,7 +295,7 @@ describe('commands/namespace', () => {
             // so a single broken entry from a buggy server doesn't poison
             // the whole namespace list or crash the handler.
 
-            const connection: any = createMockConnection({
+            const connection = createMockConnection({
                 state: 2,
                 capabilities: new Map([['NAMESPACE', true]]),
                 exec: async (cmd: any, args: any, opts: any) => {
@@ -335,7 +335,7 @@ describe('commands/namespace', () => {
         })().catch(done);
     });
     it('Commands: namespace handles multiple personal namespaces', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -362,7 +362,7 @@ describe('commands/namespace', () => {
         assert.equal((connection as any).namespaces.personal[1].prefix, 'Mail/');
     });
     it('Commands: namespace works in SELECTED state', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -381,7 +381,7 @@ describe('commands/namespace', () => {
     });
     it('Commands: namespace handles error', async () => {
         let warnLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async () => {
@@ -407,7 +407,7 @@ describe('commands/namespace', () => {
     });
     it('Commands: namespace fallback handles LIST error', async () => {
         let warnLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map(), // No NAMESPACE capability
             exec: async () => {
@@ -429,7 +429,7 @@ describe('commands/namespace', () => {
         assert.ok(warnLogged);
     });
     it('Commands: namespace appends delimiter to prefix if missing', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -451,7 +451,7 @@ describe('commands/namespace', () => {
         assert.equal((result as any).prefix, 'INBOX.');
     });
     it('Commands: namespace fallback strips leading delimiter from prefix', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map(),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -472,7 +472,7 @@ describe('commands/namespace', () => {
         assert.equal((result as any).prefix, 'INBOX/');
     });
     it('Commands: namespace ignores empty NAMESPACE response attributes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -496,7 +496,7 @@ describe('commands/namespace', () => {
         assert.equal((result as any)!.delimiter, '.');
     });
     it('Commands: namespace sets default when personal namespace is empty array', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['NAMESPACE', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -522,7 +522,7 @@ describe('commands/namespace', () => {
     });
     it('Commands: namespace fallback ignores empty LIST attributes', async () => {
         let listCallCount = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map(), // No NAMESPACE capability
             exec: async (cmd: any, args: any, opts: any) => {

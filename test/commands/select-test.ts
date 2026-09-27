@@ -11,7 +11,7 @@ describe('commands/select', () => {
     it('Commands: select basic', async () => {
         let execCalled = false;
         let execCommand = '';
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2, // AUTHENTICATED
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             run: async () => [],
@@ -58,7 +58,7 @@ describe('commands/select', () => {
     });
     it('Commands: select with readOnly option uses EXAMINE', async () => {
         let execCommand = '';
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
             run: async () => [],
@@ -77,14 +77,14 @@ describe('commands/select', () => {
         assert.equal(result.readOnly, true);
     });
     it('Commands: select skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+        const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
 
         const result = await selectCommand(connection, 'INBOX');
         assert.equal(result, undefined);
     });
     it('Commands: select fetches folder list if not cached', async () => {
         let listCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map(), // Empty - will trigger LIST
             run: async (cmd: any) => {
@@ -104,7 +104,7 @@ describe('commands/select', () => {
         assert.equal(listCalled, true);
     });
     it('Commands: select throws when LIST fails', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map(),
             run: async () => null // LIST returns null
@@ -119,7 +119,7 @@ describe('commands/select', () => {
     });
     it('Commands: select with QRESYNC', async () => {
         let execAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             enabled: new Set(['QRESYNC']),
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
@@ -155,7 +155,7 @@ describe('commands/select', () => {
         assert.equal((result as any).qresync, true);
     });
     it('Commands: select QRESYNC invalidated when UIDVALIDITY mismatch', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             enabled: new Set(['QRESYNC']),
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
@@ -186,7 +186,7 @@ describe('commands/select', () => {
         assert.equal((result as any).qresync, false);
     });
     it('Commands: select QRESYNC invalidated when NOMODSEQ', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             enabled: new Set(['QRESYNC']),
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
@@ -217,7 +217,7 @@ describe('commands/select', () => {
         assert.equal((result as any)!.qresync, false);
     });
     it('Commands: select parses HIGHESTMODSEQ', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
             run: async () => [],
@@ -239,7 +239,7 @@ describe('commands/select', () => {
         assert.equal(result.highestModseq, BigInt('9876543210'));
     });
     it('Commands: select parses MAILBOXID', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
             run: async () => [],
@@ -262,7 +262,7 @@ describe('commands/select', () => {
     });
     it('Commands: select emits mailboxOpen event', async () => {
         let emittedEvents: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: false, // No current mailbox
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
@@ -281,7 +281,7 @@ describe('commands/select', () => {
     });
     it('Commands: select emits mailboxClose when switching', async () => {
         let emittedEvents: any = [];
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // Already SELECTED
             mailbox: { path: 'OldFolder' },
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
@@ -300,7 +300,7 @@ describe('commands/select', () => {
         assert.ok(emittedEvents.includes('mailboxOpen'));
     });
     it('Commands: select handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
             run: async () => [],
@@ -321,7 +321,7 @@ describe('commands/select', () => {
     });
     it('Commands: select resets state on error when SELECTED', async () => {
         let emittedEvent = '';
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'CurrentFolder' },
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
@@ -347,7 +347,7 @@ describe('commands/select', () => {
         assert.equal(emittedEvent, 'mailboxClose');
     });
     it('Commands: select copies folder metadata', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([
                 [
@@ -377,7 +377,7 @@ describe('commands/select', () => {
     });
     it('Commands: select handles VANISHED untagged', async () => {
         let vanishedCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             enabled: new Set(['QRESYNC']),
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
@@ -402,7 +402,7 @@ describe('commands/select', () => {
     });
     it('Commands: select handles FETCH untagged', async () => {
         let fetchCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             enabled: new Set(['QRESYNC']),
             folders: new Map([['INBOX', { path: 'INBOX' }]]),
@@ -427,7 +427,7 @@ describe('commands/select', () => {
     });
     it('Commands: select encodes path with special characters', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['Test&Folder', { path: 'Test&Folder' }]]),
             run: async () => [],
@@ -447,7 +447,7 @@ describe('commands/select', () => {
         assert.equal(execAttrs[0].type, 'STRING');
     });
     it('Commands: select handles empty OK attributes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -472,7 +472,7 @@ describe('commands/select', () => {
         assert.ok(result);
     });
     it('Commands: select handles null FLAGS attributes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -498,7 +498,7 @@ describe('commands/select', () => {
         assert.equal(result.flags, undefined);
     });
     it('Commands: select handles NaN EXISTS', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -519,7 +519,7 @@ describe('commands/select', () => {
         assert.equal(result.exists, undefined);
     });
     it('Commands: select error with serverResponseCode', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             exec: async () => {
@@ -550,7 +550,7 @@ describe('commands/select', () => {
     it('Commands: a throwing mailboxOpen listener does not stall select', async () => {
         let released = false;
         let warned: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'OldFolder' },
             folders: new Map([['INBOX', { path: 'INBOX' }]]),

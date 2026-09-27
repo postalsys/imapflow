@@ -6,7 +6,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/expunge', () => {
     it('Commands: expunge success', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any) => {
                 assert.equal(cmd, 'EXPUNGE');
@@ -21,7 +21,7 @@ describe('commands/expunge', () => {
     });
     it('Commands: expunge skips EXPUNGE when flagging fails', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             messageFlagsAdd: async () => false,
             exec: async () => {
@@ -36,7 +36,7 @@ describe('commands/expunge', () => {
     });
     it('Commands: expunge with UID range', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['UIDPLUS', true]]),
             exec: async (cmd: any) => {
@@ -50,7 +50,7 @@ describe('commands/expunge', () => {
     });
     it('Commands: expunge uses UID EXPUNGE via folded rev2 capability', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             // No UIDPLUS token - RFC 9051 folds UIDPLUS into base IMAP4rev2. Falling
             // back to plain EXPUNGE here would purge every \Deleted message instead
@@ -66,19 +66,19 @@ describe('commands/expunge', () => {
         assert.equal(execCmd, 'UID EXPUNGE');
     });
     it('Commands: expunge skips when not selected', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await expungeCommand(connection, '1:*', {});
         assert.equal(result, undefined);
     });
     it('Commands: expunge skips when no range', async () => {
-        const connection: any = createMockConnection({ state: 3 });
+        const connection = createMockConnection({ state: 3 });
 
         const result = await expungeCommand(connection, null as any, {});
         assert.equal(result, undefined);
     });
     it('Commands: expunge handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 const err: any = new Error('Expunge failed');
@@ -91,7 +91,7 @@ describe('commands/expunge', () => {
         assert.equal(result, false);
     });
     it('Commands: expunge parses HIGHESTMODSEQ response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { highestModseq: 100n },
             exec: async () => ({
@@ -115,7 +115,7 @@ describe('commands/expunge', () => {
         assert.equal(connection.mailbox.highestModseq, 9122n);
     });
     it('Commands: expunge does not update lower HIGHESTMODSEQ', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { highestModseq: 10000n },
             exec: async () => ({
@@ -139,7 +139,7 @@ describe('commands/expunge', () => {
         assert.equal(connection.mailbox.highestModseq, 10000n); // Should not be updated
     });
     it('Commands: expunge handles invalid HIGHESTMODSEQ value', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { highestModseq: 100n },
             exec: async () => ({
@@ -163,7 +163,7 @@ describe('commands/expunge', () => {
         assert.equal(connection.mailbox.highestModseq, 100n); // Should not be updated
     });
     it('Commands: expunge updates HIGHESTMODSEQ when mailbox has none', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: {}, // No highestModseq
             exec: async () => ({
@@ -188,7 +188,7 @@ describe('commands/expunge', () => {
     });
     it('Commands: expunge error with serverResponseCode', async () => {
         let capturedErr: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async () => {
                 const err: any = new Error('Expunge failed');
@@ -220,7 +220,7 @@ describe('commands/expunge', () => {
     it('Commands: expunge without UID when UIDPLUS not available', async () => {
         let execCmd = null;
         let execAttrs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map(), // No UIDPLUS
             exec: async (cmd: any, attrs: any) => {
@@ -236,7 +236,7 @@ describe('commands/expunge', () => {
     });
     it('Commands: expunge with UID EXPUNGE includes range', async () => {
         let execAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['UIDPLUS', true]]),
             exec: async (cmd: any, attrs: any) => {
@@ -251,7 +251,7 @@ describe('commands/expunge', () => {
         assert.equal((execAttrs[0] as any).value, '1:50');
     });
     it('Commands: expunge with non-HIGHESTMODSEQ response code', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { highestModseq: 100n },
             exec: async () => ({

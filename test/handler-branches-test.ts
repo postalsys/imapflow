@@ -2,6 +2,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import type { ImapFlow } from '../src/imap-flow.js';
 import { parser, compiler } from '../src/handler/imap-handler.js';
 import { ImapStream } from '../src/handler/imap-stream.js';
 import { ParserInstance } from '../src/handler/parser-instance.js';
@@ -12,14 +13,15 @@ import { searchCompiler } from '../src/search-compiler.js';
 // search-compiler.js
 // ============================================================================
 
-let createMockConnection = (options = {}) => ({
-    capabilities: new Map((options as any).capabilities || [['IMAP4rev1', true]]),
-    enabled: new Set((options as any).enabled || []),
-    mailbox: (options as any).mailbox || {
-        flags: new Set(['\\Seen']),
-        permanentFlags: new Set(['\\*'])
-    }
-});
+let createMockConnection = (options = {}) =>
+    ({
+        capabilities: new Map((options as any).capabilities || [['IMAP4rev1', true]]),
+        enabled: new Set((options as any).enabled || []),
+        mailbox: (options as any).mailbox || {
+            flags: new Set(['\\Seen']),
+            permanentFlags: new Set(['\\*'])
+        }
+    }) as unknown as ImapFlow;
 
 describe('handler-branches', () => {
     // ============================================================================
@@ -250,7 +252,7 @@ describe('handler-branches', () => {
     // then crashes on `value.toString()` at line 56, so `false` is the only value that
     // drives this branch to completion through the public API.)
     it('search-compiler: threadid false triggers setOpt NOT branch', () => {
-        let connection: any = createMockConnection({ capabilities: [['OBJECTID', true]] });
+        let connection = createMockConnection({ capabilities: [['OBJECTID', true]] });
         let attrs = searchCompiler(connection, { threadid: false } as any);
         assert.deepEqual(attrs, [
             { type: 'ATOM', value: 'NOT' },
@@ -264,7 +266,7 @@ describe('handler-branches', () => {
     it('search-compiler: keyword already present in mailbox flags is accepted', () => {
         // permanentFlags has no '\\*', so canUseFlag(mailbox, customFlag) is false, but the
         // flag is in mailbox.flags, so the OR short-circuits to the right operand.
-        let connection: any = createMockConnection({
+        let connection = createMockConnection({
             mailbox: {
                 flags: new Set(['$Label1']),
                 permanentFlags: new Set(['\\Seen']) // no '\\*' wildcard -> custom flags not auto-usable

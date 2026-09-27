@@ -6,7 +6,7 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 describe('commands/delete', () => {
     it('Commands: delete success', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -20,13 +20,13 @@ describe('commands/delete', () => {
         assert.equal(execCmd, 'DELETE');
     });
     it('Commands: delete skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 });
+        const connection = createMockConnection({ state: 1 });
 
         const result = await deleteCommand(connection, 'OldFolder');
         assert.equal(result, undefined);
     });
     it('Commands: delete throws on error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Delete failed');
@@ -49,7 +49,7 @@ describe('commands/delete', () => {
     it('Commands: delete closes mailbox when deleting current mailbox', async () => {
         let closeCalled = false;
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'FolderToDelete' },
             run: async (cmd: any) => {
@@ -71,7 +71,7 @@ describe('commands/delete', () => {
     });
     it('Commands: delete does not close when deleting different mailbox', async () => {
         let closeCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'INBOX' },
             run: async (cmd: any) => {
@@ -89,7 +89,7 @@ describe('commands/delete', () => {
     });
     it('Commands: delete works in SELECTED state', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             mailbox: { path: 'INBOX' },
             exec: async (cmd: any) => {
@@ -103,7 +103,7 @@ describe('commands/delete', () => {
         assert.equal(execCmd, 'DELETE');
     });
     it('Commands: delete error with serverResponseCode', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => {
                 const err: any = new Error('Delete failed');
@@ -131,7 +131,7 @@ describe('commands/delete', () => {
     });
     it('Commands: delete normalizes path', async () => {
         let execArgs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, args: any) => {
                 execArgs = args;

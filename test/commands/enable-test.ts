@@ -10,7 +10,7 @@ describe('commands/enable', () => {
     // ENABLE Command Tests
     // ============================================
     it('Commands: enable success', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -24,13 +24,13 @@ describe('commands/enable', () => {
         assert.ok(result instanceof Set);
     });
     it('Commands: enable skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 });
+        const connection = createMockConnection({ state: 1 });
 
         const result = await enableCommand(connection, ['CONDSTORE']);
         assert.equal(result, undefined);
     });
     it('Commands: enable skips when ENABLE not supported', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map() // No ENABLE capability
         });
@@ -39,7 +39,7 @@ describe('commands/enable', () => {
         assert.equal(result, undefined);
     });
     it('Commands: enable handles error', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             // Need to include CONDSTORE so the filter doesn't skip it
             capabilities: new Map([
@@ -56,7 +56,7 @@ describe('commands/enable', () => {
     });
     it('Commands: enable passes IMAP4rev2 through the capability prefilter', async () => {
         let enableAttrs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -80,7 +80,7 @@ describe('commands/enable', () => {
         assert.ok((result as any).has('IMAP4REV2'));
     });
     it('Commands: enable merges into previously enabled extensions', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -104,7 +104,7 @@ describe('commands/enable', () => {
     });
     it('Commands: enable works without the ENABLE token on rev2-only servers', async () => {
         let execCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             // ENABLE is part of base IMAP4rev2 - rev2-only servers may omit the token
             capabilities: new Map([['IMAP4rev2', true]]),
@@ -126,7 +126,7 @@ describe('commands/enable', () => {
     // ENABLE Command Tests
     // ============================================
     it('Commands: enable skips without ENABLE capability', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map() // No ENABLE capability
         });
@@ -135,7 +135,7 @@ describe('commands/enable', () => {
         assert.equal(result, undefined);
     });
     it('Commands: enable skips when not authenticated', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED - not AUTHENTICATED
             capabilities: new Map([['ENABLE', true]])
         });
@@ -144,7 +144,7 @@ describe('commands/enable', () => {
         assert.equal(result, undefined);
     });
     it('Commands: enable skips when no supported extensions', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['ENABLE', true]]) // Has ENABLE but not CONDSTORE
         });
@@ -154,7 +154,7 @@ describe('commands/enable', () => {
     });
     it('Commands: enable single extension', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -181,7 +181,7 @@ describe('commands/enable', () => {
     });
     it('Commands: enable multiple extensions', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -208,7 +208,7 @@ describe('commands/enable', () => {
     });
     it('Commands: enable filters unsupported extensions', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -237,7 +237,7 @@ describe('commands/enable', () => {
     });
     it('Commands: enable converts to uppercase', async () => {
         let execArgs: any = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -261,7 +261,7 @@ describe('commands/enable', () => {
         assert.equal(execArgs.args[0].value, 'CONDSTORE'); // Sent as uppercase
     });
     it('Commands: enable handles empty ENABLED response', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -283,7 +283,7 @@ describe('commands/enable', () => {
         assert.equal(result.size, 0);
     });
     it('Commands: enable handles null attributes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -305,7 +305,7 @@ describe('commands/enable', () => {
         assert.equal(result.size, 0);
     });
     it('Commands: enable trims response values', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -327,7 +327,7 @@ describe('commands/enable', () => {
     });
     it('Commands: enable handles error', async () => {
         let warnLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -351,7 +351,7 @@ describe('commands/enable', () => {
         assert.ok(warnLogged);
     });
     it('Commands: enable skips non-string attribute values', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],
@@ -379,7 +379,7 @@ describe('commands/enable', () => {
         assert.ok(result.has('CONDSTORE'));
     });
     it('Commands: enable updates connection.enabled', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['ENABLE', true],

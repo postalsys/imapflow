@@ -37,7 +37,7 @@ describe('commands-branches', () => {
     // ============================================================================
     it('Branches: copy with undefined options uses {} fallback', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -57,7 +57,7 @@ describe('commands-branches', () => {
     // ============================================================================
     it('Branches: move with undefined options uses {} fallback', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['MOVE', true]]),
             exec: async (cmd: any) => {
@@ -77,7 +77,7 @@ describe('commands-branches', () => {
     // ============================================================================
     it('Branches: expunge with undefined options uses {} fallback', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any) => {
                 execCmd = cmd;
@@ -97,7 +97,7 @@ describe('commands-branches', () => {
     // ============================================================================
     it('Branches: store with a single non-array flag value', async () => {
         let storedFlags = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', flags: new Set(['\\Seen']), permanentFlags: new Set(['\\Seen']) },
             exec: async (cmd: any, attrs: any) => {
@@ -114,7 +114,7 @@ describe('commands-branches', () => {
     });
     it('Branches: store with falsy flags and set operation uses [] fallback', async () => {
         let storedFlags = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', flags: new Set(['\\Seen']), permanentFlags: new Set(['\\Seen']) },
             exec: async (cmd: any, attrs: any) => {
@@ -157,7 +157,7 @@ describe('commands-branches', () => {
     // so the ternary picks '' and APPENDUID parsing is skipped.
     // ============================================================================
     it('Branches: append tagged section with non-string code uses empty fallback', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             mailbox: { path: 'INBOX', exists: 0, flags: new Set(), permanentFlags: new Set() },
             exec: async () => ({
@@ -185,7 +185,7 @@ describe('commands-branches', () => {
     it('Branches: logout success runs response.next in finally', async () => {
         let nextCalled = false;
         let closeCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async () => ({
                 next: () => {
@@ -205,7 +205,7 @@ describe('commands-branches', () => {
     });
     it('Branches: logout success with response lacking next() skips next call', async () => {
         let closeCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             // exec resolves with a truthy response object that has NO next function,
             // exercising the `typeof response.next === 'function'` false side in finally.
@@ -227,7 +227,7 @@ describe('commands-branches', () => {
     // Triggered via the no-NAMESPACE-capability fallback path.
     // ============================================================================
     it('Branches: namespace fallback LIST without prefix uses empty string', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['IMAP4rev1', true]]), // no NAMESPACE -> getListPrefix path
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -252,7 +252,7 @@ describe('commands-branches', () => {
     // so quotaRoot resolves to `false` and map.quotaRoot is not set.
     // ============================================================================
     it('Branches: quota QUOTAROOT without root name yields false', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -280,7 +280,7 @@ describe('commands-branches', () => {
     // ============================================================================
     it('Branches: fetch ETHROTTLE uses throttleReset delay then retries', async () => {
         let calls = 0;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', exists: 1, flags: new Set(), permanentFlags: new Set(), noModseq: true },
             exec: async () => {
@@ -307,7 +307,7 @@ describe('commands-branches', () => {
     // ============================================================================
     it('Branches: search with undefined options uses {} fallback', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 execCmd = cmd;
@@ -333,7 +333,7 @@ describe('commands-branches', () => {
     // ============================================================================
     it('Branches: search ESEARCH without uid emits SEARCH and skips the tag correlator', async () => {
         let execCmd = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['ESEARCH', true]]),
             exec: async (cmd: any, attrs: any, opts: any) => {
@@ -383,7 +383,7 @@ describe('commands-branches', () => {
     // path is still not present in connection.folders, so folderListData is false.
     // ============================================================================
     it('Branches: select with folder list missing requested path sets folderListData false', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map(),
             run: async (cmd: any) => {
@@ -411,7 +411,7 @@ describe('commands-branches', () => {
     // line 170 `: false` (FLAGS list entry not a string).
     // ============================================================================
     it('Branches: select filters non-string flags in FLAGS and PERMANENTFLAGS', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
             run: async () => [],
@@ -484,7 +484,7 @@ describe('commands-branches', () => {
 
     // list.js line 47 branch: statusQuery key with a falsy value -> `return;`.
     it('Branches: list statusQuery with falsy value is skipped', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['LIST-STATUS', true],
@@ -511,7 +511,7 @@ describe('commands-branches', () => {
     // 162 (parentPath '' when no delimiter) and 163 (parent [entry.path] when no
     // delimiter). LIST entry with a NIL delimiter and no name attribute.
     it('Branches: list LIST entry without delimiter or name uses fallbacks', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -535,7 +535,7 @@ describe('commands-branches', () => {
     // list.js line 184 (`: false` when STATUS attributes[1] not an array) and
     // line 185 (`if (!statusList || !statusPath) return;`).
     it('Branches: list STATUS with non-array values is ignored', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['LIST-STATUS', true],
@@ -568,7 +568,7 @@ describe('commands-branches', () => {
     // list.js line 203 (`: false` when STATUS key value is not a string) and
     // line 206 (`if (!key || !entry || typeof entry.value !== 'string') return;`).
     it('Branches: list STATUS with non-string key/value pairs skipped', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([
                 ['LIST-STATUS', true],
@@ -603,7 +603,7 @@ describe('commands-branches', () => {
     it('Branches: list with undefined mailbox pattern uses empty fallback', async () => {
         let listMailboxArg;
         let lsubMailboxArg;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST') {
@@ -631,7 +631,7 @@ describe('commands-branches', () => {
     // list.js lines 278/279 (LSUB attributes[2] missing -> '' fallbacks) and
     // lines 293/294 (LSUB entry without delimiter -> parentPath '' / parent [path]).
     it('Branches: list LSUB entry without delimiter or name uses fallbacks', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -658,7 +658,7 @@ describe('commands-branches', () => {
     // special-use `b`, the special-use entry must come FIRST in insertion order,
     // followed by several plain folders.
     it('Branches: list sort returns 1 when a lacks specialUse but b has it', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             exec: async (cmd: any, attrs: any, opts: any) => {
                 if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
@@ -698,7 +698,7 @@ describe('commands-branches', () => {
         let noopRan = new Promise(resolve => {
             resolveNoop = resolve;
         });
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IMAP4rev1', true]]), // no IDLE -> NOOP polling path
             currentSelectCommand: { command: 'SELECT', arguments: [{ type: 'ATOM', value: 'INBOX' }] },
@@ -713,7 +713,7 @@ describe('commands-branches', () => {
         });
 
         // maxIdleTime provided -> exercises `maxIdleTime ? Math.min(...) : NOOP_INTERVAL` truthy side
-        const idlePromise = idleCommand(connection as any, 60000);
+        const idlePromise = idleCommand(connection, 60000);
 
         // Wait until the first NOOP poll has actually run, then cross a macrotask
         // boundary so the loop's .then() has armed its next-poll setTimeout before we
@@ -745,7 +745,7 @@ describe('commands-branches', () => {
             resolveEntered = resolve;
         });
 
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             currentLock: { lockId: 'lock-1' }, // makes `currentLock?.lockId` take the defined (truthy) side
@@ -805,7 +805,7 @@ describe('commands-branches', () => {
             resolveEntered = resolve;
         });
 
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             currentLock: { lockId: 'lock-9' }, // exercises `currentLock?.lockId` truthy side in cleanup trace
@@ -849,7 +849,7 @@ describe('commands-branches', () => {
             resolveEntered = resolve;
         });
 
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3,
             capabilities: new Map([['IDLE', true]]),
             write: (data: any) => {
@@ -891,7 +891,7 @@ describe('commands-branches', () => {
     // We make exec reject so the catch -> handleAuthError -> throw path runs.
     // ============================================================================
     it('Branches: authenticate OAuth error path calls handleAuthError', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1, // NOT_AUTHENTICATED
             servername: 'imap.example.com',
             capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
@@ -910,7 +910,7 @@ describe('commands-branches', () => {
         }
     });
     it('Branches: authenticate PLAIN error path calls handleAuthError', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=PLAIN', true]]),
             exec: async () => {
@@ -928,7 +928,7 @@ describe('commands-branches', () => {
         }
     });
     it('Branches: authenticate LOGIN error path calls handleAuthError', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=LOGIN', true]]), // no AUTH=PLAIN -> LOGIN chosen
             exec: async () => {
