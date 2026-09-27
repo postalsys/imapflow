@@ -62,20 +62,22 @@ export default async function quota(connection: ImapFlow, path: string | string[
                 return;
             }
 
-            if (!map[key]) {
-                map[key] = {};
+            let resource = map[key];
+            if (typeof resource !== 'object') {
+                resource = {};
+                map[key] = resource;
             }
 
             // Storage quota is reported in KB by IMAP; convert to bytes for consistency
             const multiplier = key === 'storage' ? 1024 : 1;
 
             if (position === 1) {
-                map[key].usage = value * multiplier;
+                resource.usage = value * multiplier;
             } else if (position === 2) {
-                map[key].limit = value * multiplier;
+                resource.limit = value * multiplier;
                 // Calculate usage percentage for convenient display
-                if (map[key].limit) {
-                    map[key].status = Math.round(((map[key].usage || 0) / map[key].limit) * 100) + '%';
+                if (resource.limit) {
+                    resource.status = Math.round(((resource.usage || 0) / resource.limit) * 100) + '%';
                 }
             }
         });

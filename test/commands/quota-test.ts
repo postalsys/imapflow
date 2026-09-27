@@ -7,19 +7,19 @@ import { createMockConnection } from '../fixtures/mock-connection.js';
 
 describe('commands/quota', () => {
     it('Commands: quota skips when not authenticated', async () => {
-        const connection: any = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
+        const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
 
         const result = await quotaCommand(connection, 'INBOX');
         assert.equal(result, undefined);
     });
     it('Commands: quota skips when no path', async () => {
-        const connection: any = createMockConnection({ state: 2 });
+        const connection = createMockConnection({ state: 2 });
 
         const result = await quotaCommand(connection, null as any);
         assert.equal(result, undefined);
     });
     it('Commands: quota returns false without capability', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map() // No QUOTA capability
         });
@@ -28,7 +28,7 @@ describe('commands/quota', () => {
         assert.equal(result, false);
     });
     it('Commands: quota with storage quota', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -59,16 +59,17 @@ describe('commands/quota', () => {
             }
         });
 
-        const result: any = await quotaCommand(connection, 'INBOX');
+        const result = await quotaCommand(connection, 'INBOX');
         assert.ok(result);
         assert.equal(result.path, 'INBOX');
         assert.equal(result.quotaRoot, 'user.root');
-        assert.equal((result.storage as any).usage, 500 * 1024); // Converted to bytes
-        assert.equal(result.storage!.limit, 1000 * 1024);
-        assert.equal((result.storage as any)!.status, '50%');
+        assert.ok(result.storage);
+        assert.equal(result.storage.usage, 500 * 1024); // Converted to bytes
+        assert.equal(result.storage.limit, 1000 * 1024);
+        assert.equal(result.storage.status, '50%');
     });
     it('Commands: quota with message quota', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -83,13 +84,14 @@ describe('commands/quota', () => {
 
         const result = await quotaCommand(connection, 'INBOX');
         assert.ok(result);
+        assert.ok(result.message);
         // MESSAGE quota is not multiplied by 1024
         assert.equal(result.message.usage, 100);
         assert.equal(result.message.limit, 1000);
         assert.equal(result.message.status, '10%');
     });
     it('Commands: quota with multiple quota types', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -105,15 +107,41 @@ describe('commands/quota', () => {
             }
         });
 
-        const result: any = await quotaCommand(connection, 'INBOX');
-        assert.ok((result as any).storage);
-        assert.ok((result as any)!.message);
-        assert.equal((result as any)!.storage.usage, 250 * 1024);
-        assert.equal((result as any)!.message.usage, 50);
+        const result = await quotaCommand(connection, 'INBOX');
+        assert.ok(result);
+        assert.ok(result.storage);
+        assert.ok(result.message);
+        assert.equal(result.storage.usage, 250 * 1024);
+        assert.equal(result.message.usage, 50);
+    });
+    it('Commands: quota reports other resources under their lowercased name', async () => {
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map([['QUOTA', true]]),
+            exec: async (cmd: any, args: any, opts: any) => {
+                if (opts && opts.untagged && opts.untagged.QUOTA) {
+                    // RFC 9208 resource types beyond STORAGE and MESSAGE
+                    await opts.untagged.QUOTA({
+                        attributes: [
+                            { value: '' },
+                            [{ value: 'MAILBOX' }, { value: '5' }, { value: '100' }, { value: 'ANNOTATION-STORAGE' }, { value: '3' }, { value: '12' }]
+                        ]
+                    });
+                }
+                return { next: () => {} };
+            }
+        });
+
+        const result = await quotaCommand(connection, 'INBOX');
+        assert.ok(result);
+        // counts are not scaled, only STORAGE is reported in kilobytes on the wire
+        assert.deepEqual(result.mailbox, { usage: 5, limit: 100, status: '5%' });
+        assert.deepEqual(result['annotation-storage'], { usage: 3, limit: 12, status: '25%' });
+        assert.equal(result.storage, undefined);
     });
     it('Commands: quota fetches GETQUOTA when quotaRoot but no QUOTA response', async () => {
         let getQuotaCalled = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -137,13 +165,14 @@ describe('commands/quota', () => {
             }
         });
 
-        const result: any = await quotaCommand(connection, 'INBOX');
+        const result = await quotaCommand(connection, 'INBOX');
         assert.ok(getQuotaCalled);
-        assert.equal((result as any).quotaRoot, 'user.root');
-        assert.equal((result as any)!.storage.usage, 100 * 1024);
+        assert.ok(result);
+        assert.equal(result.quotaRoot, 'user.root');
+        assert.equal(result.storage?.usage, 100 * 1024);
     });
     it('Commands: quota handles zero limit', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -163,15 +192,16 @@ describe('commands/quota', () => {
             }
         });
 
-        const result: any = await quotaCommand(connection, 'INBOX');
-        assert.ok((result as any).storage);
-        assert.equal((result as any)!.storage.usage, 0);
-        assert.equal((result as any)!.storage.limit, 0);
+        const result = await quotaCommand(connection, 'INBOX');
+        assert.ok(result);
+        assert.ok(result.storage);
+        assert.equal(result.storage.usage, 0);
+        assert.equal(result.storage.limit, 0);
         // No status when limit is 0
-        assert.equal((result as any)!.storage.status, undefined);
+        assert.equal(result.storage.status, undefined);
     });
     it('Commands: quota handles empty attributes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -193,7 +223,7 @@ describe('commands/quota', () => {
         assert.equal(result.storage, undefined);
     });
     it('Commands: quota works in SELECTED state', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 3, // SELECTED
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -206,13 +236,13 @@ describe('commands/quota', () => {
             }
         });
 
-        const result: any = await quotaCommand(connection, 'INBOX');
+        const result = await quotaCommand(connection, 'INBOX');
         assert.ok(result);
-        assert.equal((result.storage as any).status, '10%');
+        assert.equal(result.storage?.status, '10%');
     });
     it('Commands: quota handles error', async () => {
         let warnLogged = false;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async () => {
@@ -234,7 +264,7 @@ describe('commands/quota', () => {
         assert.ok(warnLogged);
     });
     it('Commands: quota handles error with status code', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async () => {
@@ -264,7 +294,7 @@ describe('commands/quota', () => {
     });
     it('Commands: quota normalizes path', async () => {
         let capturedArgs = null;
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             namespace: { delimiter: '/', prefix: 'INBOX/' },
@@ -278,7 +308,7 @@ describe('commands/quota', () => {
         assert.ok(capturedArgs);
     });
     it('Commands: quota handles non-numeric values', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -304,7 +334,7 @@ describe('commands/quota', () => {
         assert.equal(result.storage, undefined);
     });
     it('Commands: quota calculates percentage correctly', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -317,11 +347,12 @@ describe('commands/quota', () => {
             }
         });
 
-        const result: any = await quotaCommand(connection, 'INBOX');
-        assert.equal((result as any).message.status, '33%'); // Rounded
+        const result = await quotaCommand(connection, 'INBOX');
+        assert.ok(result);
+        assert.equal(result.message?.status, '33%'); // Rounded
     });
     it('Commands: quota handles falsy key in attributes', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -349,7 +380,7 @@ describe('commands/quota', () => {
         assert.equal(Object.keys(result).filter(k => k !== 'path').length, 0);
     });
     it('Commands: quota sets limit without prior usage', async () => {
-        const connection: any = createMockConnection({
+        const connection = createMockConnection({
             state: 2,
             capabilities: new Map([['QUOTA', true]]),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -361,7 +392,7 @@ describe('commands/quota', () => {
                             [
                                 { value: 'STORAGE' }, // i=0, key = 'storage'
                                 { value: 'invalid' }, // i=1, usage - invalid number, skipped
-                                { value: '1000' } // i=2, limit - should create map[key] first
+                                { value: '1000' } // i=2, limit - should create the resource first
                             ]
                         ]
                     });
@@ -370,7 +401,7 @@ describe('commands/quota', () => {
             }
         });
 
-        const result: any = await quotaCommand(connection, 'INBOX');
+        const result = await quotaCommand(connection, 'INBOX');
         assert.ok(result);
         assert.ok(result.storage);
         assert.equal(result.storage.limit, 1024000); // 1000 * 1024 for storage

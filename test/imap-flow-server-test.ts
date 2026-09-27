@@ -1283,10 +1283,10 @@ describe('imap-flow-server', () => {
 
         await client.connect();
 
-        let quota: any = await client.getQuota();
+        let quota = await client.getQuota();
         assert.ok(quota, 'quota resolved');
         assert.equal(quota.quotaRoot, 'userquota', 'quota root from the first command');
-        assert.equal((quota.storage as any).usage, 512 * 1024, 'quota usage from the fallback command');
+        assert.equal(quota.storage?.usage, 512 * 1024, 'quota usage from the fallback command');
 
         // The parser must still be live: a following command has to complete.
         let noopResponse = await client.exec('NOOP', false, {});

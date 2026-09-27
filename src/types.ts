@@ -217,31 +217,34 @@ export interface IdInfoObject {
     'support-url'?: string | false | undefined;
     /** Date program was released */
     date?: Date | string | false | undefined;
-    [key: string]: any;
+    /** Any other field, sent as its string form */
+    [key: string]: unknown;
+}
+
+/**
+ * Usage and limit of one quota resource. The `storage` values are bytes (the wire format is
+ * kilobytes), the other resources are counts
+ */
+export interface QuotaResource {
+    /** Current usage, missing when the server did not send a usable number */
+    usage?: number | undefined;
+    /** The limit, missing when the server did not send a usable number */
+    limit?: number | undefined;
+    /** Usage as a percentage of the limit, e.g. "50%", set once a limit above zero is known */
+    status?: string | undefined;
 }
 
 export interface QuotaResponse {
     /** Mailbox path this quota applies to */
     path: string;
-    /** Storage quota if provided by server */
-    storage?:
-        | {
-              /** Used storage in bytes */
-              used: number;
-              /** Total storage available */
-              limit: number;
-          }
-        | undefined;
-    /** Message count quota if provided by server */
-    messages?:
-        | {
-              /** Stored messages */
-              used: number;
-              /** Maximum messages allowed */
-              limit: number;
-          }
-        | undefined;
-    [resource: string]: any;
+    /** The quota root the server reported for the mailbox, if any */
+    quotaRoot?: string | undefined;
+    /** The STORAGE resource, if the server reports one */
+    storage?: QuotaResource | undefined;
+    /** The MESSAGE resource, if the server reports one */
+    message?: QuotaResource | undefined;
+    /** Any other resource the server reports, under its lowercased name (e.g. "mailbox") */
+    [resource: string]: QuotaResource | string | undefined;
 }
 
 /**

@@ -39,6 +39,7 @@ import type {
     MailboxLockObject,
     StatusObject,
     QuotaResponse,
+    QuotaResource,
     ESearchResult,
     DownloadObject,
     DownloadNotFound,
@@ -103,7 +104,11 @@ export async function run(): Promise<void> {
         }
         const quota: QuotaResponse | false = await client.getQuota('INBOX');
         if (quota) {
-            quota.storage?.used;
+            quota.storage?.usage;
+            quota.storage?.status;
+            quota.message?.limit;
+            quota.quotaRoot satisfies string | undefined;
+            quota['mailbox'] satisfies QuotaResource | string | undefined;
         }
 
         const query: SearchObject = { seen: false, since: new Date(), or: [{ from: 'a@example.com' }, { subject: 'hello' }], header: { 'X-Test': true } };
@@ -238,6 +243,7 @@ import type {
     ListTreeResponse,
     StatusObject,
     QuotaResponse,
+    QuotaResource,
     FetchMessageObject,
     MessageEnvelopeObject,
     MessageStructureObject,
@@ -313,6 +319,7 @@ type _ListResponse = NoneMissing<MissingUndefined<ListResponse>>;
 type _ListTreeResponse = NoneMissing<MissingUndefined<ListTreeResponse>>;
 type _StatusObject = NoneMissing<MissingUndefined<StatusObject>>;
 type _QuotaResponse = NoneMissing<MissingUndefined<QuotaResponse>>;
+type _QuotaResource = NoneMissing<MissingUndefined<QuotaResource>>;
 type _FetchMessageObject = NoneMissing<MissingUndefined<FetchMessageObject>>;
 type _MessageEnvelopeObject = NoneMissing<MissingUndefined<MessageEnvelopeObject>>;
 type _MessageStructureObject = NoneMissing<MissingUndefined<MessageStructureObject>>;
