@@ -154,6 +154,50 @@ describe('commands/select', () => {
         assert.ok(attrsStr.includes('QRESYNC'));
         assert.equal((result as any).qresync, true);
     });
+    for (const uidValidity of [67890, '67890']) {
+        it(`Commands: select QRESYNC stays valid for a ${typeof uidValidity} uidValidity`, async () => {
+            const connection = createMockConnection({
+                state: 2,
+                enabled: new Set(['QRESYNC']),
+                folders: new Map([['INBOX', { path: 'INBOX' }]]),
+                run: async () => [],
+                exec: async (cmd: any, attrs: any, opts: any) => {
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'UIDVALIDITY' }, { value: '67890' }] }]
+                    });
+                    await opts.untagged.OK({
+                        attributes: [{ section: [{ type: 'ATOM', value: 'HIGHESTMODSEQ' }, { value: '100' }] }]
+                    });
+                    return {
+                        next: () => {},
+                        response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] }
+                    };
+                },
+                emit: () => {}
+            });
+
+            const result: any = await selectCommand(connection, 'INBOX', { changedSince: '12345', uidValidity });
+            assert.equal(result.qresync, true);
+        });
+    }
+    it('Commands: select skips QRESYNC for a uidValidity that is not a decimal number', async () => {
+        let execAttrs: any = null;
+        const connection = createMockConnection({
+            state: 2,
+            enabled: new Set(['QRESYNC']),
+            folders: new Map([['INBOX', { path: 'INBOX' }]]),
+            run: async () => [],
+            exec: async (cmd: any, attrs: any) => {
+                execAttrs = attrs;
+                return { next: () => {}, response: { attributes: [] } };
+            },
+            emit: () => {}
+        });
+
+        const result: any = await selectCommand(connection, 'INBOX', { changedSince: '12345', uidValidity: '67890 X' });
+        assert.ok(!JSON.stringify(execAttrs).includes('QRESYNC'));
+        assert.equal(result.qresync, undefined);
+    });
     it('Commands: select QRESYNC invalidated when UIDVALIDITY mismatch', async () => {
         const connection = createMockConnection({
             state: 2,

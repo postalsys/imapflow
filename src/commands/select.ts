@@ -148,12 +148,16 @@ export default async function select(
         // QRESYNC (RFC 7162): allows efficient mailbox resynchronization by sending
         // the last known UIDVALIDITY and HIGHESTMODSEQ. Server responds with only
         // the changes (new flags, expunged UIDs) since that point.
+        // The caller may pass UIDVALIDITY as a bigint, a number or a string. It is parsed once,
+        // so the value that is sent is also the one checked against the server's below, and a
+        // value that is not a plain decimal skips QRESYNC instead of reaching the server.
+        let uidValidity = options.uidValidity !== undefined ? parseBigIntValue(String(options.uidValidity)) : false;
         let extraArgs: ImapCompileNode[] = [];
-        if (connection.enabled.has('QRESYNC') && options.changedSince && options.uidValidity) {
+        if (connection.enabled.has('QRESYNC') && options.changedSince && uidValidity) {
             extraArgs.push([
                 { type: 'ATOM', value: 'QRESYNC' },
                 [
-                    { type: 'ATOM', value: options.uidValidity?.toString() },
+                    { type: 'ATOM', value: uidValidity.toString() },
                     { type: 'ATOM', value: options.changedSince.toString() }
                 ]
             ]);
@@ -272,7 +276,7 @@ export default async function select(
         // QRESYNC results are only valid if UIDVALIDITY matches, HIGHESTMODSEQ is
         // present, and the mailbox supports mod-sequences. If any condition fails,
         // the client cannot trust the incremental updates and must do a full resync.
-        if (map.qresync && (options.uidValidity !== map.uidValidity || !map.highestModseq || map.noModseq)) {
+        if (map.qresync && (uidValidity !== map.uidValidity || !map.highestModseq || map.noModseq)) {
             map.qresync = false;
         }
 
