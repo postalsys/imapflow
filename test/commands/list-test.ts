@@ -256,6 +256,35 @@ describe('commands/list', () => {
         assert.ok(sentFolder);
         assert.equal(sentFolder.specialUse, '\\Sent');
     });
+    for (const order of [
+        ['Archive', 'Archives'],
+        ['Archives', 'Archive']
+    ]) {
+        it(`Commands: list gives a type to its next candidate when the best one is taken (${order.join(', ')})`, async () => {
+            // "Archive" is hinted as Sent and also matches Archive by name. The hint wins
+            // whatever the listing order, and Archive falls to the next folder by name.
+            const connection = createMockConnection({
+                state: 3,
+                exec: async (cmd: any, attrs: any, opts: any) => {
+                    if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                        for (const path of order) {
+                            await opts.untagged.LIST({
+                                attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: path }]
+                            });
+                        }
+                    }
+                    return { next: () => {} };
+                }
+            });
+
+            const result = await listCommand(connection, '', '*', { specialUseHints: { sent: 'Archive' } });
+            const byPath = (path: string) => result.find(e => e.path === path)!;
+            assert.equal(byPath('Archive').specialUse, '\\Sent');
+            assert.equal(byPath('Archive').specialUseSource, 'user');
+            assert.equal(byPath('Archives').specialUse, '\\Archive');
+            assert.equal(byPath('Archives').specialUseSource, 'name');
+        });
+    }
     it('Commands: list handles INBOX specially', async () => {
         const connection = createMockConnection({
             state: 3,

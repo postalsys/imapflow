@@ -543,24 +543,27 @@ export default async function list(
             }
         }
 
-        // Resolve special-use conflicts: for each type, pick the best candidate
-        // based on source priority (user > extension > name), then alphabetically.
-        // Only the winning entry gets the specialUse property set.
-        for (let type of Object.keys(specialUseMatches)) {
-            let sortedEntries = specialUseMatches[type].sort((a, b) => {
-                let aSource = SOURCE_SORT_ORDER.indexOf(a.source);
-                let bSource = SOURCE_SORT_ORDER.indexOf(b.source);
-                if (aSource === bSource) {
-                    return a.entry.path.localeCompare(b.entry.path);
-                }
-                return aSource - bSource;
-            });
-
-            if (!sortedEntries[0].entry.specialUse) {
-                let source = sortedEntries[0].source;
-                sortedEntries[0].entry.specialUse = type;
-                sortedEntries[0].entry.specialUseSource = PUBLIC_SOURCE[source] || (source as 'user' | 'extension' | 'name');
+        // Resolve special-use conflicts. Each type goes to one mailbox and each mailbox gets
+        // at most one type. Candidates are taken in priority order across all types (user >
+        // extension > name, then alphabetically), so a mailbox claimed by a stronger match
+        // leaves its other type to that type's next candidate instead of to nobody.
+        let candidates = Object.entries(specialUseMatches).flatMap(([type, matches]) => matches.map(match => ({ type, ...match })));
+        candidates.sort((a, b) => {
+            let aSource = SOURCE_SORT_ORDER.indexOf(a.source);
+            let bSource = SOURCE_SORT_ORDER.indexOf(b.source);
+            if (aSource === bSource) {
+                return a.entry.path.localeCompare(b.entry.path);
             }
+            return aSource - bSource;
+        });
+        let assignedTypes = new Set<string>();
+        for (let { type, entry, source } of candidates) {
+            if (assignedTypes.has(type) || entry.specialUse) {
+                continue;
+            }
+            entry.specialUse = type;
+            entry.specialUseSource = PUBLIC_SOURCE[source] || (source as 'user' | 'extension' | 'name');
+            assignedTypes.add(type);
         }
 
         // No source answered, so "not subscribed" was never actually reported for any of
