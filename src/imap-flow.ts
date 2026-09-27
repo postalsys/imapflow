@@ -729,6 +729,11 @@ export class ImapFlow extends EventEmitter {
     declare connectTimeout: NodeJS.Timeout | null | undefined;
     /** @internal */
     declare greetingTimeout: NodeJS.Timeout | null | undefined;
+    /**
+     * Set once the server greeted with OK or PREAUTH and the session setup began
+     * @internal
+     */
+    declare greetingReceived: boolean | undefined;
     /** @internal */
     declare upgradeTimeout: NodeJS.Timeout | null | undefined;
     /** @internal */
@@ -2358,6 +2363,7 @@ export class ImapFlow extends EventEmitter {
     /** @internal */
     beginSession(onUnhandledError: (err: Error) => void): void {
         clearTimer(this.greetingTimeout);
+        this.greetingReceived = true;
         this.untaggedHandlers.OK = null;
         this.untaggedHandlers.PREAUTH = null;
 
@@ -2427,6 +2433,13 @@ export class ImapFlow extends EventEmitter {
         this.byeReason = reason || 'Server closed connection';
         this.untaggedHandlers.BYE = null;
         this.state = this.states.LOGOUT;
+
+        // A BYE greeting rejects the connection outright. Do not wait for the server to close
+        // the socket: one that keeps it open would leave connect() pending until the greeting
+        // timeout.
+        if (!this.greetingReceived) {
+            this.closeAfter();
+        }
     }
 
     // Drops every capability-derived field together - the counterpart of

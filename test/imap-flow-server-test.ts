@@ -236,6 +236,23 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
+    it('Server: BYE greeting rejects connect even if the server keeps the socket open', async () => {
+        let server = createServer({ greeting: '* BYE Server too busy\r\n' });
+        let port = await listen(server);
+        let client = makeClient(port, { greetingTimeout: 10 * 1000 });
+        client.on('error', () => {});
+
+        let started = Date.now();
+        await assert.rejects(client.connect(), (err: any) => {
+            assert.equal(err.code, 'ClosedAfterConnectText');
+            assert.equal(err.reason, 'Server too busy');
+            return true;
+        });
+        assert.ok(Date.now() - started < 5000, 'rejected without waiting for the greeting timeout');
+
+        client.close();
+        server.close();
+    });
     it('Server: qresync option adds QRESYNC to ENABLE', async () => {
         let enabledArgs = null;
         let server = createServer({
