@@ -3,6 +3,5 @@ coverage
 dist
 package-lock.json
 CHANGELOG.md
-docs/
 src/package-info.ts
 .wrangler/
