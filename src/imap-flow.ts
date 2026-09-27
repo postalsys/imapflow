@@ -91,7 +91,7 @@ import type { ProxySocket } from './proxy-connection.js';
 
 export type * from './types.js';
 export type { ImapFlowError } from './errors.js';
-export { AuthenticationFailure } from './errors.js';
+export { AuthenticationFailure, ImapFlowErrorCode } from './errors.js';
 export type { ImapAttribute, ImapAttributeList, ImapAttributeNode, ImapResponse } from './handler/types.js';
 
 const GREETING_TIMEOUT = 16 * 1000;

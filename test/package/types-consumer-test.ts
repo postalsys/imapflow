@@ -26,7 +26,7 @@ const hasDist = fs.existsSync(path.join(root, 'dist', 'cjs', 'imap-flow.d.ts')) 
 // listener parameters are left unannotated on purpose, under noImplicitAny they only
 // compile when the listener is typed from the event name
 const consumer = `
-import { ImapFlow, AuthenticationFailure } from 'imapflow';
+import { ImapFlow, AuthenticationFailure, ImapFlowErrorCode } from 'imapflow';
 import imapflow from 'imapflow';
 import type {
     ImapFlowOptions,
@@ -187,6 +187,10 @@ export async function run(): Promise<void> {
     } catch (err) {
         const failure = err as ImapFlowError;
         failure.code;
+        if (failure.code === ImapFlowErrorCode.NoConnection) {
+            const code: ImapFlowErrorCode = failure.code;
+            void code;
+        }
         failure.responseStatus;
         if (err instanceof AuthenticationFailure) {
             err.authenticationFailed;

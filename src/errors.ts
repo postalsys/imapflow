@@ -1,12 +1,74 @@
 import type { ImapResponse } from './handler/types.js';
 
 /**
+ * The `code` values ImapFlow sets on the errors it raises, so they can be matched without
+ * string literals: `if (err.code === ImapFlowErrorCode.NoConnection)`.
+ *
+ * Parser failures use `ParserError` followed by a number (`ParserError11`) and are not listed
+ * one by one, test them with `err.code?.startsWith('ParserError')`. Errors from the socket, TLS
+ * or DNS layer pass through with Node's own code (`ECONNREFUSED`, `ENOTFOUND`, ...).
+ */
+export const ImapFlowErrorCode = {
+    // the connection is gone, the command was not (or can no longer be) completed
+    NoConnection: 'NoConnection',
+    EConnectionClosed: 'EConnectionClosed',
+    StateLogout: 'StateLogout',
+    ClosedAfterConnectText: 'ClosedAfterConnectText',
+    ClosedAfterConnectTLS: 'ClosedAfterConnectTLS',
+
+    // timeouts
+    CONNECT_TIMEOUT: 'CONNECT_TIMEOUT',
+    GREETING_TIMEOUT: 'GREETING_TIMEOUT',
+    UPGRADE_TIMEOUT: 'UPGRADE_TIMEOUT',
+    ETIMEOUT: 'ETIMEOUT',
+    LockTimeout: 'LockTimeout',
+
+    // the server
+    ETHROTTLE: 'ETHROTTLE',
+    UnexpectedTag: 'UnexpectedTag',
+    InvalidResponse: 'InvalidResponse',
+    ResponseProcessingFailed: 'ResponseProcessingFailed',
+    STARTTLS_INJECTION: 'STARTTLS_INJECTION',
+    COMPRESS_TRAILING_DATA: 'COMPRESS_TRAILING_DATA',
+    PollFailed: 'PollFailed',
+    NotFound: 'NotFound',
+    MissingServerExtension: 'MissingServerExtension',
+
+    // response parsing and size limits
+    ParserError: 'ParserError',
+    ParserErrorExchange: 'ParserErrorExchange',
+    MAX_IMAP_NESTING_REACHED: 'MAX_IMAP_NESTING_REACHED',
+    LineTooLarge: 'LineTooLarge',
+    LiteralTooLarge: 'LiteralTooLarge',
+    ResponseTooLarge: 'ResponseTooLarge',
+
+    // invalid values in a command
+    InvalidStringValue: 'InvalidStringValue',
+    InvalidTokenValue: 'InvalidTokenValue',
+    InvalidTextValue: 'InvalidTextValue',
+    InvalidSequenceSet: 'InvalidSequenceSet',
+
+    // download()
+    DownloadOverflow: 'DownloadOverflow',
+    DownloadIncomplete: 'DownloadIncomplete',
+
+    // proxy connections
+    ProxyError: 'ProxyError',
+    EPROXY: 'EPROXY',
+    UnsupportedProxyAddress: 'UnsupportedProxyAddress',
+    ERR_INVALID_URL: 'ERR_INVALID_URL'
+} as const;
+
+/** One of the {@link ImapFlowErrorCode} values */
+export type ImapFlowErrorCode = (typeof ImapFlowErrorCode)[keyof typeof ImapFlowErrorCode];
+
+/**
  * An Error raised by ImapFlow, with the extra properties the library attaches to describe
  * the failure. Every property is optional: which ones are present depends on where the
  * error came from.
  */
 export interface ImapFlowError extends Error {
-    /** Error code, e.g. 'NoConnection', 'ETIMEOUT', 'LockTimeout' or a parser error code */
+    /** Error code, one of {@link ImapFlowErrorCode}, a parser error code or a code from Node */
     code?: string | undefined;
     /** Connection id the error belongs to */
     cid?: string | undefined;

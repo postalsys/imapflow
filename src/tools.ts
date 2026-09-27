@@ -8,7 +8,7 @@ import { JPDecoder } from './jp-decoder.js';
 import iconv from 'iconv-lite';
 import type { Transform } from 'node:stream';
 import type { ImapFlow } from './imap-flow.js';
-import type { ConnectionErrorSite, ImapFlowError } from './errors.js';
+import { ImapFlowErrorCode, type ConnectionErrorSite, type ImapFlowError } from './errors.js';
 import type { ImapAttribute, ImapAttributeList, ImapAttributeNode, ImapCompileInput, ImapResponse } from './handler/types.js';
 import type {
     FetchMessageObject,
@@ -27,7 +27,7 @@ export { AuthenticationFailure } from './errors.js';
 const FLAG_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'grey'];
 
 // Error codes that only mean the connection is no longer usable. See logConnectionError().
-const CONNECTION_GONE_CODES = new Set(['NoConnection', 'EConnectionClosed', 'StateLogout']);
+const CONNECTION_GONE_CODES = new Set<string>([ImapFlowErrorCode.NoConnection, ImapFlowErrorCode.EConnectionClosed, ImapFlowErrorCode.StateLogout]);
 
 // Upper bound for expanding server-supplied sequence ranges (see expandRange). 2^24
 // entries in total is far beyond any legitimate mailbox while keeping the worst-case

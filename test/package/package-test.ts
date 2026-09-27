@@ -98,6 +98,7 @@ describe('Built package', { timeout: 30 * 1000, skip: hasDist ? false : 'dist/ i
             const imapflow = require(packageName);
             assert.strictEqual(typeof imapflow.ImapFlow, 'function');
             assert.strictEqual(typeof imapflow.AuthenticationFailure, 'function');
+            assert.strictEqual(imapflow.ImapFlowErrorCode.NoConnection, 'NoConnection');
             assert.strictEqual(imapflow.default.ImapFlow, imapflow.ImapFlow);
             assert.strictEqual(typeof imapflow.ImapFlow.version, 'string');
         });
@@ -157,6 +158,7 @@ describe('Built package', { timeout: 30 * 1000, skip: hasDist ? false : 'dist/ i
             const imapflow = await import(packageName);
             assert.strictEqual(typeof imapflow.ImapFlow, 'function');
             assert.strictEqual(typeof imapflow.AuthenticationFailure, 'function');
+            assert.strictEqual(imapflow.ImapFlowErrorCode.NoConnection, 'NoConnection');
             assert.strictEqual(imapflow.default.ImapFlow, imapflow.ImapFlow);
             assert.strictEqual(imapflow.default.AuthenticationFailure, imapflow.AuthenticationFailure);
         });
