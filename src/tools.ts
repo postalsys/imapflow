@@ -463,7 +463,7 @@ export function updateCapabilities(list: ImapAttributeList | null | undefined): 
 
             if (capability.startsWith('APPENDLIMIT=')) {
                 let splitPos = capability.indexOf('=');
-                map.set('APPENDLIMIT', parseUintValue(capability.substr(splitPos + 1)) || 0);
+                map.set('APPENDLIMIT', parseUintValue(capability.slice(splitPos + 1)) || 0);
                 return;
             }
 
@@ -753,7 +753,7 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
     let key: string | undefined;
     let attributes = ((untagged.attributes && untagged.attributes[1]) || []) as ImapAttributeList;
     for (let i = 0, len = attributes.length; i < len; i++) {
-        let attribute = attributes[i] as ImapAttribute;
+        let attribute = attributes[i];
         if (i % 2 === 0) {
             key = (
                 await compiler({
@@ -1150,7 +1150,7 @@ export function getStructuredParams(arr: ImapAttributeList | null | undefined): 
             return;
         }
 
-        actualKey = key.substr(0, match.index).toLowerCase();
+        actualKey = key.substring(0, match.index).toLowerCase();
         nr = Number(match[2]) || 0;
 
         if (isUnsafeKey(actualKey)) {
@@ -1312,7 +1312,7 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
                 // envelope of the encapsulated message
                 if (node[i]) {
                     /* c8 ignore next */ // node[i] is truthy inside this guard, so the [] fallback is unreachable
-                    curNode.envelope = parseEnvelope(([] as ImapAttribute[]).concat(node[i] || []) as ImapAttributeList);
+                    curNode.envelope = parseEnvelope(([] as ImapAttribute[]).concat(node[i] || []));
                 }
                 i++;
 
@@ -1436,13 +1436,13 @@ export function toValidDate(value: unknown): Date | null {
  * @param value - Date to format
  * @returns Formatted date string, or undefined if invalid
  */
-export function formatDate(value: Date | string | null | undefined): string | undefined {
+export function formatDate(value: unknown): string | undefined {
     let date = toValidDate(value);
     if (!date) {
         return;
     }
 
-    let dateParts = date.toISOString().substr(0, 10).split('-');
+    let dateParts = date.toISOString().substring(0, 10).split('-');
     dateParts.reverse();
 
     let months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1457,14 +1457,14 @@ export function formatDate(value: Date | string | null | undefined): string | un
  * @param value - Date to format
  * @returns Formatted date-time string, or undefined if invalid
  */
-export function formatDateTime(value: Date | string | null | undefined): string | undefined {
+export function formatDateTime(value: unknown): string | undefined {
     let date = toValidDate(value);
     if (!date) {
         return;
     }
 
     let dateStr = (formatDate(date) as string).replace(/^0/, ' '); //starts with date-day-fixed with leading 0 replaced by SP
-    let timeStr = date.toISOString().substr(11, 8);
+    let timeStr = date.toISOString().substring(11, 19);
 
     return `${dateStr} ${timeStr} +0000`;
 }
@@ -1628,8 +1628,8 @@ export function expandRange(range: unknown): number[] {
             }
             continue;
         }
-        let first = Number(entry.substr(0, colon));
-        let second = Number(entry.substr(colon + 1));
+        let first = Number(entry.substring(0, colon));
+        let second = Number(entry.slice(colon + 1));
         if (!isValidSequenceValue(first) || !isValidSequenceValue(second)) {
             continue;
         }
@@ -1672,7 +1672,7 @@ export function getDecoder(charset?: string | undefined, maxBytes?: number | und
         return new JPDecoder(charset, maxBytes);
     }
 
-    return iconv.decodeStream(charset as Parameters<typeof iconv.decodeStream>[0]) as unknown as CharsetDecoder;
+    return iconv.decodeStream(charset) as unknown as CharsetDecoder;
 }
 
 /**

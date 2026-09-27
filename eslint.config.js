@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'eslint/config';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
@@ -11,7 +13,7 @@ const unusedVarsOptions = {
 
 export default defineConfig([
     {
-        ignores: ['node_modules/**', 'coverage/**', 'dist/**', 'docs/**', 'examples/**']
+        ignores: ['node_modules/**', 'coverage/**', 'dist/**', 'examples/**']
     },
     {
         files: ['**/*.js', '**/*.cjs', '**/*.mjs', '**/*.ts'],
@@ -109,6 +111,27 @@ export default defineConfig([
             '@typescript-eslint/no-explicit-any': 'off',
             '@typescript-eslint/no-namespace': 'off',
             '@typescript-eslint/no-this-alias': 'off'
+        }
+    },
+    {
+        // Type-aware rules for the library sources only. The tests are deliberately untyped
+        // stand-ins (mock connections cast through `any`, describe() and it() returning the
+        // promises of node:test), on which these rules would report on nearly every line
+        files: ['src/**/*.ts'],
+        languageOptions: {
+            parserOptions: {
+                projectService: true,
+                tsconfigRootDir: path.dirname(fileURLToPath(import.meta.url))
+            }
+        },
+        rules: {
+            '@typescript-eslint/await-thenable': 'error',
+            '@typescript-eslint/no-floating-promises': 'error',
+            '@typescript-eslint/no-misused-promises': 'error',
+            '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+            '@typescript-eslint/no-deprecated': 'error',
+            // `void promise;` marks a promise that is deliberately left unawaited
+            'no-void': ['error', { allowAsStatement: true }]
         }
     },
     prettier

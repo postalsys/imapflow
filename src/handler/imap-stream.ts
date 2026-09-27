@@ -231,7 +231,7 @@ export class ImapStream extends Transform {
         // the session.
         let digitsEnd = pos;
         for (; pos >= 0; pos--) {
-            let c = line[pos]!;
+            let c = line[pos];
             if (c >= NUM_0 && c <= NUM_9) {
                 continue;
             }
@@ -334,7 +334,7 @@ export class ImapStream extends Transform {
                         // line end found. Measure the completed line (terminator included) before
                         // concatenating or emitting anything, so the cap does not depend on where
                         // TCP chunk boundaries happen to fall.
-                        let segment = chunk.slice(lineStart, i + 1);
+                        let segment = chunk.subarray(lineStart, i + 1);
                         if (!this.checkLineLength(this.lineBytes + segment.length)) {
                             return;
                         }
@@ -342,7 +342,7 @@ export class ImapStream extends Transform {
                         this.lineBuffer.push(segment);
                         lineStart = i + 1;
 
-                        let line = this.lineBuffer.length === 1 ? this.lineBuffer[0]! : Buffer.concat(this.lineBuffer);
+                        let line = this.lineBuffer.length === 1 ? this.lineBuffer[0] : Buffer.concat(this.lineBuffer);
 
                         this.lineBuffer = [];
                         this.lineBytes = 0;
@@ -370,7 +370,7 @@ export class ImapStream extends Transform {
                         }
 
                         // reached end of command input, emit it
-                        let payload = this.inputBuffer.length === 1 ? this.inputBuffer[0]! : Buffer.concat(this.inputBuffer);
+                        let payload = this.inputBuffer.length === 1 ? this.inputBuffer[0] : Buffer.concat(this.inputBuffer);
                         let literals = this.literals;
                         this.inputBuffer = [];
                         this.literals = [];
@@ -383,7 +383,7 @@ export class ImapStream extends Transform {
                                 if (end > 0 && payload[end - 1] === CR) {
                                     end--;
                                 }
-                                payload = payload.slice(0, end);
+                                payload = payload.subarray(0, end);
                             }
 
                             if (payload.length) {
@@ -413,7 +413,7 @@ export class ImapStream extends Transform {
                 if (lineStart < chunk.length) {
                     // No line terminator was found in the remaining bytes; carry the tail over to
                     // the next chunk after measuring the line it belongs to.
-                    let tail = chunk.slice(lineStart);
+                    let tail = chunk.subarray(lineStart);
                     // The response counter is only committed when a line completes, so an
                     // in-progress line is measured against the remaining budget separately.
                     // Without this a response cap lowered to bound parser memory buys nothing
@@ -431,7 +431,7 @@ export class ImapStream extends Transform {
             case LITERAL: {
                 const remainingInChunk = chunk.length - startPos;
                 const bytesToRead = Math.min(remainingInChunk, this.literalWaiting);
-                const partial = startPos === 0 && bytesToRead === chunk.length ? chunk : chunk.slice(startPos, startPos + bytesToRead);
+                const partial = startPos === 0 && bytesToRead === chunk.length ? chunk : chunk.subarray(startPos, startPos + bytesToRead);
 
                 this.literalBuffer.push(partial);
                 this.literalWaiting -= bytesToRead;
@@ -494,7 +494,7 @@ export class ImapStream extends Transform {
         this.readBytesCounter += chunk.length;
 
         if (this.options.logRaw) {
-            this.log.trace!({
+            this.log.trace({
                 src: 's',
                 msg: 'read from socket',
                 data: chunk.toString('base64'),

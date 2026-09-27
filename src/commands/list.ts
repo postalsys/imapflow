@@ -230,7 +230,7 @@ export default async function list(
 
                         // Check user-provided hints first (highest priority)
                         if (specialUseHints[entry.path]) {
-                            addSpecialUseMatch(entry, specialUseHints[entry.path]!, 'user');
+                            addSpecialUseMatch(entry, specialUseHints[entry.path], 'user');
                         }
 
                         // XLIST marks INBOX with a \\Inbox flag. Remove it from flags
@@ -256,7 +256,7 @@ export default async function list(
                         }
 
                         // Build parent path hierarchy for tree construction and sorting
-                        entry.parentPath = entry.delimiter && entry.path ? entry.path.substr(0, entry.path.lastIndexOf(entry.delimiter)) : '';
+                        entry.parentPath = entry.delimiter && entry.path ? entry.path.substring(0, entry.path.lastIndexOf(entry.delimiter)) : '';
                         entry.parent = entry.delimiter ? entry.path.split(entry.delimiter) : [entry.path];
                         entry.name = entry.parent.pop();
 
@@ -344,7 +344,7 @@ export default async function list(
         let lastRejectedStage: ListStage | null = null;
         let auxRetryInserted = false;
         for (let i = 0; i < stages.length; i++) {
-            let stage = stages[i]!;
+            let stage = stages[i];
             let stageArgs = buildListArgs(stage);
             // Discard partial results from a rejected attempt
             entries = [];
@@ -409,7 +409,7 @@ export default async function list(
             let entryCountBefore = entries.length;
             let specialUseCountsBefore: { [type: string]: number } = {};
             for (let type of Object.keys(specialUseMatches)) {
-                specialUseCountsBefore[type] = specialUseMatches[type]!.length;
+                specialUseCountsBefore[type] = specialUseMatches[type].length;
             }
             try {
                 await runList('', 'INBOX', returnArgs);
@@ -427,7 +427,7 @@ export default async function list(
                     if (!(type in specialUseCountsBefore)) {
                         delete specialUseMatches[type];
                     } else {
-                        specialUseMatches[type]!.length = specialUseCountsBefore[type]!;
+                        specialUseMatches[type].length = specialUseCountsBefore[type];
                     }
                 }
                 connection.log.warn({ msg: 'INBOX LIST with RETURN options failed, retrying plain', err, cid: connection.id });
@@ -490,7 +490,7 @@ export default async function list(
                             entry.path = entry.path.slice(1);
                         }
 
-                        entry.parentPath = entry.delimiter && entry.path ? entry.path.substr(0, entry.path.lastIndexOf(entry.delimiter)) : '';
+                        entry.parentPath = entry.delimiter && entry.path ? entry.path.substring(0, entry.path.lastIndexOf(entry.delimiter)) : '';
                         entry.parent = entry.delimiter ? entry.path.split(entry.delimiter) : [entry.path];
                         entry.name = entry.parent.pop();
 
@@ -547,7 +547,7 @@ export default async function list(
         // based on source priority (user > extension > name), then alphabetically.
         // Only the winning entry gets the specialUse property set.
         for (let type of Object.keys(specialUseMatches)) {
-            let sortedEntries = specialUseMatches[type]!.sort((a, b) => {
+            let sortedEntries = specialUseMatches[type].sort((a, b) => {
                 let aSource = SOURCE_SORT_ORDER.indexOf(a.source);
                 let bSource = SOURCE_SORT_ORDER.indexOf(b.source);
                 if (aSource === bSource) {
@@ -556,10 +556,10 @@ export default async function list(
                 return aSource - bSource;
             });
 
-            if (!sortedEntries[0]!.entry.specialUse) {
-                let source = sortedEntries[0]!.source;
-                sortedEntries[0]!.entry.specialUse = type;
-                sortedEntries[0]!.entry.specialUseSource = PUBLIC_SOURCE[source] || (source as 'user' | 'extension' | 'name');
+            if (!sortedEntries[0].entry.specialUse) {
+                let source = sortedEntries[0].source;
+                sortedEntries[0].entry.specialUse = type;
+                sortedEntries[0].entry.specialUseSource = PUBLIC_SOURCE[source] || (source as 'user' | 'extension' | 'name');
             }
         }
 
@@ -601,7 +601,7 @@ export default async function list(
             let bList = ([] as string[]).concat(b.parent).concat(b.name);
 
             for (let i = 0; i < aList.length; i++) {
-                let aPart = aList[i]!;
+                let aPart = aList[i];
                 let bPart = bList[i];
                 if (aPart !== bPart) {
                     return aPart.localeCompare(bPart || '');

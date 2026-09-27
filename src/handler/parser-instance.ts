@@ -183,7 +183,7 @@ export class ParserInstance {
         }
 
         this.pos += match[0].length;
-        this.remainder = this.remainder.substr(match[0].length);
+        this.remainder = this.remainder.slice(match[0].length);
 
         return element;
     }
@@ -215,7 +215,7 @@ export class ParserInstance {
         }
 
         this.pos++;
-        this.remainder = this.remainder.substr(1);
+        this.remainder = this.remainder.slice(1);
     }
 
     /**

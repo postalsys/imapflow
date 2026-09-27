@@ -512,7 +512,7 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
     };
 
     // Process the query
-    walk(query as { [key: string]: any });
+    walk(query);
 
     // If we encountered Unicode strings and UTF-8 is not already accepted,
     // prepend CHARSET UTF-8 to the search command

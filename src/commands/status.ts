@@ -83,7 +83,7 @@ export default async function status(connection: ImapFlow, path: string | string
 
                         let updater = MAILBOX_UPDATERS[key];
                         if (currentMailbox && updater) {
-                            updater(value, currentMailbox, connection, path as string);
+                            updater(value, currentMailbox, connection, path);
                         }
                     });
                 }

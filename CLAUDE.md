@@ -36,7 +36,7 @@ declarations. Both `import { ImapFlow } from 'imapflow'` and
 - **Runtime**: Node.js 20 or newer (`engines.node`), CI tests on 20.x, 22.x and 24.x. The ES module build is also supported on Bun (latest release, full suite in CI) and on Cloudflare Workers with `nodejs_compat` (see "Other runtimes" below)
 - **Language**: TypeScript (`tsconfig.base.json`: strict, `exactOptionalPropertyTypes`, `noImplicitOverride`, `erasableSyntaxOnly`, `isolatedModules`), compiled twice from the same sources
 - **Testing**: Node.js test runner (`node:test`) through `tsx`, coverage with c8
-- **Lint/format**: ESLint with typescript-eslint (`eslint.config.js`, flat config) + Prettier; `npm run lint` also runs the type-check
+- **Lint/format**: ESLint with typescript-eslint (`eslint.config.js`, flat config) + Prettier; `npm run lint` runs the type-check first, then ESLint. `src/` is also linted with the type-aware rules (floating and misused promises, unnecessary type assertions, deprecated APIs); a promise that is deliberately left unawaited is marked with `void`
 - **Key dependencies**: `@zone-eu/mailsplit`, `libmime`, `libqp`, `libbase64`, `iconv-lite`, `encoding-japanese`, `pino`, `socks`
 
 ## Development Commands
@@ -44,7 +44,7 @@ declarations. Both `import { ImapFlow } from 'imapflow'` and
 ```
 npm test              # Build, then run the full suite with the Node.js test runner
 npm run test:coverage # Same suite under c8 (text + html reports, source-mapped back to src/), fails below the thresholds in .c8rc.json; CI runs it on Node 24
-npm run lint          # ESLint, then tsc --noEmit over src/ and test/
+npm run lint          # tsc --noEmit over src/ and test/, then ESLint (type-aware rules on src/)
 npm run lint:fix      # ESLint with --fix
 npm run typecheck     # tsc --noEmit only
 npm run build         # Produce dist/ (also runs on install and before publish via `prepare`)

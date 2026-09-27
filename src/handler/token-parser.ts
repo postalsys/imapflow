@@ -410,7 +410,7 @@ export class TokenParser {
                                 // IMAP URL (e.g., imap://user@host/mailbox) which contains characters
                                 // that would break normal ATOM parsing (colons, slashes, etc.).
                                 // We handle this by consuming everything up to ']' as a single ATOM value.
-                                if (this.str.substr(i + 1, 9).toUpperCase() === 'REFERRAL ') {
+                                if (this.str.substring(i + 1, i + 10).toUpperCase() === 'REFERRAL ') {
                                     // create the REFERRAL atom
                                     this.currentNode = this.createNode(this.currentNode, this.pos + i + 1);
                                     this.currentNode.type = 'ATOM';

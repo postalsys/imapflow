@@ -741,6 +741,9 @@ export class ImapFlow extends EventEmitter {
      */
     declare _mailboxList: ListResponse[] | undefined;
 
+    /**
+     * Creates a client for one IMAP connection. Nothing is sent before `connect()` is called
+     */
     constructor(options?: ImapFlowOptions | undefined) {
         super({ captureRejections: true });
 
@@ -944,7 +947,7 @@ export class ImapFlow extends EventEmitter {
             rid = '0'.repeat(20 - rid.length) + rid;
         }
         if (rid.length > 20) {
-            rid = rid.substr(0, 20);
+            rid = rid.substring(0, 20);
         }
         return rid;
     }
@@ -1980,7 +1983,9 @@ export class ImapFlow extends EventEmitter {
                 let chunk;
                 while (this.writeSocket && (chunk = this.writeSocket.read()) !== null) {
                     if (this._deflate && this._deflate.write(chunk) === false) {
-                        this._deflate.once('drain', readNext);
+                        this._deflate.once('drain', () => {
+                            void readNext();
+                        });
                         return;
                     }
 
@@ -2009,7 +2014,8 @@ export class ImapFlow extends EventEmitter {
 
         writeSocket.on('readable', () => {
             if (!reading && this.writeSocket) {
-                readNext();
+                // readNext() reports its own failures, the returned promise never rejects
+                void readNext();
             }
         });
         writeSocket.on('error', err => {
@@ -2121,7 +2127,7 @@ export class ImapFlow extends EventEmitter {
                     port: this.port
                 },
                 this.options.tls || {}
-            ) as tls.ConnectionOptions;
+            );
             this.clearSocketHandlers();
 
             let settled = false;
@@ -2734,7 +2740,7 @@ export class ImapFlow extends EventEmitter {
                 port: this.port
             },
             this.options.tls || {}
-        ) as tls.ConnectionOptions & net.NetConnectOpts;
+        );
 
         this.untaggedHandlers.OK = (...args: [ImapResponse]) => this.initialOK(...args);
         this.untaggedHandlers.BYE = (...args: [ImapResponse]) => this.serverBye(...args);
@@ -3689,6 +3695,10 @@ export class ImapFlow extends EventEmitter {
      *   ]});
      */
     search(query: SearchObject, options?: MessageRangeOptions | undefined): Promise<number[] | false | undefined>;
+    /**
+     * Search with `returnOptions` set: an ESEARCH result object from a server that supports
+     * ESEARCH, the plain list of numbers otherwise
+     */
     search(query: SearchObject, options: SearchOptions & { returnOptions: SearchReturnOption[] }): Promise<ESearchResult | number[] | false | undefined>;
     search(query: SearchObject, options?: SearchOptions | undefined): Promise<ESearchResult | number[] | false | undefined>;
     async search(query: SearchObject, options?: SearchOptions | undefined): Promise<number[] | ESearchResult | false | undefined> {

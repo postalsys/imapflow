@@ -1,5 +1,5 @@
 import { Transform, type TransformCallback } from 'node:stream';
-import encodingJapanese, { type Encoding } from 'encoding-japanese';
+import encodingJapanese from 'encoding-japanese';
 import { normalizeByteLimit } from './limited-passthrough.js';
 
 // A Transform stream for decoding Japanese character sets (Shift_JIS, EUC-JP, ISO-2022-JP).
@@ -43,7 +43,7 @@ export class JPDecoder extends Transform {
         }
 
         if (this.chunklen + chunk.length > this.maxBytes) {
-            chunk = chunk.slice(0, Math.max(0, this.maxBytes - this.chunklen));
+            chunk = chunk.subarray(0, Math.max(0, this.maxBytes - this.chunklen));
         }
 
         if (chunk.length) {
@@ -66,7 +66,7 @@ export class JPDecoder extends Transform {
         try {
             let output = encodingJapanese.convert(input, {
                 to: 'UNICODE', // to_encoding
-                from: this.charset as Encoding, // from_encoding
+                from: this.charset, // from_encoding
                 type: 'string'
             });
             if (typeof output === 'string') {

@@ -2,7 +2,7 @@
 // fetchOne(): download() streams a message or one body part through the decoding pipeline,
 // fetching it in chunks, and downloadMany() buffers several body parts from one FETCH.
 
-import { PassThrough, type Readable, type Transform } from 'node:stream';
+import { PassThrough, type Transform } from 'node:stream';
 import libmime from 'libmime';
 import libqp from 'libqp';
 import libbase64 from 'libbase64';
@@ -529,7 +529,7 @@ export async function downloadMessage(
 
     return {
         meta,
-        content: output as Readable
+        content: output
     };
 }
 
@@ -586,7 +586,7 @@ export async function downloadMessageParts(
         }
         if (keyParts.length === 1) {
             // content
-            let key = keyParts[0] as string;
+            let key = keyParts[0];
             if (!data[key]) {
                 data[key] = { content };
             } else {
@@ -594,7 +594,7 @@ export async function downloadMessageParts(
             }
         } else if (keyParts.length === 2) {
             // header
-            let key = keyParts[0] as string;
+            let key = keyParts[0];
             if (!data[key]) {
                 data[key] = {};
             }
@@ -654,7 +654,7 @@ export async function downloadMessageParts(
     }
 
     for (let part of Object.keys(data)) {
-        let entry = data[part] as { meta?: DownloadMeta | undefined; content?: Buffer | null | undefined };
+        let entry = data[part];
         // `meta` is only built from the companion BODY[<part>.MIME] item. A server may
         // legally answer with fewer items than were requested, and one part arriving
         // without its MIME headers must not cost the caller the whole download.

@@ -47,7 +47,7 @@
         "test:rev2": "bash test/integration/run-rev2-tests.sh",
         "format": "prettier --write \"**/*.{js,cjs,ts,json,md,yml,yaml}\"",
         "format:check": "prettier --check \"**/*.{js,cjs,ts,json,md,yml,yaml}\"",
-        "lint": "eslint . && npm run typecheck",
+        "lint": "npm run typecheck && eslint .",
         "lint:fix": "eslint . --fix",
         "prepare": "npm run build",
         "update": "rm -rf node_modules package-lock.json && ncu -u && npm install"

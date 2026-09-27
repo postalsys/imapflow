@@ -224,14 +224,14 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                     if (canAppend) {
                         // Literal data follows immediately in the same buffer segment
                         if (node.value && (node.value as string | Buffer).length) {
-                            resp.push(emitEntry(node.value as string | Buffer, { raw: true })!);
+                            resp.push(emitEntry(node.value, { raw: true })!);
                         }
                     } else {
                         // For synchronizing literals in asArray mode, split output into separate
                         // parts. The caller must send each part and wait for a continuation
                         // response from the server before sending the next.
                         respParts.push(resp);
-                        resp = ([] as Buffer[]).concat(emitEntry(node.value as EmitEntry, { returnEmpty: true, raw: true }) || []);
+                        resp = ([] as Buffer[]).concat(emitEntry(node.value, { returnEmpty: true, raw: true }) || []);
                     }
                 }
                 break;
@@ -301,7 +301,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                     // Strip a leading backslash before checking (system flags like \Seen start with '\').
                     // If any character fails verification, fall back to an IMAP quoted string
                     // (JSON.stringify is used only for log output, where values are display-escaped).
-                    if (node.value === '' || imapFormalSyntax.verify(val.charAt(0) === '\\' ? val.substr(1) : val, imapFormalSyntax['ATOM-CHAR']()) >= 0) {
+                    if (node.value === '' || imapFormalSyntax.verify(val.charAt(0) === '\\' ? val.slice(1) : val, imapFormalSyntax['ATOM-CHAR']()) >= 0) {
                         val = isLogging ? JSON.stringify(val) : quoteString(val);
                     }
 

@@ -178,7 +178,7 @@ export default async function search(
                         // absolute ceiling expandRange() uses - a hostile server cannot
                         // bypass it by inflating EXISTS first
                         let overBudget = () => results.size >= existsCount() || results.size >= EXPANDED_RANGE_LIMIT;
-                        let resolveId = (part: string) => (part === '*' ? (options!.uid ? 0 : existsCount()) : Number(part));
+                        let resolveId = (part: string) => (part === '*' ? (options.uid ? 0 : existsCount()) : Number(part));
                         let truncated = false;
                         let discarded = false;
                         sequenceSetLoop: for (let part of parsed.all.split(',')) {
@@ -197,8 +197,8 @@ export default async function search(
                                 results.add(value);
                                 continue;
                             }
-                            let first = resolveId(part.substr(0, colon));
-                            let second = resolveId(part.substr(colon + 1));
+                            let first = resolveId(part.substring(0, colon));
+                            let second = resolveId(part.slice(colon + 1));
                             if (!isValidSequenceValue(first) || !isValidSequenceValue(second)) {
                                 discarded = true;
                                 continue;

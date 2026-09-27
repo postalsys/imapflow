@@ -69,7 +69,7 @@ export default async function id(connection: ImapFlow, clientInfo?: IdInfoObject
  * @param value - The value to format
  * @returns Formatted value string
  */
-function formatValue(key: string, value: any): string | undefined {
+function formatValue(key: string, value: unknown): string | undefined {
     switch (key.toLowerCase()) {
         case 'date':
             // RFC 2971 requires the "date" field to use IMAP date-time format

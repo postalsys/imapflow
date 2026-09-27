@@ -312,7 +312,7 @@ const resolveIPv4 = async (hostname: string, deadline: ConnectionDeadline): Prom
     if (!addresses || !addresses.length) {
         throw proxyError(`Could not resolve an IPv4 address for ${hostname}`, 'EPROXY');
     }
-    return addresses[0]!;
+    return addresses[0];
 };
 
 interface SocksConnectParams {
