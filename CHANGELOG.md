@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/postalsys/imapflow/compare/v2.1.0...v2.1.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* settle every pending connect on close, refuse empty search operands, keep NIL envelope rows, prefer top-level special-use folders ([27a93cc](https://github.com/postalsys/imapflow/commit/27a93ccd292fc95842bcc27cdc76e0cb0de613ba))
+
 ## [2.1.0](https://github.com/postalsys/imapflow/compare/v2.0.8...v2.1.0) (2026-09-27)
 
 
