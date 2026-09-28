@@ -47,6 +47,7 @@ export const ImapFlowErrorCode = {
     InvalidTokenValue: 'InvalidTokenValue',
     InvalidTextValue: 'InvalidTextValue',
     InvalidSequenceSet: 'InvalidSequenceSet',
+    InvalidSearchQuery: 'InvalidSearchQuery',
 
     // download()
     DownloadOverflow: 'DownloadOverflow',
@@ -56,7 +57,10 @@ export const ImapFlowErrorCode = {
     ProxyError: 'ProxyError',
     EPROXY: 'EPROXY',
     UnsupportedProxyAddress: 'UnsupportedProxyAddress',
-    ERR_INVALID_URL: 'ERR_INVALID_URL'
+    ERR_INVALID_URL: 'ERR_INVALID_URL',
+
+    // API misuse
+    InstanceReused: 'InstanceReused'
 } as const;
 
 /** One of the {@link ImapFlowErrorCode} values */

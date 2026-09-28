@@ -1,5 +1,5 @@
 import { Transform, type TransformCallback } from 'node:stream';
-import logger from '../logger.js';
+import { createConnectionLogger } from '../logger.js';
 import { MAX_LITERAL_SIZE, MAX_LINE_SIZE, MAX_RESPONSE_SIZE, normalizeLimit, createLiteralTooLargeError } from './limits.js';
 import type { ImapFlowError } from '../errors.js';
 import type { Logger, InternalLogger } from '../types.js';
@@ -108,13 +108,11 @@ export class ImapStream extends Transform {
         this.options = options || {};
         this.cid = this.options.cid;
 
-        this.log =
-            this.options.logger && typeof this.options.logger === 'object'
-                ? (this.options.logger as InternalLogger)
-                : logger.child({
-                      component: 'imap-connection',
-                      cid: this.cid
-                  });
+        if (this.options.logger && typeof this.options.logger === 'object') {
+            this.log = this.options.logger as InternalLogger;
+        } else {
+            this.log = createConnectionLogger({ cid: this.cid, logRaw: this.options.logRaw });
+        }
 
         this.readBytesCounter = 0;
 

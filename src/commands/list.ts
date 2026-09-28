@@ -217,10 +217,13 @@ export default async function list(
                             return;
                         }
 
+                        // A name sent as a literal arrives as a Buffer, so convert it once for both fields
+                        let rawPath = ((untagged.attributes[2] && untagged.attributes[2].value) || '').toString();
+
                         let entry: ListEntry = {
                             // Decode from modified UTF-7 wire format and normalize the path
-                            path: normalizePath(connection, decodePath(connection, ((untagged.attributes[2] && untagged.attributes[2].value) || '') as string)),
-                            pathAsListed: ((untagged.attributes[2] && untagged.attributes[2].value) || '') as string,
+                            path: normalizePath(connection, decodePath(connection, rawPath)),
+                            pathAsListed: rawPath,
                             flags: new Set(getStringList(untagged.attributes[0])),
                             delimiter: (untagged.attributes[1] && untagged.attributes[1].value) as string | undefined,
                             listed: true
@@ -474,9 +477,12 @@ export default async function list(
                             return;
                         }
 
+                        // A name sent as a literal arrives as a Buffer, so convert it once for both fields
+                        let rawPath = ((untagged.attributes[2] && untagged.attributes[2].value) || '').toString();
+
                         let entry: ListEntry = {
-                            path: normalizePath(connection, decodePath(connection, ((untagged.attributes[2] && untagged.attributes[2].value) || '') as string)),
-                            pathAsListed: ((untagged.attributes[2] && untagged.attributes[2].value) || '') as string,
+                            path: normalizePath(connection, decodePath(connection, rawPath)),
+                            pathAsListed: rawPath,
                             flags: new Set(getStringList(untagged.attributes[0])),
                             delimiter: (untagged.attributes[1] && untagged.attributes[1].value) as string | undefined,
                             subscribed: true
@@ -546,15 +552,23 @@ export default async function list(
         // Resolve special-use conflicts. Each type goes to one mailbox and each mailbox gets
         // at most one type. Candidates are taken in priority order across all types (user >
         // extension > name, then alphabetically), so a mailbox claimed by a stronger match
-        // leaves its other type to that type's next candidate instead of to nobody.
+        // leaves its other type to that type's next candidate instead of to nobody. Within a
+        // source a shallower mailbox wins before the alphabetical order is consulted, so that
+        // INBOX.Sent is preferred over INBOX.Archive.Sent.
         let candidates = Object.entries(specialUseMatches).flatMap(([type, matches]) => matches.map(match => ({ type, ...match })));
         candidates.sort((a, b) => {
             let aSource = SOURCE_SORT_ORDER.indexOf(a.source);
             let bSource = SOURCE_SORT_ORDER.indexOf(b.source);
-            if (aSource === bSource) {
-                return a.entry.path.localeCompare(b.entry.path);
+            if (aSource !== bSource) {
+                return aSource - bSource;
             }
-            return aSource - bSource;
+            // parent is set on every listed entry before the candidates are ranked
+            let aDepth = (a.entry.parent as string[]).length;
+            let bDepth = (b.entry.parent as string[]).length;
+            if (aDepth !== bDepth) {
+                return aDepth - bDepth;
+            }
+            return a.entry.path.localeCompare(b.entry.path);
         });
         let assignedTypes = new Set<string>();
         for (let { type, entry, source } of candidates) {

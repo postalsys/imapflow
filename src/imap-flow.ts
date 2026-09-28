@@ -9,7 +9,7 @@ import zlib from 'node:zlib';
 import { EventEmitter } from 'node:events';
 import { PassThrough, type Readable } from 'node:stream';
 
-import logger from './logger.js';
+import { createConnectionLogger } from './logger.js';
 import * as packageInfo from './package-info.js';
 import { ImapStream } from './handler/imap-stream.js';
 import { parser, compiler } from './handler/imap-handler.js';
@@ -2747,9 +2747,19 @@ export class ImapFlow extends EventEmitter {
     async connect(): Promise<void> {
         if (this._connectCalled) {
             // Prevent re-using ImapFlow instances by allowing to call connect just once.
-            throw new Error('Can not re-use ImapFlow instance');
+            let err: ImapFlowError = new Error('Can not re-use ImapFlow instance');
+            err.code = 'InstanceReused';
+            throw err;
         }
         this._connectCalled = true;
+
+        let closedError = (): ImapFlowError => this.createNoConnectionError(this.byeReason, { rejectedFrom: 'connect' });
+
+        // close() already ran, so there is no connection to set up and nothing would ever
+        // settle a connect attempt started now.
+        if (this.isClosed) {
+            throw closedError();
+        }
 
         // One deadline for the whole attempt, started before anything is resolved or negotiated.
         // Proxy DNS and proxy negotiation used to run entirely outside the timer, so a stalled
@@ -2806,10 +2816,23 @@ export class ImapFlow extends EventEmitter {
                 error._err = err as Error;
                 throw error;
             }
+
+            // close() during proxy setup found no socket to destroy and no connect to reject,
+            // so the tunnel that just opened is dropped here instead of being handed to a
+            // closed client.
+            if (this.isClosed) {
+                socket.destroy();
+                throw closedError();
+            }
         }
 
         // Guarded: close() rejects a pending connect() synchronously. See guardedPromise().
         let connectPromise = guardedPromise<void>((resolve, reject) => {
+            // Stored before the transport is up, so a close() that lands before onConnect
+            // still rejects this attempt through closeConnectSteps().
+            this.initialResolve = resolve;
+            this.initialReject = reject;
+
             // Whatever the proxy phase already used is gone from the budget
             this.connectTimeout = setTimeout(() => {
                 let err = deadline.error();
@@ -2872,9 +2895,6 @@ export class ImapFlow extends EventEmitter {
                     this.setEventHandlers();
                     connected.pipe(this.streamer);
 
-                    // executed by initial "* OK"
-                    this.initialResolve = resolve;
-                    this.initialReject = reject;
                     /* c8 ignore next 4 */ // defensive: the onConnect setup body does not throw under normal operation
                 } catch (ex) {
                     // connect failed
@@ -3079,7 +3099,10 @@ export class ImapFlow extends EventEmitter {
             reject(this.createNoConnectionError(false, { rejectedFrom: 'upgrade' }));
         }
 
-        if (typeof this.initialReject === 'function' && !this.options.verifyOnly) {
+        // A verifyOnly session closes itself with LOGOUT and startSession() settles connect()
+        // with the outcome, so the close is not a failure there. Before the greeting nothing
+        // else can settle it (BYE greeting, FIN, close() while the transport is still coming up).
+        if (typeof this.initialReject === 'function' && (!this.options.verifyOnly || !this.greetingReceived)) {
             clearTimer(this.greetingTimeout);
             let reject = this.initialReject;
             this.initialResolve = false;
@@ -3407,7 +3430,24 @@ export class ImapFlow extends EventEmitter {
      * // 125
      */
     async mailboxOpen(path: string | string[], options?: MailboxOpenOptions | undefined): Promise<MailboxObject> {
-        return await this.run('SELECT', path, options);
+        try {
+            return await this.run('SELECT', path, options);
+        } catch (err) {
+            if ((err as ImapFlowError).responseStatus === 'NO') {
+                // SELECT failed with NO: verify whether the mailbox exists at all by running
+                // LIST. This sets mailboxMissing on the error so the caller can distinguish
+                // "doesn't exist" from other failures, for getMailboxLock() callers as well.
+                try {
+                    let folders = await this.run('LIST', '', normalizePath(this, path), { listOnly: true });
+                    if (!folders || !folders.length) {
+                        (err as ImapFlowError).mailboxMissing = true;
+                    }
+                } catch (E) {
+                    this.log.trace({ msg: 'Failed to verify failed mailbox', path, err: E });
+                }
+            }
+            throw err;
+        }
     }
 
     /**
@@ -4228,20 +4268,7 @@ export class ImapFlow extends EventEmitter {
                     grantLock();
                     break; // Wait for this lock to be released
                 } catch (err) {
-                    if ((err as ImapFlowError).responseStatus === 'NO') {
-                        // SELECT failed with NO: verify whether the mailbox exists
-                        // at all by running LIST. This sets mailboxMissing on the error
-                        // so the caller can distinguish "doesn't exist" from other failures.
-                        try {
-                            let folders = await this.run('LIST', '', path, { listOnly: true });
-                            if (!folders || !folders.length) {
-                                (err as ImapFlowError).mailboxMissing = true;
-                            }
-                        } catch (E) {
-                            this.log.trace({ msg: 'Failed to verify failed mailbox', path, err: E });
-                        }
-                    }
-
+                    // mailboxOpen() has already marked a missing mailbox (mailboxMissing)
                     this.log.trace({
                         msg: 'Failed to acquire mailbox lock',
                         path,
@@ -4341,13 +4368,13 @@ export class ImapFlow extends EventEmitter {
 
     /** @internal */
     getLogger(): InternalLogger {
-        let mainLogger: { [key: string]: any } =
-            this.options.logger && typeof this.options.logger === 'object'
-                ? this.options.logger
-                : logger.child({
-                      component: 'imap-connection',
-                      cid: this.id
-                  });
+        let mainLogger: { [key: string]: any } = {};
+        if (this.options.logger && typeof this.options.logger === 'object') {
+            mainLogger = this.options.logger;
+        } else if (this.options.logger !== false) {
+            // {logger:false} never consults mainLogger, so it does not create the default logger
+            mainLogger = createConnectionLogger({ cid: this.id, logRaw: this.options.logRaw });
+        }
 
         let synteticLogger = {} as InternalLogger;
         let levels: LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];

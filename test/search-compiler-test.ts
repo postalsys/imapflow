@@ -376,11 +376,22 @@ describe('search-compiler', () => {
         assert.ok(hasAttr(compiled, 'X-GM-MSGID'));
         assert.ok(hasAttr(compiled, '1234567890'));
     });
-    it('Search Compiler: EMAILID ignored without capability', () => {
+    it('Search Compiler: EMAILID and THREADID throw without capability', () => {
+        // Dropping the criterion used to turn { emailId, seen } into every seen message, which
+        // messageDelete()/messageMove() then acted on
         let connection = createMockConnection();
-        let compiled = searchCompiler(connection, { emailId: '12345' });
+        for (let query of [{ emailId: '12345' }, { threadId: '12345' }, { emailId: '12345', seen: true }]) {
+            assert.throws(
+                () => searchCompiler(connection, query),
+                (err: any) => err.code === 'MissingServerExtension'
+            );
+        }
+    });
+    it('Search Compiler: an empty EMAILID or THREADID is no criterion, with or without capability', () => {
+        let connection = createMockConnection();
+        let compiled = searchCompiler(connection, { emailId: '', threadId: undefined, seen: true } as any);
 
-        assert.equal(compiled.length, 0);
+        assert.deepEqual(compiled, [{ type: 'ATOM', value: 'SEEN' }]);
     });
     it('Search Compiler: THREADID with OBJECTID', () => {
         let connection = createMockConnection({
@@ -643,6 +654,68 @@ describe('search-compiler', () => {
 
         assert.ok(hasAttr(compiled, 'UNKEYWORD'));
     });
+    it('Search Compiler: KEYWORD is compiled even when the mailbox does not allow the keyword', () => {
+        // The right answer is the empty set; dropping the key used to match every message
+        let connection = createMockConnection({
+            mailbox: { flags: new Set(['\\Seen']), permanentFlags: new Set(['\\Seen']) }
+        });
+        let compiled = searchCompiler(connection, { keyword: '$NotAllowed', seen: true });
+
+        assert.deepEqual(compiled, [
+            { type: 'ATOM', value: 'KEYWORD' },
+            { type: 'ATOM', value: '$NotAllowed' },
+            { type: 'ATOM', value: 'SEEN' }
+        ]);
+    });
+    it('Search Compiler: KEYWORD with a flag that can not be searched is skipped', () => {
+        let connection = createMockConnection();
+        let compiled = searchCompiler(connection, { keyword: '\\Recent', seen: true });
+
+        assert.deepEqual(compiled, [{ type: 'ATOM', value: 'SEEN' }]);
+    });
+    it('Search Compiler: NOT with an operand that compiles to nothing throws', () => {
+        // Used to compile { not: { before: <invalid> }, seen: true } into NOT SEEN
+        let connection = createMockConnection();
+        for (let operand of [{ before: new Date('x') }, {}, { from: '' }, []]) {
+            assert.throws(
+                () => searchCompiler(connection, { not: operand, seen: true } as any),
+                (err: any) => err.code === 'InvalidSearchQuery' && /NOT/.test(err.message)
+            );
+        }
+    });
+    it('Search Compiler: OR with an operand that compiles to nothing throws', () => {
+        // Used to compile { or: [{ before: <invalid> }, { seen: true }], from: 'a' } into OR SEEN FROM a
+        let connection = createMockConnection();
+        for (let or of [
+            [{ before: new Date('x') }, { seen: true }],
+            [{ seen: true }, {}],
+            [{ seen: true }, null],
+            [{ seen: true }, { flagged: true }, { from: '' }]
+        ]) {
+            assert.throws(
+                () => searchCompiler(connection, { or, from: 'a' } as any),
+                (err: any) => err.code === 'InvalidSearchQuery' && /OR/.test(err.message)
+            );
+        }
+    });
+    it('Search Compiler: NOT and OR operands that compile to tokens are unchanged', () => {
+        let connection = createMockConnection();
+        assert.deepEqual(searchCompiler(connection, { not: { seen: true, flagged: true } }), [
+            { type: 'ATOM', value: 'NOT' },
+            [
+                { type: 'ATOM', value: 'SEEN' },
+                { type: 'ATOM', value: 'FLAGGED' }
+            ]
+        ]);
+        assert.deepEqual(searchCompiler(connection, { or: [{ seen: true }, { flagged: true, draft: true }] }), [
+            { type: 'ATOM', value: 'OR' },
+            { type: 'ATOM', value: 'SEEN' },
+            [
+                { type: 'ATOM', value: 'FLAGGED' },
+                { type: 'ATOM', value: 'DRAFT' }
+            ]
+        ]);
+    });
     it('Search Compiler: KEYWORD with standard flag', () => {
         let connection = createMockConnection();
         let compiled = searchCompiler(connection, { keyword: '\\Seen' });
@@ -811,15 +884,6 @@ describe('search-compiler', () => {
 
         let compiled3 = searchCompiler(connection, { or: 'not-an-array' } as any);
         assert.equal(compiled3.length, 0);
-    });
-    it('Search Compiler: OR with null entry in array', () => {
-        let connection = createMockConnection();
-        let compiled = searchCompiler(connection, {
-            or: [{ from: 'test@example.com' }, null]
-        } as any);
-
-        // Should still process valid entries
-        assert.ok(hasAttr(compiled, 'FROM'));
     });
 
     // ============================================

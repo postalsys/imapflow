@@ -68,6 +68,8 @@ const main = async () => {
 main().catch(console.error);
 ```
 
+An `ImapFlow` instance holds a single connection and cannot reconnect. Once the connection has closed, or after `connect()` has been called once, create a new instance to connect again. Calling `connect()` a second time on the same instance throws an error with the code `InstanceReused`.
+
 See the [Quick Start guide](https://imapflow.com/docs/getting-started/quick-start) for more examples, including Gmail, Outlook, and Yahoo configuration.
 
 ## Documentation

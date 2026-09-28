@@ -253,6 +253,78 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
+    // connect() must settle on its own: a hang would otherwise only show up as the whole run timing out
+    const settlesWithin = <T>(promise: Promise<T>, ms = 3000): Promise<T> => {
+        let timer: NodeJS.Timeout | undefined;
+        let timeout = new Promise<never>((resolve, reject) => {
+            timer = setTimeout(() => reject(new Error('connect() did not settle')), ms);
+        });
+        return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    };
+    it('Server: verifyOnly connect rejects on a BYE greeting', async () => {
+        let server = createServer({ greeting: '* BYE Too many connections\r\n' });
+        let port = await listen(server);
+        let client = makeClient(port, { verifyOnly: true, greetingTimeout: 60 * 1000 });
+        client.on('error', () => {});
+
+        await assert.rejects(settlesWithin(client.connect()), (err: any) => {
+            assert.equal(err.code, 'ClosedAfterConnectText');
+            assert.equal(err.reason, 'Too many connections');
+            return true;
+        });
+
+        client.close();
+        server.close();
+    });
+    it('Server: verifyOnly connect rejects when the server closes before the greeting', async () => {
+        let server = net.createServer(socket => {
+            socket.on('error', () => {});
+            socket.end();
+        });
+        let port = await listen(server);
+        let client = makeClient(port, { verifyOnly: true, greetingTimeout: 60 * 1000 });
+        client.on('error', () => {});
+
+        await assert.rejects(settlesWithin(client.connect()), (err: any) => {
+            assert.equal(err.code, 'ClosedAfterConnectText');
+            return true;
+        });
+
+        client.close();
+        server.close();
+    });
+    it('Server: close() before the TCP connection is up rejects connect', async () => {
+        let server = createServer();
+        let port = await listen(server);
+        let client = makeClient(port);
+        client.on('error', () => {});
+
+        // connect() runs synchronously up to the point where the socket is dialled, so this
+        // close() lands before onConnect
+        let connecting = client.connect();
+        let dialled = client.socket;
+        client.close();
+
+        await assert.rejects(settlesWithin(connecting), (err: any) => {
+            assert.equal(err.code, 'ClosedAfterConnectText');
+            return true;
+        });
+        assert.ok(dialled && dialled.destroyed, 'the dialled socket is destroyed');
+
+        server.close();
+    });
+    it('Server: connect() on an instance that was already closed rejects', async () => {
+        let client = makeClient(1);
+        client.on('error', () => {});
+        client.close();
+
+        await assert.rejects(settlesWithin(client.connect()), (err: any) => {
+            assert.equal(err.code, 'NoConnection');
+            assert.equal(err.rejectedFrom, 'connect');
+            return true;
+        });
+        assert.ok(!client.socket, 'no socket was dialled');
+    });
     it('Server: qresync option adds QRESYNC to ENABLE', async () => {
         let enabledArgs = null;
         let server = createServer({
@@ -405,6 +477,38 @@ describe('imap-flow-server', () => {
         client.on('expunge', e => expungeEvents.push(e));
         await client.messageDelete('1', { uid: false });
         assert.ok(expungeEvents.length >= 1);
+
+        await client.logout();
+        client.close();
+        server.close();
+    });
+    it('Server: FETCH delivers a message answered with ENVELOPE NIL and BODYSTRUCTURE NIL', async () => {
+        let server = createServer({
+            handlers: {
+                FETCH(ctx: any) {
+                    ctx.write('* 1 FETCH (UID 11 ENVELOPE NIL BODYSTRUCTURE NIL)\r\n');
+                    ctx.write('* 2 FETCH (UID 12 ENVELOPE ("Mon, 1 Jan 2024 00:00:00 +0000" "Hi" NIL NIL NIL NIL NIL NIL NIL "<a@b>"))\r\n');
+                    ctx.ok('FETCH completed');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port);
+        client.on('error', () => {});
+
+        await client.connect();
+        await client.mailboxOpen('INBOX');
+        let messages: any[] = [];
+        for await (let msg of client.fetch('1:2', { uid: true, envelope: true, bodyStructure: true })) {
+            messages.push(msg);
+        }
+        assert.deepEqual(
+            messages.map(msg => msg.uid),
+            [11, 12]
+        );
+        assert.equal(messages[0].envelope, undefined);
+        assert.equal(messages[0].bodyStructure, undefined);
+        assert.equal(messages[1].envelope.subject, 'Hi');
 
         await client.logout();
         client.close();
@@ -799,6 +903,9 @@ describe('imap-flow-server', () => {
         }
         assert.ok(err);
         assert.ok(err.mailboxMissing, 'flagged as missing mailbox');
+
+        // mailboxOpen() used to leave the flag unset for the same failure
+        await assert.rejects(client.mailboxOpen('Missing'), (err: any) => err.mailboxMissing === true);
 
         client.close();
         server.close();

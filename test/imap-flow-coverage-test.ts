@@ -20,6 +20,19 @@ const makeClient = (overrides = {}) => {
     return client;
 };
 
+// A run() stub whose SELECT fails with the given status and whose LIST (the existence probe
+// mailboxOpen() runs after a NO) is answered by listImpl, called with the listed path
+const failSelect =
+    (listImpl: (path: string) => Promise<any>, responseStatus = 'NO') =>
+    async (command: string, ...args: any[]) => {
+        if (command === 'SELECT') {
+            let err = new Error('SELECT failed');
+            (err as any).responseStatus = responseStatus;
+            throw err;
+        }
+        return await listImpl(args[1]);
+    };
+
 const drain = () => new Promise(resolve => setImmediate(resolve));
 
 // ============================================================================
@@ -85,41 +98,38 @@ describe('imap-flow-coverage', () => {
         assert.equal(results.length, 7);
         results.forEach(r => assert.equal(r.code, 'NoConnection'));
     });
-    it('Coverage: processLocks marks mailbox missing when SELECT NO and LIST verify throws', async () => {
+    it('Coverage: getMailboxLock passes on the mailboxMissing marker mailboxOpen sets', async () => {
         let client = makeClient();
-        client.mailboxOpen = async () => {
-            let err = new Error('SELECT failed');
-            (err as any).responseStatus = 'NO';
-            throw err;
-        };
-        // run('LIST') used to verify existence throws -> inner catch (3849-3850)
-        client.run = async () => {
-            throw new Error('LIST blew up');
-        };
-        let err: any = null;
-        try {
-            await client.getMailboxLock('Ghost');
-        } catch (e) {
-            err = e;
-        }
-        assert.ok(err);
-        assert.equal((err as any).responseStatus, 'NO');
+        client.run = failSelect(async () => []); // empty LIST -> mailbox confirmed missing
+        await assert.rejects(client.getMailboxLock('Ghost'), (err: any) => err.responseStatus === 'NO' && err.mailboxMissing === true);
     });
-    it('Coverage: processLocks marks mailboxMissing when LIST returns empty', async () => {
+    it('Coverage: mailboxOpen marks mailboxMissing only for a mailbox LIST does not return', async () => {
+        let listed: any[] = [];
         let client = makeClient();
-        client.mailboxOpen = async () => {
-            let err = new Error('SELECT failed');
-            (err as any).responseStatus = 'NO';
-            throw err;
-        };
-        client.run = async () => []; // empty LIST -> mailbox confirmed missing
-        let err: any = null;
-        try {
-            await client.getMailboxLock('Ghost');
-        } catch (e) {
-            err = e;
-        }
-        assert.ok(err.mailboxMissing as any);
+        client.run = failSelect(async (path: string) => {
+            listed.push(path);
+            if (path === 'Broken') {
+                throw new Error('LIST blew up');
+            }
+            return path === 'Exists' ? [{ path: 'Exists' }] : [];
+        });
+
+        await assert.rejects(client.mailboxOpen(['Ghost']), (err: any) => err.mailboxMissing === true);
+        await assert.rejects(client.mailboxOpen('Exists'), (err: any) => err.responseStatus === 'NO' && !err.mailboxMissing);
+        // A LIST probe that fails leaves the SELECT error as it was
+        await assert.rejects(client.mailboxOpen('Broken'), (err: any) => err.message === 'SELECT failed' && !err.mailboxMissing);
+        assert.deepEqual(listed, ['Ghost', 'Exists', 'Broken'], 'LIST probe receives the normalized path');
+    });
+    it('Coverage: mailboxOpen does not probe LIST for a failure other than NO', async () => {
+        let listed = 0;
+        let client = makeClient();
+        client.run = failSelect(async () => {
+            listed++;
+            return [];
+        }, 'BAD');
+
+        await assert.rejects(client.mailboxOpen('Ghost'), (err: any) => err.responseStatus === 'BAD' && !err.mailboxMissing);
+        assert.equal(listed, 0);
     });
     it('Coverage: processLocks yields after 5 processed locks', async () => {
         let client = makeClient();

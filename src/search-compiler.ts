@@ -1,6 +1,6 @@
 /* eslint no-control-regex:0 */
 
-import { formatDate, formatFlag, canUseFlag, toValidDate, isRev2Active } from './tools.js';
+import { formatDate, formatFlag, toValidDate, isRev2Active } from './tools.js';
 import type { ImapFlow } from './imap-flow.js';
 import type { ImapFlowError } from './errors.js';
 import type { ImapAttributeNode } from './handler/types.js';
@@ -109,6 +109,18 @@ let processDateField = (attributes: SearchAttribute[], term: string, value: unkn
 const UNICODE_PATTERN = /[^\x00-\x7F]/;
 
 /**
+ * Throws a coded search compilation error.
+ *
+ * @param code - Error code, one of the ImapFlowErrorCode values
+ * @param message - Error message
+ */
+let fail = (code: string, message: string): never => {
+    let error: ImapFlowError = new Error(message);
+    error.code = code;
+    throw error;
+};
+
+/**
  * Checks if a string contains Unicode characters.
  * Used to determine if CHARSET UTF-8 needs to be specified.
  *
@@ -129,7 +141,7 @@ let isUnicodeString = (str: unknown): boolean => {
  * Compiles a JavaScript object query into IMAP search command attributes.
  * Supports standard IMAP search criteria and extensions like OBJECTID and Gmail extensions.
  *
- * @param connection - IMAP connection object (capabilities, enabled extensions and the current mailbox are read)
+ * @param connection - IMAP connection object (capabilities and enabled extensions are read)
  * @param query - Search query object
  * @returns Array of IMAP search attributes
  * @throws {Error} When required server extensions are not available
@@ -156,22 +168,30 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
 
     // Track if we need to specify UTF-8 charset
     let hasUnicode = false;
-    const mailbox = connection.mailbox;
 
     /**
      * Recursively walks through the query object and builds IMAP attributes.
      * @param params - Query parameters to process
      */
     const walk = (params: { [key: string]: any }): void => {
-        // Walks a query object and wraps the resulting attributes in a
-        // sub-array so the IMAP compiler emits parentheses around them.
-        // Used when a single search-key is required (NOT, OR operands)
-        // but the condition has multiple keys (RFC 3501 Section 6.4.4).
-        let walkGrouped = (obj: { [key: string]: any }): void => {
+        // Compiles one NOT or OR operand, which the caller has already put its operator in
+        // front of. An operand with several keys is wrapped in a sub-array so the IMAP compiler
+        // emits parentheses around it, as the operator takes a single search-key
+        // (RFC 3501 Section 6.4.4). An operand that compiles to nothing (an invalid date, an
+        // empty object, ...) is refused: the operator would otherwise bind to whatever
+        // criterion follows it and invert or widen the search.
+        let walkOperand = (operator: string, obj: unknown): void => {
             let startIdx = attributes.length;
-            walk(obj);
-            let subAttrs = attributes.splice(startIdx);
-            attributes.push(subAttrs);
+            if (obj && typeof obj === 'object') {
+                walk(obj);
+            }
+            if (attributes.length === startIdx) {
+                fail('InvalidSearchQuery', `Search operand for ${operator} does not include any usable search criteria`);
+            }
+            if (Object.keys(obj as object).length > 1) {
+                let subAttrs = attributes.splice(startIdx);
+                attributes.push(subAttrs);
+            }
         };
 
         Object.keys(params || {}).forEach(term => {
@@ -221,9 +241,7 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                         // reject the whole search with a tagged BAD, so fail with a
                         // descriptive error instead
                         if (isRev2Active(connection)) {
-                            let error: ImapFlowError = new Error(`The "${term.toLowerCase()}" search key does not exist in IMAP4rev2`);
-                            error.code = 'MissingServerExtension';
-                            throw error;
+                            fail('MissingServerExtension', `The "${term.toLowerCase()}" search key does not exist in IMAP4rev2`);
                         }
                         setBoolOpt(attributes, term, true);
                     }
@@ -271,6 +289,10 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                     } else if (connection.capabilities.has('X-GM-EXT-1')) {
                         // Fallback to Gmail message ID
                         setOpt(attributes, 'X-GM-MSGID', params[term]);
+                    } else if (params[term]) {
+                        // Dropping the criterion would widen the search to every message
+                        // matching the rest of the query, which a delete or move acts on
+                        fail('MissingServerExtension', 'Server does not support OBJECTID or X-GM-EXT-1 extension required for EMAILID');
                     }
                     break;
 
@@ -281,6 +303,10 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                     } else if (connection.capabilities.has('X-GM-EXT-1')) {
                         // Fallback to Gmail thread ID
                         setOpt(attributes, 'X-GM-THRID', params[term]);
+                    } else if (params[term]) {
+                        // Dropping the criterion would widen the search to every message
+                        // matching the rest of the query, which a delete or move acts on
+                        fail('MissingServerExtension', 'Server does not support OBJECTID or X-GM-EXT-1 extension required for THREADID');
                     }
                     break;
 
@@ -293,9 +319,7 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                         }
                         setOpt(attributes, 'X-GM-RAW', params[term]);
                     } else {
-                        let error: ImapFlowError = new Error('Server does not support X-GM-EXT-1 extension required for X-GM-RAW');
-                        error.code = 'MissingServerExtension';
-                        throw error;
+                        fail('MissingServerExtension', 'Server does not support X-GM-EXT-1 extension required for X-GM-RAW');
                     }
                     break;
 
@@ -334,9 +358,7 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                     }
 
                     if (!connection.capabilities.has('X-GM-EXT-1')) {
-                        let error: ImapFlowError = new Error('Server does not support X-GM-EXT-1 extension required for label search');
-                        error.code = 'MissingServerExtension';
-                        throw error;
+                        fail('MissingServerExtension', 'Server does not support X-GM-EXT-1 extension required for label search');
                     }
 
                     let rawQuery = rawParts.join(' ');
@@ -386,8 +408,10 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                 case 'UNKEYWORD':
                     {
                         let flag = formatFlag(params[term]);
-                        // Only add if flag is supported or already exists in mailbox
-                        if (canUseFlag(mailbox, flag as string) || (mailbox as { flags: Set<string> }).flags.has(flag as string)) {
+                        // Compiled even when the mailbox does not allow the keyword: the
+                        // correct answer is then the empty set, which dropping the
+                        // criterion would turn into every message matching the rest
+                        if (flag) {
                             setOpt(attributes, term, flag);
                         }
                     }
@@ -422,11 +446,7 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                 case 'NOT':
                     if (params[term] && typeof params[term] === 'object') {
                         attributes.push({ type: 'ATOM', value: 'NOT' });
-                        if (Object.keys(params[term]).length > 1) {
-                            walkGrouped(params[term]);
-                        } else {
-                            walk(params[term]);
-                        }
+                        walkOperand('NOT', params[term]);
                     }
                     break;
 
@@ -495,13 +515,7 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                                 entry.forEach(walkOrTree);
                                 return;
                             }
-                            if (entry && typeof entry === 'object') {
-                                if (Object.keys(entry).length > 1) {
-                                    walkGrouped(entry);
-                                } else {
-                                    walk(entry);
-                                }
-                            }
+                            walkOperand('OR', entry);
                         };
 
                         walkOrTree(genOrTree(params[term]));

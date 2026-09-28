@@ -1180,6 +1180,16 @@ describe('tools', () => {
         assert.ok(result.flags.has('\\Seen'));
         assert.equal(result.modseq, 4312n);
     });
+    it('Tools: formatMessageResponse keeps a message with ENVELOPE NIL or BODYSTRUCTURE NIL', async () => {
+        // Parsing NIL used to throw, and the untagged handler dropped the whole row
+        let untagged = await parser('* 3 FETCH (UID 9 ENVELOPE NIL BODYSTRUCTURE NIL FLAGS (\\Seen))');
+        let result: any = await tools.formatMessageResponse(untagged, {} as any);
+        assert.equal(result.seq, 3);
+        assert.equal(result.uid, 9);
+        assert.ok(result.flags.has('\\Seen'));
+        assert.ok(!('envelope' in result));
+        assert.ok(!('bodyStructure' in result));
+    });
     it('Tools: formatMessageResponse handles normal THREADID', async () => {
         let untagged = await parser('* 2 FETCH (THREADID (T9999) EMAILID (E2))');
         let result = await tools.formatMessageResponse(untagged, {} as any);

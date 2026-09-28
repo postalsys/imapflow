@@ -8,11 +8,13 @@ import { ImapFlowErrorCode } from '../src/imap-flow.js';
 const srcDir = fileURLToPath(new URL('../src/', import.meta.url));
 
 // Every literal error code the sources set: `.code = 'X'`, `.code = (...) || 'X'`,
-// createConnectionError('X', ...) and proxyError(..., 'X') or proxyError(..., ... || 'X').
+// createConnectionError('X', ...), fail('X', ...) in search-compiler.ts and proxyError(..., 'X')
+// or proxyError(..., ... || 'X').
 const collectCodes = (): Set<string> => {
     const patterns = [
         /\.code = (?:[^;]*\|\| )?'([A-Za-z0-9_]+)'/g,
         /createConnectionError\('([A-Za-z0-9_]+)'/g,
+        /\bfail\('([A-Za-z0-9_]+)'/g,
         /proxyError\([^;]*?(?:, |\|\| )'([A-Za-z0-9_]+)'\)/g
     ];
     const codes = new Set<string>();

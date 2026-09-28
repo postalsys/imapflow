@@ -285,6 +285,45 @@ describe('commands/list', () => {
             assert.equal(byPath('Archives').specialUseSource, 'name');
         });
     }
+    it('Commands: list prefers the shallower mailbox when two match a special-use type by name', async () => {
+        // INBOX.Archive.Sent sorts before INBOX.Sent alphabetically and used to take \Sent
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                    for (const path of ['INBOX', 'INBOX.Archive', 'INBOX.Archive.Sent', 'INBOX.Sent']) {
+                        await opts.untagged.LIST({
+                            attributes: [[{ value: '\\HasNoChildren' }], { value: '.' }, { value: path }]
+                        });
+                    }
+                }
+                return { next: () => {} };
+            }
+        });
+
+        const result = await listCommand(connection, '', '*');
+        const byPath = (path: string) => result.find(e => e.path === path)!;
+        assert.equal(byPath('INBOX.Sent').specialUse, '\\Sent');
+        assert.equal(byPath('INBOX.Archive.Sent').specialUse, undefined);
+    });
+    it('Commands: list reports pathAsListed as a string when the name arrives as a literal', async () => {
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                    await opts.untagged.LIST({
+                        attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { type: 'LITERAL', value: Buffer.from('Quoted "name"') }]
+                    });
+                }
+                return { next: () => {} };
+            }
+        });
+
+        const result = await listCommand(connection, '', '*');
+        const entry = result.find(e => e.path === 'Quoted "name"')!;
+        assert.ok(entry);
+        assert.equal(entry.pathAsListed, 'Quoted "name"');
+    });
     it('Commands: list handles INBOX specially', async () => {
         const connection = createMockConnection({
             state: 3,

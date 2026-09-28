@@ -876,12 +876,19 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
                 map.flags = new Set(getArray(attribute));
                 break;
 
+            // A server with nothing to report can answer ENVELOPE NIL or BODYSTRUCTURE NIL.
+            // The field is left unset then: parsing NIL threw, and the whole message
+            // disappeared from the FETCH result.
             case 'envelope':
-                map.envelope = parseEnvelope(attribute as ImapAttributeList);
+                if (Array.isArray(attribute)) {
+                    map.envelope = parseEnvelope(attribute);
+                }
                 break;
 
             case 'bodystructure':
-                map.bodyStructure = parseBodystructure(attribute as ImapAttributeList);
+                if (Array.isArray(attribute)) {
+                    map.bodyStructure = parseBodystructure(attribute);
+                }
                 break;
 
             case 'internaldate': {

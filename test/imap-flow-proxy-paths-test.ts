@@ -173,6 +173,50 @@ describe('imap-flow-proxy-paths', () => {
         client.close();
     });
 
+    it('Proxy: close() during proxy setup rejects connect and drops the proxy socket', async t => {
+        let server = createServer();
+        let port = await listen(server);
+
+        let proxySocket = null as net.Socket | null;
+        let release: () => void = () => {};
+        let gate = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        stubSocks(t, async () => {
+            await gate;
+            proxySocket = net.connect(port, '127.0.0.1');
+            proxySocket.on('error', () => {});
+            return { socket: proxySocket };
+        });
+
+        let client = new ImapFlow({
+            host: '127.0.0.1',
+            port,
+            secure: false,
+            proxy: 'socks://127.0.0.1:1080',
+            disableAutoIdle: true,
+            disableCompression: true,
+            logger: false,
+            auth: { user: 'test', pass: 'secret' }
+        });
+        client.on('error', () => {});
+
+        let connecting = client.connect();
+        // close() while connect() is still awaiting the proxy
+        client.close();
+        release();
+
+        await assert.rejects(connecting, (err: any) => {
+            assert.equal(err.code, 'NoConnection');
+            assert.equal(err.rejectedFrom, 'connect');
+            return true;
+        });
+        assert.ok(proxySocket && proxySocket.destroyed, 'the proxy socket was destroyed instead of being used');
+        assert.ok(!client.socket, 'the closed client never took over the socket');
+
+        server.close();
+    });
+
     it('Proxy: proxyConnection throwing rejects connect', async t => {
         stubSocks(t, async () => {
             let e: any = new Error('SOCKS handshake failed');

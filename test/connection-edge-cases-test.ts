@@ -1395,6 +1395,7 @@ describe('connection-edge-cases', () => {
             assert.ok(false, 'Should have thrown');
         } catch (err: any) {
             assert.ok(err.message.includes('re-use'));
+            assert.equal(err.code, 'InstanceReused');
         }
     });
     it('Connection Edge: compress writeSocket error forwarded to socket when live', async () => {
