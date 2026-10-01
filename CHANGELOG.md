@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/postalsys/imapflow/compare/v2.1.2...v2.2.0) (2026-10-01)
+
+
+### Features
+
+* let the client choose the hash behind the fallback message id ([0eb74e1](https://github.com/postalsys/imapflow/commit/0eb74e1915b7b568ed137b69d0cfbcce0100679f))
+
 ## [2.1.2](https://github.com/postalsys/imapflow/compare/v2.1.1...v2.1.2) (2026-09-28)
 
 
