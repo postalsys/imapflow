@@ -130,8 +130,8 @@ const RAW_HIDDEN_PLACEHOLDER = Buffer.from('(* value hidden *)\r\n').toString('b
 // IMAP4rev1 and accept ENABLE IMAP4rev2, but misbehave once it is enabled. ENABLE cannot
 // be undone (RFC 5161), so these are kept in IMAP4rev1 mode from the start. Strato's
 // RZimapd (7.1.12, 2026-09) answers every SEARCH in a rev2 session with an ESEARCH
-// response that omits ALL, which reads as "no matches" for any query
-const BROKEN_REV2_SERVERS = [/^RZimapd$/i];
+// response that omits ALL, which reads as "no matches" for any query. Names are lowercase
+const BROKEN_REV2_SERVERS = new Set(['rzimapd']);
 
 // Whether any attribute of a command is marked as a secret. Recurses into nested lists because
 // the command compiler honors `sensitive` at any depth, and the two must agree on what counts.
@@ -1874,8 +1874,8 @@ export class ImapFlow extends EventEmitter {
             this.idRequested = await this.run('ID', this.clientInfo);
         }
 
-        let serverName = this.serverInfo && this.serverInfo.name;
-        if (!this.skipRev2 && typeof serverName === 'string' && BROKEN_REV2_SERVERS.some(re => re.test(serverName.trim()))) {
+        let serverName = this.serverInfo?.name;
+        if (!this.skipRev2 && typeof serverName === 'string' && BROKEN_REV2_SERVERS.has(serverName.trim().toLowerCase())) {
             // Same effect as disableIMAP4rev2, decided before autoEnable() can send the ENABLE
             this.skipRev2 = true;
             this.log.info({ msg: 'Not enabling IMAP4rev2, the server is known to answer SEARCH incorrectly in that mode', server: serverName, cid: this.id });

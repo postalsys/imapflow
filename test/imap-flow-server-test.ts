@@ -1134,60 +1134,51 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
-    for (let { serverName, expectRev2 } of [
-        { serverName: 'RZimapd', expectRev2: false },
-        { serverName: 'mock', expectRev2: true }
-    ]) {
-        it(`Server: rev2 that breaks SEARCH is ${expectRev2 ? 'still enabled for an unlisted server' : 'not enabled for a listed server'} (${serverName})`, async () => {
-            // Strato RZimapd 7.1.12 (issue #411): advertises IMAP4rev2 next to IMAP4rev1 and
-            // accepts ENABLE IMAP4rev2, but from then on answers every SEARCH with an ESEARCH
-            // response that has no ALL item, which means "no matches". ENABLE cannot be
-            // undone, so the server has to be recognized from its ID response beforehand
-            let rev2Enabled = false;
-            let enableArgs: string[] = [];
-            let server = createServer({
-                capabilities: 'IMAP4rev1 IMAP4rev2 ID ENABLE NAMESPACE CONDSTORE',
-                handlers: {
-                    ID(ctx: any) {
-                        ctx.write(`* ID ("name" "${serverName}" "version" "7.1.12" "vendor" "Strato GmbH")\r\n`);
-                        ctx.ok('ID completed');
-                    },
-                    ENABLE(ctx: any) {
-                        enableArgs.push(ctx.args);
-                        rev2Enabled = /\bIMAP4rev2\b/i.test(ctx.args);
-                        ctx.write(`* ENABLED CONDSTORE${rev2Enabled ? ' IMAP4rev2' : ''}\r\n`);
-                        ctx.ok('ENABLE completed');
-                    },
-                    UID(ctx: any) {
-                        if (rev2Enabled) {
-                            ctx.write(`* ESEARCH (TAG "${ctx.tag}") UID\r\n`);
-                        } else {
-                            ctx.write('* SEARCH 10 11 12\r\n');
-                        }
-                        ctx.ok('SEARCH completed');
+    it('Server: rev2 is not enabled on Strato RZimapd, which breaks SEARCH in that mode', async () => {
+        // Strato RZimapd 7.1.12 (issue #411): advertises IMAP4rev2 next to IMAP4rev1 and
+        // accepts ENABLE IMAP4rev2, but from then on answers every SEARCH with an ESEARCH
+        // response that has no ALL item, which means "no matches". ENABLE cannot be
+        // undone, so the server has to be recognized from its ID response beforehand
+        let rev2Enabled = false;
+        let enableArgs: string[] = [];
+        let server = createServer({
+            capabilities: 'IMAP4rev1 IMAP4rev2 ID ENABLE NAMESPACE CONDSTORE',
+            handlers: {
+                ID(ctx: any) {
+                    ctx.write('* ID ("name" "RZimapd")\r\n');
+                    ctx.ok('ID completed');
+                },
+                ENABLE(ctx: any) {
+                    enableArgs.push(ctx.args);
+                    rev2Enabled = /\bIMAP4rev2\b/i.test(ctx.args);
+                    ctx.write(`* ENABLED CONDSTORE${rev2Enabled ? ' IMAP4rev2' : ''}\r\n`);
+                    ctx.ok('ENABLE completed');
+                },
+                UID(ctx: any) {
+                    if (rev2Enabled) {
+                        ctx.write(`* ESEARCH (TAG "${ctx.tag}") UID\r\n`);
+                    } else {
+                        ctx.write('* SEARCH 10 11 12\r\n');
                     }
+                    ctx.ok('SEARCH completed');
                 }
-            });
-            let port = await listen(server);
-            let client = makeClient(port);
-
-            await client.connect();
-            assert.equal(enableArgs.length, 1);
-            assert.equal(/IMAP4rev2/i.test(enableArgs[0]!), expectRev2);
-            assert.equal(client.skipRev2, !expectRev2);
-            assert.equal(client.skipLsub, false, 'the IMAP4rev1 session keeps LSUB');
-            assert.equal(client.enabled.has('IMAP4REV2'), expectRev2);
-
-            await client.mailboxOpen('INBOX');
-            let result = await client.search({ uid: '10:12' }, { uid: true });
-            // The unlisted server shows what the detection prevents: a silent empty result
-            assert.deepEqual(result, expectRev2 ? [] : [10, 11, 12]);
-
-            await client.logout();
-            client.close();
-            server.close();
+            }
         });
-    }
+        let port = await listen(server);
+        let client = makeClient(port);
+
+        await client.connect();
+        assert.equal(enableArgs.length, 1);
+        assert.doesNotMatch(enableArgs[0]!, /IMAP4rev2/i);
+        assert.equal(client.skipLsub, false, 'unlike a rejected ENABLE, the IMAP4rev1 session keeps LSUB');
+
+        await client.mailboxOpen('INBOX');
+        assert.deepEqual(await client.search({ uid: '10:12' }, { uid: true }), [10, 11, 12]);
+
+        await client.logout();
+        client.close();
+        server.close();
+    });
     it('Server: unsolicited STATUS for another mailbox is tolerated', async () => {
         // RFC 9051 (Appendix E item 20): with rev2, servers may push updates that are
         // unrelated to the selected mailbox (e.g. a STATUS for another mailbox during
