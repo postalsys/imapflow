@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/postalsys/imapflow/compare/v2.2.0...v2.2.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* do not enable IMAP4rev2 on Strato RZimapd ([dce30f8](https://github.com/postalsys/imapflow/commit/dce30f86ab5caa8c1d31320d21c16cb73a611a0c)), closes [#411](https://github.com/postalsys/imapflow/issues/411)
+
 ## [2.2.0](https://github.com/postalsys/imapflow/compare/v2.1.2...v2.2.0) (2026-10-01)
 
 
