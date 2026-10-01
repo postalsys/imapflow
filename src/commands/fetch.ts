@@ -230,7 +230,7 @@ export default async function fetch(
                     // (useful for large result sets). Otherwise, collect all into messages.list.
                     FETCH: async (untagged: ImapResponse) => {
                         messages.count++;
-                        let formatted = await formatMessageResponse(untagged, mailbox);
+                        let formatted = await formatMessageResponse(untagged, mailbox, connection.idHashAlgorithm);
                         if (typeof options.onUntaggedFetch === 'function') {
                             await new Promise<void>((resolve, reject) => {
                                 (options.onUntaggedFetch as NonNullable<FetchCommandOptions['onUntaggedFetch']>)(formatted, err => {

@@ -648,6 +648,8 @@ export class ImapFlow extends EventEmitter {
 
     /** @internal */
     disableBinary: boolean;
+    /** Hash algorithm for the fallback message id, see `ImapFlowOptions.idHashAlgorithm` */
+    idHashAlgorithm: string;
 
     // Set when the server rejects a LIST RETURN option group, the auxiliary
     // SPECIAL-USE/CHILDREN return options, or the LSUB command, so later
@@ -891,6 +893,7 @@ export class ImapFlow extends EventEmitter {
         this.missingIdleCommand = (this.options.missingIdleCommand || '').toString().toUpperCase().trim() || 'NOOP';
 
         this.disableBinary = !!this.options.disableBinary;
+        this.idHashAlgorithm = this.options.idHashAlgorithm || 'md5';
 
         this.skipListSubscribedArg = false;
         this.skipListStatusArgs = false;
@@ -2606,7 +2609,7 @@ export class ImapFlow extends EventEmitter {
             return;
         }
 
-        let message = await formatMessageResponse(untagged, mailbox);
+        let message = await formatMessageResponse(untagged, mailbox, this.idHashAlgorithm);
         if (message.flags) {
             let updateEvent: Partial<FlagsEvent> = {
                 path: mailbox.path,

@@ -52,6 +52,14 @@ export interface ImapFlowOptions {
     /** If true, then do not start IDLE when connection is established */
     disableAutoIdle?: boolean | undefined;
     /**
+     * Hash algorithm (any name Node's crypto supports) for the fallback message `id` that is
+     * derived from the mailbox path, UIDVALIDITY and UID when the server provides no email id
+     * through OBJECTID or X-GM-EXT-1. Defaults to `'md5'`, which keeps the ids earlier releases
+     * produced. A host whose OpenSSL runs in FIPS mode does not offer MD5, and has to set a
+     * different one, for example `'sha256'`, which yields a 64 character hex id
+     */
+    idHashAlgorithm?: string | undefined;
+    /**
      * How long (in ms) the connection has to be inactive before IDLE is started automatically.
      * Keep it above the pause your own code usually leaves between two commands, otherwise every
      * command is followed by an IDLE that the next command has to break, costing two extra

@@ -741,9 +741,10 @@ export function getColorFlags(color: string | null | undefined): { add: string[]
  *
  * @param untagged - Parsed untagged IMAP response
  * @param mailbox - Current mailbox state object
+ * @param idHashAlgorithm - Hash for the fallback message id, `md5` unless the client was told otherwise
  * @returns Formatted message object with properties like seq, uid, flags, envelope, etc.
  */
-export async function formatMessageResponse(untagged: ImapResponse, mailbox: MailboxObject): Promise<FetchMessageObject> {
+export async function formatMessageResponse(untagged: ImapResponse, mailbox: MailboxObject, idHashAlgorithm?: string): Promise<FetchMessageObject> {
     let map: MessageMap = {};
 
     // The sequence number indexes into mailbox state, so an unusable one is dropped rather
@@ -951,13 +952,14 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
             }
         }
 
-        // Non-cryptographic identifier: MD5 is used only to derive a stable, compact
-        // account-unique id from non-secret data (path:uidValidity:uid). No security
-        // property (collision/preimage resistance, secrecy) is relied upon, so a fast
-        // hash is the appropriate choice here - not a security-sensitive use.
+        // Non-cryptographic identifier: the hash only derives a stable, compact account-unique
+        // id from non-secret data (path:uidValidity:uid). No security property (collision or
+        // preimage resistance, secrecy) is relied upon, so the fast default is MD5; a host whose
+        // OpenSSL runs in FIPS mode has no MD5 and names another algorithm through the client
+        // option, at the price of ids that differ from the default ones
         map.id =
             map.emailId ||
-            createHash('md5')
+            createHash(idHashAlgorithm || 'md5')
                 .update([path, mailbox.uidValidity?.toString() || '', (map.uid as number).toString()].join(':'))
                 .digest('hex');
     }

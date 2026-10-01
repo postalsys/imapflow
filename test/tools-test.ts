@@ -1166,6 +1166,20 @@ describe('tools', () => {
     });
 
     // ============================================
+    // formatMessageResponse: the fallback id when the server provides no email id
+    it('Tools: formatMessageResponse derives the fallback id with MD5 unless told otherwise', async () => {
+        const untagged = await parser('* 1 FETCH (UID 42)');
+        const mailbox = { path: 'INBOX', uidValidity: BigInt(7) } as any;
+
+        // the value earlier releases produced for this message, pinned
+        const byDefault: any = await tools.formatMessageResponse(untagged, mailbox);
+        assert.equal(byDefault.id, crypto.createHash('md5').update('INBOX:7:42').digest('hex'));
+
+        const bySha256: any = await tools.formatMessageResponse(untagged, mailbox, 'sha256');
+        assert.equal(bySha256.id, crypto.createHash('sha256').update('INBOX:7:42').digest('hex'));
+        assert.equal(bySha256.id.length, 64);
+    });
+
     // formatMessageResponse: OBJECTID NIL handling (RFC 8474)
     // ============================================
     it('Tools: formatMessageResponse handles THREADID NIL', async () => {
