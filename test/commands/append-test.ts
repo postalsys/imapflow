@@ -308,9 +308,9 @@ describe('commands/append', () => {
     it('Commands: append filters invalid flags', async () => {
         let execAttrs: any = null;
         const connection = createMockConnection({
-            state: 2,
+            state: 3, // SELECTED
             mailbox: {
-                path: 'OtherFolder',
+                path: 'INBOX', // Destination is the selected mailbox, so its permanentFlags apply
                 permanentFlags: new Set(['\\Seen', '\\Flagged']) // Only allow these
             },
             exec: async (cmd: any, attrs: any) => {
@@ -331,6 +331,66 @@ describe('commands/append', () => {
         assert.ok(flagsAttr);
         // Should only contain allowed flags
         assert.equal(flagsAttr.length, 2);
+    });
+    it('Commands: append keeps flags when the destination is not the selected mailbox', async () => {
+        let execAttrs: any = null;
+        const connection = createMockConnection({
+            state: 3, // SELECTED
+            mailbox: {
+                path: 'INBOX',
+                // This allow-list describes INBOX, not the Drafts mailbox being appended to
+                permanentFlags: new Set(['\\Seen'])
+            },
+            exec: async (cmd: any, attrs: any) => {
+                if (cmd === 'APPEND' && Array.isArray(attrs)) {
+                    execAttrs = attrs;
+                }
+                return {
+                    next: () => {},
+                    response: { attributes: [] }
+                };
+            }
+        });
+
+        await appendCommand(connection, 'Drafts', 'content', ['\\Draft', '\\Seen']);
+        assert.ok(execAttrs);
+        const flagsAttr = execAttrs.find((a: any) => Array.isArray(a));
+        assert.ok(flagsAttr, 'flags must be sent to the server');
+        assert.deepEqual(
+            flagsAttr.map((f: any) => f.value),
+            ['\\Draft', '\\Seen']
+        );
+    });
+    it('Commands: append keeps flags when the selected destination is read-only', async () => {
+        let execAttrs: any = null;
+        const connection = createMockConnection({
+            state: 3, // SELECTED
+            mailbox: {
+                path: 'Drafts',
+                readOnly: true,
+                // Dovecot reports an empty PERMANENTFLAGS list for a mailbox opened with EXAMINE,
+                // which says nothing about the flags APPEND accepts
+                permanentFlags: new Set<string>()
+            },
+            exec: async (cmd: any, attrs: any) => {
+                if (cmd === 'APPEND' && Array.isArray(attrs)) {
+                    execAttrs = attrs;
+                }
+                return {
+                    next: () => {},
+                    response: { attributes: [] }
+                };
+            }
+        });
+
+        await appendCommand(connection, 'Drafts', 'content', ['\\Draft', '\\Seen']);
+        assert.ok(execAttrs);
+        const flagsAttr = execAttrs.find((a: any) => Array.isArray(a));
+        assert.ok(flagsAttr, 'flags must be sent to the server');
+        assert.deepEqual(
+            flagsAttr.map((f: any) => f.value),
+            ['\\Draft', '\\Seen']
+        );
     });
     it('Commands: append works from SELECTED state', async () => {
         let execCalled = false;

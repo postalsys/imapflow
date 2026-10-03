@@ -373,6 +373,28 @@ describe('rev2-live', () => {
             await client.logout();
         }
     });
+    it('Live rev2: append keeps flags while a read-only mailbox is selected', async () => {
+        const client = await (connectClient as any)();
+        try {
+            await client.append('INBOX', Buffer.from('Subject: original\r\n\r\noriginal body\r\n'));
+
+            // Dovecot answers an EXAMINE with an empty PERMANENTFLAGS list. It must not be
+            // taken as the flag set the Drafts mailbox accepts for APPEND (issue #415)
+            const inbox: any = await client.mailboxOpen('INBOX', { readOnly: true });
+            assert.equal(inbox.readOnly, true, 'EXAMINE should report a read-only mailbox');
+
+            await client.append('Drafts', Buffer.from('Subject: reply\r\n\r\nreply body\r\n'), ['\\Draft', '\\Seen']);
+
+            await client.mailboxOpen('Drafts');
+            const draft: any = await client.fetchOne('*', { flags: true });
+            assert.ok(draft.flags.has('\\Draft'), 'the \\Draft flag must survive the append');
+            assert.ok(draft.flags.has('\\Seen'), 'the \\Seen flag must survive the append');
+
+            await client.mailboxClose();
+        } finally {
+            await client.logout();
+        }
+    });
     it('Live rev2: message lifecycle smoke test', async () => {
         const client = await (connectClient as any)();
         try {

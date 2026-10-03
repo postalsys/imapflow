@@ -73,10 +73,15 @@ export default async function append(
     // The selected mailbox when appending to it, false otherwise
     const targetMailbox = selected && comparePaths(connection, selected.path, destination) ? selected : false;
 
-    // Validate and format flags. Only flags allowed by the mailbox's permanentFlags are included.
+    // Flags are only filtered when a read-write selection of the destination itself says what it
+    // accepts: the permanentFlags of an unrelated mailbox say nothing about the destination, and a
+    // read-only selection reports an empty PERMANENTFLAGS list (Dovecot does), which canUseFlag()
+    // reads as deny-all. Otherwise they go to the server unfiltered and it decides (RFC 9051).
+    const flagSource = targetMailbox && !targetMailbox.readOnly ? targetMailbox : false;
+
     flags = (Array.isArray(flags) ? flags : ([] as string[]).concat(flags || []))
         .map(flag => flag && formatFlag(flag.toString()))
-        .filter((flag): flag is string => !!flag && canUseFlag(connection.mailbox, flag));
+        .filter((flag): flag is string => !!flag && canUseFlag(flagSource, flag));
 
     // APPEND command format: APPEND <mailbox> [<flags>] [<date-time>] <literal>
     let attributes: ImapCompileNode[] = [{ type: 'ATOM', value: encodePath(connection, destination) }];
