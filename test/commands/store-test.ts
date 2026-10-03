@@ -279,11 +279,55 @@ describe('commands/store', () => {
         assert.equal(result, false);
     });
     it('Commands: store allows empty flags for set operation', async () => {
+        let execAttrs: any = null;
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any) => {
+                execAttrs = attrs;
+                return { next: () => {} };
+            }
+        });
+
+        // An empty list is how a caller asks for every flag to be cleared
+        const result = await storeCommand(connection, '1', [], { operation: 'set' });
+        assert.equal(result, true);
+        assert.ok(execAttrs);
+        assert.equal(execAttrs[1].value, 'FLAGS');
+        assert.deepEqual(execAttrs[2], []);
+    });
+    it('Commands: store logs the flags it drops', async () => {
+        let warned: any = null;
+        const connection = createMockConnection({
+            state: 3,
+            mailbox: {
+                path: 'INBOX',
+                permanentFlags: new Set(['\\Seen'])
+            },
+            log: {
+                warn: (entry: any) => {
+                    warned = entry;
+                },
+                info: () => {},
+                error: () => {},
+                debug: () => {},
+                trace: () => {}
+            },
+            exec: async () => ({ next: () => {} })
+        });
+
+        // A partial drop still runs, so the log is the only signal the caller gets
+        const result = await storeCommand(connection, '1', ['\\Seen', 'MyKeyword'], { operation: 'set' });
+        assert.equal(result, true);
+        assert.ok(warned, 'a warning must be logged');
+        assert.deepEqual(warned.dropped, ['MyKeyword']);
+        assert.equal(warned.path, 'INBOX');
+    });
+    it('Commands: store refuses a set whose flags were all filtered out', async () => {
         let execCalled = false;
         const connection = createMockConnection({
             state: 3,
             mailbox: {
-                permanentFlags: new Set() // No flags allowed, all get filtered
+                permanentFlags: new Set(['\\Seen']) // No custom keywords, no \*
             },
             exec: async () => {
                 execCalled = true;
@@ -291,10 +335,108 @@ describe('commands/store', () => {
             }
         });
 
-        // Set operation with empty flags should still proceed (to clear flags)
-        const result = await storeCommand(connection, '1', ['\\Seen'], { operation: 'set' });
+        // Setting a keyword the mailbox does not allow must not turn into "FLAGS ()",
+        // which would clear every flag the message already carries
+        const result = await storeCommand(connection, '1', ['MyKeyword'], { operation: 'set' });
+        assert.equal(result, false);
+        assert.equal(execCalled, false, 'no STORE may be sent');
+    });
+    it('Commands: store refuses a set of only \\Recent', async () => {
+        let execCalled = false;
+        const connection = createMockConnection({
+            state: 3,
+            // \Recent is dropped by formatFlag() even where every other flag is allowed
+            mailbox: {
+                permanentFlags: new Set(['\\*'])
+            },
+            exec: async () => {
+                execCalled = true;
+                return { next: () => {} };
+            }
+        });
+
+        const result = await storeCommand(connection, '1', ['\\Recent'], { operation: 'set' });
+        assert.equal(result, false);
+        assert.equal(execCalled, false, 'no STORE may be sent');
+    });
+    it('Commands: store does not filter labels against permanentFlags', async () => {
+        let execAttrs: any = null;
+        const connection = createMockConnection({
+            state: 3,
+            capabilities: new Map([['X-GM-EXT-1', true]]),
+            mailbox: {
+                // An IMAP keyword allow-list says nothing about Gmail labels
+                permanentFlags: new Set(['\\Seen'])
+            },
+            exec: async (cmd: any, attrs: any) => {
+                execAttrs = attrs;
+                return { next: () => {} };
+            }
+        });
+
+        const result = await storeCommand(connection, '1', ['MyLabel'], { operation: 'set', useLabels: true });
         assert.equal(result, true);
-        assert.equal(execCalled, true);
+        assert.ok(execAttrs);
+        assert.equal(execAttrs[1].value, 'X-GM-LABELS');
+        assert.deepEqual(
+            execAttrs[2].map((f: any) => f.value),
+            ['MyLabel']
+        );
+    });
+    it('Commands: store refuses a label set that reduces to nothing', async () => {
+        let execCalled = false;
+        const connection = createMockConnection({
+            state: 3,
+            capabilities: new Map([['X-GM-EXT-1', true]]),
+            exec: async () => {
+                execCalled = true;
+                return { next: () => {} };
+            }
+        });
+
+        // The guard has to hold for X-GM-LABELS too, where "()" clears every label
+        const result = await storeCommand(connection, '1', ['\\Recent'], { operation: 'set', useLabels: true });
+        assert.equal(result, false);
+        assert.equal(execCalled, false, 'no STORE may be sent');
+    });
+    it('Commands: store does not treat a missing flag list as a request to clear', async () => {
+        let execCalled = false;
+        const connection = createMockConnection({
+            state: 3,
+            exec: async () => {
+                execCalled = true;
+                return { next: () => {} };
+            }
+        });
+
+        // A JS caller that forgets the argument must not have every flag wiped
+        const result = await storeCommand(connection, '1', undefined as any, { operation: 'set' });
+        assert.equal(result, false);
+        assert.equal(execCalled, false, 'no STORE may be sent');
+    });
+    it('Commands: store normalizes a mixed-case operation name', async () => {
+        let execAttrs: any = null;
+        const connection = createMockConnection({
+            state: 3,
+            mailbox: {
+                permanentFlags: new Set(['\\Seen'])
+            },
+            exec: async (cmd: any, attrs: any) => {
+                execAttrs = attrs;
+                return { next: () => {} };
+            }
+        });
+
+        // 'REMOVE' has to reach the remove branch of both the prefix switch and the filter,
+        // so a keyword the mailbox does not list is still removable
+        const result = await storeCommand(connection, '1', ['MyKeyword'], { operation: 'REMOVE' });
+        assert.equal(result, true);
+        assert.ok(execAttrs);
+        assert.equal(execAttrs[1].value, '-FLAGS');
+        assert.deepEqual(
+            execAttrs[2].map((f: any) => f.value),
+            ['MyKeyword']
+        );
     });
     it('Commands: store returns false with empty flags for remove', async () => {
         const connection = createMockConnection({

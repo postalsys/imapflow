@@ -44,8 +44,12 @@ export default async function store(connection: ImapFlow, range: string, flags: 
         operation = `${operation}.SILENT`;
     }
 
+    // Normalized once: the raw value is also compared below, and a mixed-case 'SET' must not
+    // take the set branch here and the add branch there.
+    const operationName = (options.operation || '').toLowerCase();
+
     // Prefix determines the operation: none = set (replace), + = add, - = remove
-    switch ((options.operation || '').toLowerCase()) {
+    switch (operationName) {
         case 'set':
             break;
         case 'remove':
@@ -57,14 +61,28 @@ export default async function store(connection: ImapFlow, range: string, flags: 
             break;
     }
 
-    // Validate each flag: format it (normalize backslash prefix for system flags),
-    // then check if the mailbox's permanentFlags allow it. Removal is always allowed
+    // Only an explicitly empty array asks for every flag to be cleared. A missing value is not
+    // that request, and neither is a 'set' whose flags all get dropped below: either would
+    // compile to "FLAGS ()" and wipe the message instead of storing what was asked for. The
+    // line is drawn at destroying flags, not at fidelity, so a set that keeps some of the
+    // requested flags still runs, as the documented contract for those methods says.
+    const clearAll = operationName === 'set' && Array.isArray(flags) && !flags.length;
+
+    // permanentFlags lists the IMAP keywords the mailbox accepts and says nothing about Gmail
+    // labels, so it is not consulted for X-GM-LABELS - the same reason an unrelated mailbox's
+    // flags are not consulted for APPEND (issue #415).
+    const flagSource = options.useLabels ? false : mailbox;
+
+    // Validate each flag: format it (normalize backslash prefix for system flags, reject the
+    // server-owned \Recent), then check that the mailbox allows it. Removal is always allowed
     // since it doesn't require the flag to be in permanentFlags.
+    const dropped: string[] = [];
     flags = (Array.isArray(flags) ? flags : ([] as string[]).concat(flags || []))
         .map(flag => {
             let formatted = formatFlag(flag);
 
-            if (!canUseFlag(mailbox, formatted as string) && options.operation !== 'remove') {
+            if (!formatted || (!canUseFlag(flagSource, formatted) && operationName !== 'remove')) {
+                dropped.push(flag);
                 return false;
             }
 
@@ -72,8 +90,19 @@ export default async function store(connection: ImapFlow, range: string, flags: 
         })
         .filter((flag): flag is string => !!flag);
 
-    // Allow empty flags only for 'set' operation (which clears all flags)
-    if (!flags.length && options.operation !== 'set') {
+    // The caller is told nothing by the boolean this returns, so leave a trail for the flags
+    // that never reached the server.
+    if (dropped.length) {
+        connection.log.warn({
+            msg: 'Dropped flags the mailbox does not accept',
+            cid: connection.id,
+            path: mailbox.path,
+            operation,
+            dropped
+        });
+    }
+
+    if (!flags.length && !clearAll) {
         return false;
     }
 

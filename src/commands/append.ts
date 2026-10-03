@@ -79,9 +79,32 @@ export default async function append(
     // reads as deny-all. Otherwise they go to the server unfiltered and it decides (RFC 9051).
     const flagSource = targetMailbox && !targetMailbox.readOnly ? targetMailbox : false;
 
+    const dropped: string[] = [];
     flags = (Array.isArray(flags) ? flags : ([] as string[]).concat(flags || []))
-        .map(flag => flag && formatFlag(flag.toString()))
-        .filter((flag): flag is string => !!flag && canUseFlag(flagSource, flag));
+        .map(flag => {
+            const formatted = flag && formatFlag(flag.toString());
+
+            if (!formatted || !canUseFlag(flagSource, formatted)) {
+                if (flag) {
+                    dropped.push(flag.toString());
+                }
+                return false;
+            }
+
+            return formatted;
+        })
+        .filter((flag): flag is string => !!flag);
+
+    // The stored message simply ends up without them, and the caller is told nothing, so leave
+    // a trail for the flags that never reached the server.
+    if (dropped.length) {
+        connection.log.warn({
+            msg: 'Dropped flags the mailbox does not accept',
+            cid: connection.id,
+            path: destination,
+            dropped
+        });
+    }
 
     // APPEND command format: APPEND <mailbox> [<flags>] [<date-time>] <literal>
     let attributes: ImapCompileNode[] = [{ type: 'ATOM', value: encodePath(connection, destination) }];

@@ -3518,7 +3518,7 @@ export class ImapFlow extends EventEmitter {
      * Sets flags for a message or message range
      *
      * @param range Range to filter the messages
-     * @param flags Array of flags to set. Only flags that are permitted to set are used, other flags are ignored
+     * @param flags Array of flags to set. Only flags that are permitted to set are used, other flags are ignored. An empty array clears every flag, but a non-empty array with nothing usable in it is refused rather than clearing the message
      * @param options Store options
      * @returns Did the operation succeed or not
      *

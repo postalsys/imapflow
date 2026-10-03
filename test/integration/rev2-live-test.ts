@@ -395,6 +395,33 @@ describe('rev2-live', () => {
             await client.logout();
         }
     });
+    it('Live rev2: a flag set that reduces to nothing leaves the message alone', async () => {
+        const client = await (connectClient as any)();
+        try {
+            await client.append('INBOX', Buffer.from('Subject: flagged\r\n\r\nflagged body\r\n'), ['\\Seen', '\\Flagged']);
+            await client.mailboxOpen('INBOX');
+
+            // \Recent can not be stored, so it is dropped before the command is built. The
+            // request must not degrade into "STORE 1 FLAGS ()", which would clear the flags
+            // the message already carries.
+            const stored = await client.messageFlagsSet('1', ['\\Recent']);
+            assert.equal(stored, false, 'a set with nothing storable in it should report failure');
+
+            const message: any = await client.fetchOne('1', { flags: true });
+            assert.ok(message.flags.has('\\Seen'), '\\Seen must survive');
+            assert.ok(message.flags.has('\\Flagged'), '\\Flagged must survive');
+
+            // An explicitly empty list still clears them, which is the documented behavior
+            assert.equal(await client.messageFlagsSet('1', []), true);
+            const cleared: any = await client.fetchOne('1', { flags: true });
+            assert.ok(!cleared.flags.has('\\Seen'), '\\Seen should be cleared');
+            assert.ok(!cleared.flags.has('\\Flagged'), '\\Flagged should be cleared');
+
+            await client.mailboxClose();
+        } finally {
+            await client.logout();
+        }
+    });
     it('Live rev2: message lifecycle smoke test', async () => {
         const client = await (connectClient as any)();
         try {

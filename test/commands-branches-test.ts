@@ -113,21 +113,22 @@ describe('commands-branches', () => {
         assert.deepEqual(storedFlags, ['\\Seen']);
     });
     it('Branches: store with falsy flags and set operation uses [] fallback', async () => {
-        let storedFlags = null;
+        let execCalled = false;
         const connection = createMockConnection({
             state: 3,
             mailbox: { path: 'INBOX', flags: new Set(['\\Seen']), permanentFlags: new Set(['\\Seen']) },
-            exec: async (cmd: any, attrs: any) => {
-                storedFlags = attrs[2].map((a: any) => a.value);
+            exec: async () => {
+                execCalled = true;
                 return { next: () => {}, response: { attributes: [] } };
             }
         });
 
         // flags is undefined (falsy, non-array) -> exercises the `flags || []` fallback in
-        // `[].concat(flags || [])`. Empty flags are allowed for the 'set' operation (clears all).
+        // `[].concat(flags || [])`. Only an explicitly empty array clears the flags, so a
+        // missing argument is refused instead of wiping the message.
         const result = await storeCommand(connection, '1:5', undefined as any, { operation: 'set' });
-        assert.equal(result, true);
-        assert.deepEqual(storedFlags, []);
+        assert.equal(result, false);
+        assert.equal(execCalled, false);
     });
 
     // ============================================================================

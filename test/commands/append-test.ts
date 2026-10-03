@@ -392,6 +392,31 @@ describe('commands/append', () => {
             ['\\Draft', '\\Seen']
         );
     });
+    it('Commands: append logs the flags it drops', async () => {
+        let warned: any = null;
+        const connection = createMockConnection({
+            state: 3, // SELECTED
+            mailbox: {
+                path: 'INBOX',
+                permanentFlags: new Set(['\\Seen'])
+            },
+            log: {
+                warn: (entry: any) => {
+                    warned = entry;
+                },
+                info: () => {},
+                error: () => {},
+                debug: () => {},
+                trace: () => {}
+            },
+            exec: async () => ({ next: () => {}, response: { attributes: [] } })
+        });
+
+        await appendCommand(connection, 'INBOX', 'content', ['\\Seen', 'MyKeyword', '\\Recent']);
+        assert.ok(warned, 'a warning must be logged');
+        assert.deepEqual(warned.dropped, ['MyKeyword', '\\Recent']);
+        assert.equal(warned.path, 'INBOX');
+    });
     it('Commands: append works from SELECTED state', async () => {
         let execCalled = false;
         const connection = createMockConnection({
