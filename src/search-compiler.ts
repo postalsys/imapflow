@@ -11,6 +11,9 @@ import type { SearchObject } from './types.js';
  */
 export type SearchAttribute = ImapAttributeNode | SearchAttribute[];
 
+// Matches any character outside the ASCII range
+const UNICODE_PATTERN = /[^\x00-\x7F]/;
+
 /**
  * Sets a boolean flag in the IMAP search attributes.
  * Automatically handles UN- prefixing for falsy values.
@@ -49,6 +52,17 @@ let setBoolOpt = (attributes: SearchAttribute[], term: string, value: boolean): 
 let toSequenceValue = (value: unknown): string => ([] as unknown[]).concat(value).join(',');
 
 /**
+ * Builds the token for a search value. A quoted string may only carry 7-bit
+ * characters (RFC 3501 section 9), so a non-ASCII value is sent as a literal;
+ * strict servers reply BAD to UTF-8 inside a quoted string.
+ *
+ * @param value - The search value
+ * @returns An ATOM token (quoted by the compiler when needed), or a LITERAL token
+ */
+let toSearchValue = (value: string): ImapAttributeNode =>
+    UNICODE_PATTERN.test(value) ? { type: 'LITERAL', value: Buffer.from(value) } : { type: 'ATOM', value };
+
+/**
  * Adds a search option with its value(s) to the attributes array.
  * Handles NOT operations and array values.
  *
@@ -66,9 +80,9 @@ let setOpt = (attributes: SearchAttribute[], term: string, value: any): void => 
 
     // Handle array values (e.g. HEADER name/value pairs)
     if (Array.isArray(value)) {
-        value.forEach(entry => attributes.push({ type: 'ATOM', value: (entry || '').toString() }));
+        value.forEach(entry => attributes.push(toSearchValue((entry || '').toString())));
     } else {
-        attributes.push({ type: 'ATOM', value: value.toString() });
+        attributes.push(toSearchValue(value.toString()));
     }
 };
 
@@ -105,9 +119,6 @@ let processDateField = (attributes: SearchAttribute[], term: string, value: unkn
     setOpt(attributes, term, formatted);
 };
 
-// Pre-compiled regex for better performance
-const UNICODE_PATTERN = /[^\x00-\x7F]/;
-
 /**
  * Throws a coded search compilation error.
  *
@@ -121,21 +132,13 @@ let fail = (code: string, message: string): never => {
 };
 
 /**
- * Checks if a string contains Unicode characters.
- * Used to determine if CHARSET UTF-8 needs to be specified.
+ * Checks whether any search value was compiled into a literal, which only
+ * happens for non-ASCII values and means CHARSET UTF-8 needs to be specified.
  *
- * @param str - String to check
- * @returns True if string contains non-ASCII characters
+ * @param attributes - Compiled search attributes
+ * @returns True if a LITERAL token is present
  */
-let isUnicodeString = (str: unknown): boolean => {
-    if (!str || typeof str !== 'string') {
-        return false;
-    }
-
-    // Regex test is ~3-5x faster than Buffer.byteLength
-    // Matches any character outside ASCII range (0x00-0x7F)
-    return UNICODE_PATTERN.test(str);
-};
+let hasLiteral = (attributes: SearchAttribute[]): boolean => attributes.some(attr => (Array.isArray(attr) ? hasLiteral(attr) : attr.type === 'LITERAL'));
 
 /**
  * Compiles a JavaScript object query into IMAP search command attributes.
@@ -165,9 +168,6 @@ let isUnicodeString = (str: unknown): boolean => {
  */
 export const searchCompiler = (connection: ImapFlow, query: SearchObject): SearchAttribute[] => {
     const attributes: SearchAttribute[] = [];
-
-    // Track if we need to specify UTF-8 charset
-    let hasUnicode = false;
 
     /**
      * Recursively walks through the query object and builds IMAP attributes.
@@ -264,9 +264,6 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                 case 'SUBJECT':
                 case 'TEXT':
                 case 'TO':
-                    if (isUnicodeString(params[term])) {
-                        hasUnicode = true;
-                    }
                     if (params[term]) {
                         setOpt(attributes, term, params[term]);
                     }
@@ -314,9 +311,6 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                 case 'GMRAW':
                 case 'GMAILRAW': // alias for GMRAW
                     if (connection.capabilities.has('X-GM-EXT-1')) {
-                        if (isUnicodeString(params[term])) {
-                            hasUnicode = true;
-                        }
                         setOpt(attributes, 'X-GM-RAW', params[term]);
                     } else {
                         fail('MissingServerExtension', 'Server does not support X-GM-EXT-1 extension required for X-GM-RAW');
@@ -362,9 +356,6 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                     }
 
                     let rawQuery = rawParts.join(' ');
-                    if (isUnicodeString(rawQuery)) {
-                        hasUnicode = true;
-                    }
                     setOpt(attributes, 'X-GM-RAW', rawQuery);
                     break;
                 }
@@ -431,10 +422,6 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                             // Skip non-string values (after true->'' conversion)
                             if (typeof value !== 'string') {
                                 return;
-                            }
-
-                            if (isUnicodeString(value)) {
-                                hasUnicode = true;
                             }
 
                             setOpt(attributes, term, [header.toUpperCase().trim(), value]);
@@ -530,7 +517,7 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
 
     // If we encountered Unicode strings and UTF-8 is not already accepted,
     // prepend CHARSET UTF-8 to the search command
-    if (hasUnicode && !connection.enabled.has('UTF8=ACCEPT')) {
+    if (!connection.enabled.has('UTF8=ACCEPT') && hasLiteral(attributes)) {
         attributes.unshift({ type: 'ATOM', value: 'UTF-8' });
         attributes.unshift({ type: 'ATOM', value: 'CHARSET' });
     }

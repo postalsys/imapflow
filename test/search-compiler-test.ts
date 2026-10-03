@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ImapFlow } from '../src/imap-flow.js';
 import { searchCompiler } from '../src/search-compiler.js';
+import imapCompiler from '../src/handler/imap-compiler.js';
 
 // Mock mailbox for testing
 let createMockMailbox = () => ({
@@ -30,6 +31,9 @@ let findAttr: any = (attrs: any, value: any) => {
     return undefined;
 };
 let hasAttr = (attrs: any, value: any) => !!findAttr(attrs, value);
+// Helper to check for a LITERAL token carrying the UTF-8 bytes of a value
+let hasLiteral = (attrs: any[], value: string) =>
+    attrs.flat(Infinity).some((a: any) => a.type === 'LITERAL' && Buffer.isBuffer(a.value) && a.value.equals(Buffer.from(value)));
 
 describe('search-compiler', () => {
     // ============================================
@@ -996,7 +1000,7 @@ describe('search-compiler', () => {
         let compiled = searchCompiler(connection, { labels: { has: ['Tähtis'] } });
         assert.ok(hasAttr(compiled, 'CHARSET'));
         assert.ok(hasAttr(compiled, 'X-GM-RAW'));
-        assert.ok(hasAttr(compiled, 'label:Tähtis'));
+        assert.ok(hasLiteral(compiled, 'label:Tähtis'));
     });
 
     // ============================================
@@ -1134,7 +1138,7 @@ describe('search-compiler', () => {
         assert.equal(compiled[0].value, 'CHARSET', 'CHARSET should be first');
         assert.equal((compiled[1] as any).value, 'UTF-8', 'UTF-8 should be second');
         assert.ok(hasAttr(compiled, 'HEADER'), 'should contain HEADER');
-        assert.ok(hasAttr(compiled, 'caf\u00e9'), 'should contain the unicode value');
+        assert.ok(hasLiteral(compiled, 'caf\u00e9'), 'should contain the unicode value as a literal');
     });
     it('Search Compiler: Unicode header search with UTF8=ACCEPT skips CHARSET', () => {
         let connection = createMockConnection({
@@ -1147,6 +1151,40 @@ describe('search-compiler', () => {
         assert.ok(!hasAttr(compiled, 'CHARSET'), 'should NOT have CHARSET prefix');
         assert.ok(!hasAttr(compiled, 'UTF-8'), 'should NOT have UTF-8 value');
         assert.ok(hasAttr(compiled, 'HEADER'), 'should contain HEADER');
-        assert.ok(hasAttr(compiled, 'caf\u00e9'), 'should contain the unicode value');
+        assert.ok(hasLiteral(compiled, 'caf\u00e9'), 'should contain the unicode value as a literal');
+    });
+
+    // ============================================
+    // Non-ASCII values are sent as literals (issue #417)
+    // ============================================
+    it('Search Compiler: non-ASCII values compile to literals, ASCII values stay atoms', () => {
+        let connection = createMockConnection({ enabled: new Set() });
+        let compiled: any = searchCompiler(connection, { body: 'r\u00e9servation', from: 'ascii@example.com' });
+
+        assert.equal(compiled[0].value, 'CHARSET');
+        assert.ok(hasLiteral(compiled, 'r\u00e9servation'));
+        assert.deepEqual(findAttr(compiled, 'ascii@example.com'), { type: 'ATOM', value: 'ascii@example.com' });
+    });
+    it('Search Compiler: non-ASCII value goes to the wire as a literal', async () => {
+        let connection = createMockConnection({ enabled: new Set() });
+        let attributes = searchCompiler(connection, { text: 'r\u00e9servation', subject: 'plain' });
+
+        // Synchronizing literal: the command is split at the literal for the continuation
+        let parts = await imapCompiler({ tag: 'A5', command: 'UID SEARCH', attributes }, { asArray: true });
+        assert.deepEqual(
+            parts.map(part => part.toString()),
+            ['A5 UID SEARCH CHARSET UTF-8 TEXT {12}\r\n', 'r\u00e9servation SUBJECT plain']
+        );
+
+        // Non-synchronizing literal with LITERAL+
+        let wire = await imapCompiler({ tag: 'A5', command: 'UID SEARCH', attributes }, { literalPlus: true });
+        assert.equal(wire.toString(), 'A5 UID SEARCH CHARSET UTF-8 TEXT {12+}\r\nr\u00e9servation SUBJECT plain');
+    });
+    it('Search Compiler: non-ASCII header value is a literal, header name stays an atom', () => {
+        let connection = createMockConnection({ enabled: new Set() });
+        let compiled: any = searchCompiler(connection, { header: { 'x-test': '\u00fc' } });
+
+        assert.deepEqual(findAttr(compiled, 'X-TEST'), { type: 'ATOM', value: 'X-TEST' });
+        assert.ok(hasLiteral(compiled, '\u00fc'));
     });
 });

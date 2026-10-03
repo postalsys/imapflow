@@ -182,6 +182,26 @@ describe('rev2-live', () => {
             await client.logout();
         }
     });
+    it('Live rev2: non-ASCII search values are sent as literals', async () => {
+        for (const synchronizing of [false, true]) {
+            const client: any = await connectClient(null, null);
+            try {
+                if (synchronizing) {
+                    // Force a synchronizing literal so the continuation round trip is exercised
+                    client.capabilities.delete('LITERAL+');
+                    client.capabilities.delete('LITERAL-');
+                }
+                await client.append('INBOX', Buffer.from('Subject: =?UTF-8?Q?R=C3=A9servation?=\r\n\r\nfirst\r\n'));
+                await client.append('INBOX', Buffer.from('Subject: other\r\n\r\nsecond\r\n'));
+
+                await client.mailboxOpen('INBOX');
+                assert.deepEqual(await client.search({ subject: 'Réservation' }), [1]);
+                assert.deepEqual(await client.search({ header: { subject: 'réserv' }, body: 'first' }), [1]);
+            } finally {
+                await client.logout();
+            }
+        }
+    });
     it('Live rev2: returnOptions search is answered via a real ESEARCH response', async () => {
         const logs: any = [];
         const client: any = await connectClient(null, logs);
