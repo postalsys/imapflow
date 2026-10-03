@@ -1187,4 +1187,12 @@ describe('search-compiler', () => {
         assert.deepEqual(findAttr(compiled, 'X-TEST'), { type: 'ATOM', value: 'X-TEST' });
         assert.ok(hasLiteral(compiled, '\u00fc'));
     });
+    it('Search Compiler: non-ASCII value with NUL is rejected, not sent as a literal', async () => {
+        let connection = createMockConnection({ enabled: new Set() });
+        let attributes = searchCompiler(connection, { subject: 'caf\u00e9\0' });
+
+        // CHAR8 (%x01-ff) excludes NUL, so the value can not be a literal either
+        assert.ok(!hasLiteral(attributes, 'caf\u00e9\0'));
+        await assert.rejects(imapCompiler({ tag: 'A1', command: 'SEARCH', attributes }), { code: 'InvalidStringValue' });
+    });
 });

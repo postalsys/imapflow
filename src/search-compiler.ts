@@ -54,13 +54,15 @@ let toSequenceValue = (value: unknown): string => ([] as unknown[]).concat(value
 /**
  * Builds the token for a search value. A quoted string may only carry 7-bit
  * characters (RFC 3501 section 9), so a non-ASCII value is sent as a literal;
- * strict servers reply BAD to UTF-8 inside a quoted string.
+ * strict servers reply BAD to UTF-8 inside a quoted string. A literal can not
+ * carry NUL either (CHAR8 is %x01-ff), so such a value stays an ATOM and the
+ * compiler rejects it.
  *
  * @param value - The search value
  * @returns An ATOM token (quoted by the compiler when needed), or a LITERAL token
  */
 let toSearchValue = (value: string): ImapAttributeNode =>
-    UNICODE_PATTERN.test(value) ? { type: 'LITERAL', value: Buffer.from(value) } : { type: 'ATOM', value };
+    UNICODE_PATTERN.test(value) && !value.includes('\0') ? { type: 'LITERAL', value: Buffer.from(value) } : { type: 'ATOM', value };
 
 /**
  * Adds a search option with its value(s) to the attributes array.
