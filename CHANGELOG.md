@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.2](https://github.com/postalsys/imapflow/compare/v2.2.1...v2.2.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* do not let a flag update that reduces to nothing clear every flag ([686a04b](https://github.com/postalsys/imapflow/commit/686a04b6c29d5f97afdbb03779e7b29d102cdef3))
+* keep append flags when the destination is not an open read-write mailbox ([d7f8da3](https://github.com/postalsys/imapflow/commit/d7f8da3131d8df5b5607021dbbca27445bb973c2)), closes [#415](https://github.com/postalsys/imapflow/issues/415)
+
 ## [2.2.1](https://github.com/postalsys/imapflow/compare/v2.2.0...v2.2.1) (2026-10-01)
 
 
