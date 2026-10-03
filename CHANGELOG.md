@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.4](https://github.com/postalsys/imapflow/compare/v2.2.3...v2.2.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deps:** hold pino at 10.3.x to match EmailEngine ([65062e0](https://github.com/postalsys/imapflow/commit/65062e0a3fb66527e7296ee288e658ef215851d4))
+
 ## [2.2.3](https://github.com/postalsys/imapflow/compare/v2.2.2...v2.2.3) (2026-10-03)
 
 
