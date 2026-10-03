@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.3](https://github.com/postalsys/imapflow/compare/v2.2.2...v2.2.3) (2026-10-03)
+
+
+### Bug Fixes
+
+* reject NUL in a non-ASCII search value instead of sending it as a literal ([8c35084](https://github.com/postalsys/imapflow/commit/8c35084f12376a1195989bf99621c2587f548aca))
+* send non-ASCII search values as literals ([b58d93e](https://github.com/postalsys/imapflow/commit/b58d93e49dd37ef008418c2670afaf53b3d78034)), closes [#417](https://github.com/postalsys/imapflow/issues/417)
+
 ## [2.2.2](https://github.com/postalsys/imapflow/compare/v2.2.1...v2.2.2) (2026-10-03)
 
 
