@@ -81,11 +81,11 @@
         "wrangler": "4.147.0"
     },
     "dependencies": {
-        "@zone-eu/mailsplit": "5.4.19",
+        "@zone-eu/mailsplit": "5.4.20",
         "encoding-japanese": "2.4.0",
         "iconv-lite": "0.7.3",
-        "libbase64": "1.3.1",
-        "libmime": "5.4.6",
+        "libbase64": "1.3.2",
+        "libmime": "5.4.7",
         "libqp": "2.1.2",
         "pino": "10.3.1",
         "socks": "2.8.10"
