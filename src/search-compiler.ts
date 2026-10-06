@@ -432,8 +432,12 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                     break;
 
                 // NOT operator
+                // A falsy operand means no NOT clause (`not: cond && {...}`). Any other one goes
+                // through walkOperand(), which refuses a value that is not a query object or
+                // compiles to nothing: dropping it would turn the filter into a search that
+                // matches everything
                 case 'NOT':
-                    if (params[term] && typeof params[term] === 'object') {
+                    if (params[term]) {
                         attributes.push({ type: 'ATOM', value: 'NOT' });
                         walkOperand('NOT', params[term]);
                     }
@@ -448,8 +452,8 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
 
                         // Single element - just process it directly
                         if (params[term].length === 1) {
-                            if (typeof params[term][0] === 'object' && params[term][0]) {
-                                walk(params[term][0]);
+                            if (params[term][0]) {
+                                walkOperand('OR', params[term][0]);
                             }
                             break;
                         }

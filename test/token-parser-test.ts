@@ -120,7 +120,7 @@ describe('token-parser', () => {
 
     /**
      * E25: Non-digit character inside literal size braces. Any character inside
-     * {…} that is not a digit (and not '}' or '+' with literalPlus) triggers
+     * {...} that is not a digit (and not '}' or '+' with literalPlus) triggers
      * ParserError25.
      */
     it('Token Parser: E25: non-digit in literal size throws ParserError25', async () => {
@@ -171,6 +171,37 @@ describe('token-parser', () => {
         assert.equal(err.code, 'MAX_IMAP_NESTING_REACHED');
     });
 
+    it('Token Parser: nesting exactly at MAX_NODE_DEPTH is accepted', async () => {
+        // the limit is inclusive and counts every node: 25 nested lists parse, while 25 lists
+        // around an atom (26 levels) are refused like the test above
+        let parsed = await parser('* FETCH ' + '('.repeat(25) + ')'.repeat(25));
+        let node: any = parsed.attributes;
+        for (let i = 0; i < 25; i++) {
+            assert.equal(node.length, 1);
+            node = node[0];
+        }
+        assert.deepEqual(node, []);
+        await assert.rejects(parser('* FETCH ' + '('.repeat(25) + 'x' + ')'.repeat(25)), { code: 'MAX_IMAP_NESTING_REACHED' });
+    });
+
+    it('Token Parser: E35: a literal marker without a supplied buffer throws ParserError35', async () => {
+        // supplied buffers must match the markers one to one, {0} included
+        await assert.rejects(parser('* X {3}\r\n', { literals: [] }), { code: 'ParserError35' });
+        await assert.rejects(parser('* X {0}\r\n', { literals: [] }), { code: 'ParserError35' });
+        await assert.rejects(parser('* X {0}\r\n {3}\r\n', { literals: [Buffer.alloc(0)] }), { code: 'ParserError35' });
+        assert.deepEqual((await parser('* X {0}\r\n {3}\r\n', { literals: [Buffer.alloc(0), Buffer.from('abc')] })).attributes, [
+            { type: 'LITERAL', value: Buffer.alloc(0) },
+            { type: 'LITERAL', value: Buffer.from('abc') }
+        ]);
+    });
+
+    it('Token Parser: E24: literal marker followed by a bare CR throws ParserError24', async () => {
+        // "}" must be followed by LF or CRLF; a CR alone is not a line break
+        await assert.rejects(parser('* X {3}\rabc'), { code: 'ParserError24' });
+        await assert.rejects(parser('* X {3}\r\rabc'), { code: 'ParserError24' });
+        assert.deepEqual((await parser('* X {3}\r\nabc')).attributes, [{ type: 'LITERAL', value: 'abc' }]);
+    });
+
     // Happy-path tests
 
     /**
@@ -187,7 +218,7 @@ describe('token-parser', () => {
 
     /**
      * Nested lists produce nested arrays in the attributes output.
-     * Input ((a b)) produces: [ [ [ {a}, {b} ] ] ] — the attributes array contains
+     * Input ((a b)) produces: [ [ [ {a}, {b} ] ] ], the attributes array contains
      * one outer list which contains one inner list with two atom elements.
      */
     it('Token Parser: nested lists produce nested arrays', async () => {
@@ -439,4 +470,70 @@ describe('token-parser', () => {
     it('Token Parser: E16: trailing backslash in a flag still throws ParserError16', expectParserError('* LIST (\\Sent\\) "/" "x"', 'ParserError16'));
     it('Token Parser: E16: backslash followed by a space still throws ParserError16', expectParserError('* LIST (\\Sent\\ \\Drafts) "/" "x"', 'ParserError16'));
     it('Token Parser: E16: glued flags outside a list still throw ParserError16', expectParserError('* 1 FETCH \\Seen\\Flagged', 'ParserError16'));
+
+    // Cases found by mutation testing (npm run test:mutation)
+
+    it('Token Parser: E9 reports the position in the whole response line', async () => {
+        // the token parser only sees the attribute part, so the reported position adds the
+        // offset of that part in the line
+        await assert.rejects(parser('* X "abc'), (err: any) => {
+            assert.equal(err.code, 'ParserError9');
+            assert.match(err.message, /at position 7 /);
+            assert.equal(err.parserContext.pos, 7);
+            return true;
+        });
+    });
+
+    it('Token Parser: E9: every unterminated token is refused', async () => {
+        // one open token per input, so no enclosing open list reports it instead
+        for (let input of ['* X "abc', '* X (a', '* 1 FETCH BODY[]<0', '* X {3', '* OK [UIDNEXT 3', '* 1 FETCH BODY[HEADER']) {
+            await assert.rejects(parser(input), { code: 'ParserError9' }, input);
+        }
+    });
+
+    it('Token Parser: REFERRAL response code keeps the whole IMAP URL', async () => {
+        let parsed = await parser('* OK [REFERRAL imap://user@host/INBOX] go there');
+        assert.deepEqual(parsed.attributes, [
+            {
+                type: 'ATOM',
+                value: '',
+                section: [
+                    { type: 'ATOM', value: 'REFERRAL' },
+                    { type: 'ATOM', value: 'imap://user@host/INBOX' }
+                ]
+            },
+            { type: 'TEXT', value: 'go there' }
+        ]);
+    });
+
+    it('Token Parser: 8-bit characters are accepted in atoms, from U+0080 on', async () => {
+        assert.deepEqual((await parser('* X \u0080abc')).attributes, [{ type: 'ATOM', value: '\u0080abc' }]);
+        assert.deepEqual((await parser('* X a\u0080bc')).attributes, [{ type: 'ATOM', value: 'a\u0080bc' }]);
+    });
+
+    it('Token Parser: atoms in a status response code may carry non-atom characters', async () => {
+        let parsed = await parser('* OK [X-FOO a%b] t');
+        assert.deepEqual((parsed.attributes as any)[0].section, [
+            { type: 'ATOM', value: 'X-FOO' },
+            { type: 'ATOM', value: 'a%b' }
+        ]);
+    });
+
+    it('Token Parser: a lone ~ is an atom where a list or section closes after it', async () => {
+        assert.deepEqual((await parser('* X (~)')).attributes, [[{ type: 'ATOM', value: '~' }]]);
+        assert.deepEqual((await parser('* 1 FETCH (BODY[~])')).attributes, [
+            { type: 'ATOM', value: 'FETCH' },
+            [{ type: 'ATOM', value: 'BODY', section: [{ type: 'ATOM', value: '~' }] }]
+        ]);
+    });
+
+    it('Token Parser: E12: ~ followed by a non-atom character inside a list or section', async () => {
+        await assert.rejects(parser('* X (~%)'), { code: 'ParserError12' });
+        await assert.rejects(parser('* 1 FETCH (BODY[~%])'), { code: 'ParserError12' });
+    });
+
+    it('Token Parser: an inline literal exactly at maxLiteralSize is accepted', async () => {
+        assert.deepEqual((await parser('* X {3}\r\nabc', { maxLiteralSize: 3 })).attributes, [{ type: 'LITERAL', value: 'abc' }]);
+        await assert.rejects(parser('* X {3}\r\nabc', { maxLiteralSize: 2 }), { code: 'LiteralTooLarge' });
+    });
 });

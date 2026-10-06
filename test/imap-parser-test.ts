@@ -1323,4 +1323,41 @@ describe('imap-parser', () => {
         assert.ok(err, 'the padded line must fail to parse');
         assert.equal(err && (err as any).parsedTag, 'A6');
     });
+
+    it('IMAP Parser: status text directly after the response code keeps its first character', async () => {
+        // no space between "]" and the text: the text starts right after the bracket
+        let parsed = await parser('A1 OK [ALERT]text here');
+        assert.deepEqual(parsed.attributes, [
+            { type: 'ATOM', value: '', section: [{ type: 'ATOM', value: 'ALERT' }] },
+            { type: 'TEXT', value: 'text here' }
+        ]);
+    });
+
+    it('IMAP Parser: a tag starting with an invalid character is refused', async () => {
+        await assert.rejects(parser(')A1 OK x'), { code: 'ParserError2' });
+    });
+
+    it('IMAP Parser: the Exchange "Server Unavailable." workaround needs both words', async () => {
+        assert.deepEqual(await parser('Server Unavailable. 21'), {
+            tag: '*',
+            command: 'BAD',
+            attributes: [{ type: 'TEXT', value: 'Server Unavailable. 21' }]
+        });
+        // either word alone is an ordinary malformed line
+        await assert.rejects(parser('* Unavailable.'), { code: 'ParserError2' });
+        await assert.rejects(parser('Server Foo{'), { code: 'ParserError2' });
+    });
+
+    it('IMAP Parser: only a bare "+" may end after the tag', async () => {
+        assert.deepEqual(await parser('+'), { tag: '+', command: '' });
+        await assert.rejects(parser('*'), { code: 'ParserError4' });
+        await assert.rejects(parser('A1'), { code: 'ParserError4' });
+    });
+
+    it('IMAP Parser: an inline literal over maxLiteralSize names the limit in the error', async () => {
+        await assert.rejects(parser('* X {5}\r\nabcde', { maxLiteralSize: 2 }), {
+            code: 'LiteralTooLarge',
+            message: 'Literal size 5 exceeds maximum allowed size of 2 bytes'
+        });
+    });
 });

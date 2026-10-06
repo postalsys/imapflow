@@ -249,6 +249,23 @@ export class TokenParser {
             }
         };
 
+        // Whether chr is the closing delimiter of node: ")" ends a LIST, "]" ends a SECTION
+        const closesNode = (c: string, node: TokenNode | undefined): boolean =>
+            !!node && ((c === ')' && node.type === 'LIST') || (c === ']' && node.type === 'SECTION'));
+
+        // ImapStream supplies one buffer per literal marker it framed, {0} included. A marker
+        // without a buffer means the line and its literals do not match up, so fail with a parser
+        // error instead of reading a missing buffer or shifting every later literal by one
+        const takeLiteral = (literals: Buffer[]): Buffer => {
+            if (!literals.length) {
+                let error: ImapFlowError = new Error(`Literal without data at position ${this.pos + i} [E35]`);
+                error.code = 'ParserError35';
+                error.parserContext = { input: this.str, pos: this.pos + i, chr };
+                throw error;
+            }
+            return literals.shift()!;
+        };
+
         // Any ATOM supported char starts a new Atom sequence, otherwise throw an error
         // Allow \ as the first char for atom to support system flags
         // Allow % to support LIST '' %
@@ -344,12 +361,16 @@ export class TokenParser {
                         case '~': {
                             let nextChr = this.str.charAt(i + 1);
                             if (nextChr !== '{') {
-                                if (imapFormalSyntax['ATOM-CHAR']().includes(nextChr)) {
-                                    // '~' not followed by '{' but followed by an ATOM char: treat as ATOM
-                                    this.currentNode = this.createNode(this.currentNode, this.pos + i);
-                                    this.currentNode.type = 'ATOM';
-                                    this.currentNode.value = chr;
-                                    this.state = STATE_ATOM;
+                                // '~' is an ATOM-CHAR itself, so when it does not start a literal8
+                                // it starts an atom, including the one-character atom "~" that a
+                                // space, the end of the line or a closing delimiter ends
+                                if (
+                                    imapFormalSyntax['ATOM-CHAR']().includes(nextChr) ||
+                                    nextChr === ' ' ||
+                                    nextChr === '' ||
+                                    closesNode(nextChr, this.currentNode)
+                                ) {
+                                    startAtom();
                                     break;
                                 }
 
@@ -473,12 +494,9 @@ export class TokenParser {
                     }
 
                     // ')' or ']' terminates the atom AND closes the enclosing LIST or SECTION
-                    if (
-                        this.currentNode.parentNode &&
-                        ((chr === ')' && this.currentNode.parentNode.type === 'LIST') || (chr === ']' && this.currentNode.parentNode.type === 'SECTION'))
-                    ) {
+                    if (closesNode(chr, this.currentNode.parentNode)) {
                         this.currentNode.endPos = this.pos + i - 1;
-                        this.currentNode = this.currentNode.parentNode;
+                        this.currentNode = this.currentNode.parentNode!;
 
                         this.currentNode.isClosed = true;
                         this.currentNode.endPos = this.pos + i;
@@ -678,12 +696,10 @@ export class TokenParser {
                         if (!this.currentNode.literalLength) {
                             // special case where literal content length is 0
                             // close the node right away, do not wait for additional input
-                            if (this.options.literals && this.options.literals.length) {
-                                // ImapStream queues a Buffer for every literal marker it
-                                // extracts, including {0} - consume the queue entry so
-                                // subsequent literals in the same response stay aligned
-                                // with their markers instead of shifting by one
-                                this.currentNode.value = this.options.literals.shift()!;
+                            if (this.options.literals) {
+                                // consume the queue entry of the {0} marker too, so later
+                                // literals in the same response stay aligned with their markers
+                                this.currentNode.value = takeLiteral(this.options.literals);
                             }
                             this.currentNode.endPos = this.pos + i;
                             this.currentNode.isClosed = true;
@@ -692,7 +708,7 @@ export class TokenParser {
                             checkSP();
                         } else if (this.options.literals) {
                             // use the next precached literal values
-                            this.currentNode.value = this.options.literals.shift()!;
+                            this.currentNode.value = takeLiteral(this.options.literals);
 
                             // only APPEND arguments are kept as Buffers
                             /*
@@ -755,11 +771,14 @@ export class TokenParser {
                     this.currentNode.literalLength = (this.currentNode.literalLength || '') + chr;
                     break;
 
-                case STATE_SEQUENCE:
-                    // space finishes the sequence set
-                    if (chr === ' ') {
+                case STATE_SEQUENCE: {
+                    // A space ends the sequence set, and so does the closing delimiter of the
+                    // enclosing list or section ("PARTIAL (1:100 5,7,9)", "[COPYUID 1 1:3 4,5]")
+                    let closesParent = closesNode(chr, this.currentNode.parentNode);
+
+                    if (chr === ' ' || closesParent) {
                         if (!RE_SINGLE_DIGIT.test((this.currentNode.value as string).at(-1)!) && (this.currentNode.value as string).at(-1) !== '*') {
-                            let error: ImapFlowError = new Error(`Unexpected whitespace at position ${this.pos + i} [E27]`);
+                            let error: ImapFlowError = new Error(`Unexpected end of sequence at position ${this.pos + i} [E27: ${JSON.stringify(chr)}]`);
                             error.code = 'ParserError27';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
                             throw error;
@@ -770,7 +789,7 @@ export class TokenParser {
                             (this.currentNode.value as string).at(-1) === '*' &&
                             (this.currentNode.value as string).at(-2) !== ':'
                         ) {
-                            let error: ImapFlowError = new Error(`Unexpected whitespace at position ${this.pos + i} [E28]`);
+                            let error: ImapFlowError = new Error(`Unexpected end of sequence at position ${this.pos + i} [E28: ${JSON.stringify(chr)}]`);
                             error.code = 'ParserError28';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
                             throw error;
@@ -780,17 +799,13 @@ export class TokenParser {
                         this.currentNode.endPos = this.pos + i - 1;
                         this.currentNode = this.currentNode.parentNode!;
                         this.state = STATE_NORMAL;
-                        break;
-                    } else if (this.currentNode.parentNode && chr === ']' && this.currentNode.parentNode.type === 'SECTION') {
-                        this.currentNode.endPos = this.pos + i - 1;
-                        this.currentNode = this.currentNode.parentNode;
 
-                        this.currentNode.isClosed = true;
-                        this.currentNode.endPos = this.pos + i;
-                        this.currentNode = this.currentNode.parentNode!;
-                        this.state = STATE_NORMAL;
-
-                        checkSP();
+                        if (closesParent) {
+                            this.currentNode.isClosed = true;
+                            this.currentNode.endPos = this.pos + i;
+                            this.currentNode = this.currentNode.parentNode!;
+                            checkSP();
+                        }
                         break;
                     }
 
@@ -837,6 +852,7 @@ export class TokenParser {
 
                     this.currentNode.value += chr;
                     break;
+                }
             }
         }
     }

@@ -702,6 +702,46 @@ describe('search-compiler', () => {
             );
         }
     });
+    it('Search Compiler: NOT or a single OR operand that is not a query object throws', () => {
+        // Used to be dropped silently, which turned the filter into a search matching everything
+        let connection = createMockConnection();
+        for (let query of [{ not: 'seen' }, { not: 5 }, { or: ['seen'] }, { or: [true] }]) {
+            assert.throws(
+                () => searchCompiler(connection, query as any),
+                (err: any) => err.code === 'InvalidSearchQuery',
+                JSON.stringify(query)
+            );
+        }
+        // an absent operand is still ignored
+        assert.deepEqual(searchCompiler(connection, { not: undefined, or: [null], seen: true } as any), [{ type: 'ATOM', value: 'SEEN' }]);
+    });
+    it('Search Compiler: only BEFORE and SENTBEFORE move a date with a time of day to the next day', async () => {
+        let connection = createMockConnection();
+        let date = new Date('2026-01-05T10:00:00Z');
+        let compile = async (query: any) =>
+            (await imapCompiler({ tag: 'A', command: 'SEARCH', attributes: searchCompiler(connection, query) as any })).toString();
+        assert.equal(await compile({ since: date }), 'A SEARCH SINCE 05-Jan-2026');
+        assert.equal(await compile({ sentSince: date }), 'A SEARCH SENTSINCE 05-Jan-2026');
+        assert.equal(await compile({ before: date }), 'A SEARCH BEFORE 06-Jan-2026');
+        assert.equal(await compile({ sentBefore: date }), 'A SEARCH SENTBEFORE 06-Jan-2026');
+    });
+    it('Search Compiler: long OR lists nest into binary OR trees with every operand', async () => {
+        let connection = createMockConnection();
+        let compile = async (count: number) =>
+            (
+                await imapCompiler({
+                    tag: 'A',
+                    command: 'SEARCH',
+                    attributes: searchCompiler(connection, { or: Array.from({ length: count }, (_, i) => ({ uid: String(i + 1) })) }) as any
+                })
+            ).toString();
+        assert.equal(await compile(5), 'A SEARCH OR OR OR UID 1 UID 2 OR UID 3 UID 4 UID 5');
+        assert.equal(await compile(7), 'A SEARCH OR OR OR UID 1 UID 2 OR UID 3 UID 4 OR OR UID 5 UID 6 UID 7');
+        assert.equal(await compile(9), 'A SEARCH OR OR OR OR UID 1 UID 2 OR UID 3 UID 4 OR OR UID 5 UID 6 OR UID 7 UID 8 UID 9');
+        // from 11 operands on, the leftover of a deeper level is a pair of pairs, which must stay whole
+        assert.equal(await compile(11), 'A SEARCH OR OR OR OR UID 1 UID 2 OR UID 3 UID 4 OR OR UID 5 UID 6 OR UID 7 UID 8 OR OR UID 9 UID 10 UID 11');
+        assert.equal(await compile(12), 'A SEARCH OR OR OR OR UID 1 UID 2 OR UID 3 UID 4 OR OR UID 5 UID 6 OR UID 7 UID 8 OR OR UID 9 UID 10 OR UID 11 UID 12');
+    });
     it('Search Compiler: NOT and OR operands that compile to tokens are unchanged', () => {
         let connection = createMockConnection();
         assert.deepEqual(searchCompiler(connection, { not: { seen: true, flagged: true } }), [

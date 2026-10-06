@@ -125,31 +125,29 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
         .concat(response.command ? emitEntry(' ' + response.command)! : []);
     let val: string;
     let lastType: string | undefined;
+    // Set right after the compiler writes "(" or "[" itself, so the first element inside gets no
+    // leading space
+    let afterOpener = false;
 
     let walk = async (node: ImapCompileNode, options?: { subArray?: boolean | undefined } | undefined): Promise<void> => {
         options = options || {};
-
-        // Determine whether a space separator is needed before this node.
-        // Inspect the last byte written to decide context.
-        let lastRespEntry = resp.length && resp[resp.length - 1];
-        let lastRespByte: string | number = (lastRespEntry && lastRespEntry.length && lastRespEntry[lastRespEntry.length - 1]) || '';
-        if (typeof lastRespByte === 'number') {
-            lastRespByte = String.fromCharCode(lastRespByte);
-        }
 
         // Add a space separator when:
         // - The previous token was a LITERAL. Literal data ends exactly at its declared length, so
         //   a following token always needs an explicit separator, even though the last written byte
         //   is arbitrary literal content.
-        // - Otherwise: there is something written already (resp is not empty) and the last byte is
-        //   not an opening delimiter ('(', '<' or '['), which suppresses the space.
+        // - Otherwise: there is something written already (resp is not empty) and the compiler did
+        //   not just open a list or a section. This is tracked rather than read back from the last
+        //   written byte: a token value can itself end in "(", "[" or "<" (an atom such as "X["),
+        //   and suppressing the space after it would fuse it with the next argument.
         // A sub-array element in a consecutive-list context never gets one (no space between
         // adjacent lists).
-        if (lastType === 'LITERAL' || (!['(', '<', '['].includes(lastRespByte) && resp.length)) {
+        if (lastType === 'LITERAL' || (!afterOpener && resp.length)) {
             if (!options.subArray) {
                 resp.push(emitEntry(' ')!);
             }
         }
+        afterOpener = false;
 
         if (node && (node as { buffer?: unknown }).buffer && !Buffer.isBuffer(node)) {
             // mongodb binary
@@ -159,6 +157,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
         if (Array.isArray(node)) {
             lastType = 'LIST';
             resp.push(emitEntry('(')!);
+            afterOpener = true;
 
             // check if we need to skip separator WS between two arrays
             let subArray = node.length > 1 && Array.isArray(node[0]);
@@ -171,6 +170,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
             }
 
             resp.push(emitEntry(')')!);
+            afterOpener = false;
             return;
         }
 
@@ -253,19 +253,21 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                 // when logging: the incoming token parser accepts sequence-shaped tokens
                 // this strict grammar rejects (an ESEARCH set like "1:2:3", a folder
                 // name like "12:30:00"), and re-compiling a server response for the log
-                // or for error text must never throw.
-                if (!isLogging && (typeof node.value === 'string' || typeof node.value === 'number' || Buffer.isBuffer(node.value))) {
-                    val = node.value.toString();
-                    if (val && !isValidSequenceSet(val)) {
+                // or for error text must never throw. An empty or missing set is refused
+                // too: it would put nothing on the wire and leave the next argument in its
+                // place.
+                // Emitted raw: the validated alphabet cannot contain a line terminator, and
+                // re-scanning a potentially multi-megabyte set in the choke point would
+                // double the cost of exactly the sets this branch exists for
+                if (!isLogging) {
+                    val = node.value === null || node.value === undefined ? '' : node.value.toString();
+                    if (!isValidSequenceSet(val)) {
                         let error: ImapFlowError = new Error('Invalid sequence set value');
                         error.code = 'InvalidSequenceSet';
                         throw error;
                     }
-                }
-                if (node.value) {
-                    // raw: the validated alphabet cannot contain a line terminator, and
-                    // re-scanning a potentially multi-megabyte set in the choke point
-                    // would double the cost of exactly the sets this branch exists for
+                    resp.push(emitEntry(val, { raw: true })!);
+                } else if (node.value) {
                     resp.push(emitEntry(node.value, { raw: true })!);
                 }
                 break;
@@ -312,12 +314,14 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                 // e.g., BODY[HEADER.FIELDS (Subject)] or BODY[1.MIME]
                 if (node.section) {
                     resp.push(emitEntry('[')!);
+                    afterOpener = true;
 
                     for (let child of node.section) {
                         await walk(child);
                     }
 
                     resp.push(emitEntry(']')!);
+                    afterOpener = false;
                 }
                 // Partial range: emit <origin.length> after the section brackets. Coerced
                 // rather than joined as-is: this is the last token component written
@@ -344,7 +348,8 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
 
     const compiled: Buffer[] = respParts.map(part => Buffer.concat(part));
 
-    return asArray ? compiled : compiled.flatMap(entry => entry);
+    // without asArray there is a single part, returned as is instead of copied
+    return asArray ? compiled : compiled.length === 1 ? compiled[0] : Buffer.concat(compiled);
 }
 
 export default compiler;

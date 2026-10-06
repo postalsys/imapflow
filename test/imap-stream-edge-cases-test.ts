@@ -3,6 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ImapStream } from '../src/handler/imap-stream.js';
+import { frameStream } from './fixtures/stream-frame.js';
 
 /**
  * Helper that wires up the standard readable/next consumer pattern used across tests.
@@ -629,6 +630,146 @@ describe('imap-stream-edge-cases', () => {
                 stream.end(Buffer.from('* 1 FETCH (' + 'X {0}\r\n'.repeat(count) + ')\r\n'));
             },
             1
+        );
+    });
+});
+
+// The framed responses (with their trailingAfterLine flag) and the stream error, if any
+const collect = (stream: ImapStream, chunks: Buffer[]): Promise<{ items: any[]; err: any }> =>
+    frameStream(stream, chunks).then(({ items, error }) => ({ items, err: error }));
+
+describe('imap-stream-edge-cases: pinned behavior', () => {
+    it('reads bytes on the writable side and emits objects on the readable side', () => {
+        const stream = new ImapStream({ cid: 'test' });
+        assert.equal(stream.writableObjectMode, false, 'socket bytes are counted by byte, not by object');
+        assert.equal(stream.readableObjectMode, true);
+        stream.destroy();
+    });
+
+    it('a null logger falls back to the default logger', async () => {
+        const stream = new ImapStream({ cid: 'test', logger: null as any, logRaw: true });
+        assert.equal(typeof stream.log.trace, 'function');
+        const { items, err } = await collect(stream, [Buffer.from('* 1 EXISTS\r\n')]);
+        assert.equal(err, null);
+        assert.equal(items.length, 1);
+    });
+
+    it('logRaw reports the compression and TLS state of the stream', async () => {
+        const traces: any[] = [];
+        const logger: any = { trace: (data: any) => traces.push(data), debug() {}, info() {}, warn() {}, error() {} };
+        const stream = new ImapStream({ cid: 'test', logger, logRaw: true, secureConnection: true });
+        assert.equal(stream.compress, false, 'a new stream is not compressed');
+        stream.write(Buffer.from('* 1 EXISTS\r\n'));
+        stream.compress = true;
+        await collect(stream, [Buffer.from('* 2 EXISTS\r\n')]);
+        assert.deepEqual(
+            traces.map(trace => [trace.compress, trace.secure]),
+            [
+                [false, true],
+                [true, true]
+            ]
+        );
+    });
+
+    it('failStream on an already destroyed stream returns false and raises nothing new', async () => {
+        const stream = new ImapStream({ cid: 'test' });
+        const errors: any[] = [];
+        stream.on('error', err => errors.push(err));
+        assert.equal(stream.failStream(new Error('first')), false);
+        assert.equal(stream.failStream(new Error('second')), false);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(
+            errors.map(err => err.message),
+            ['first']
+        );
+    });
+
+    it('a chunk released by destroy() is not released again by the processing loop', async () => {
+        const stream = new ImapStream({ cid: 'test' });
+        stream.on('error', () => {});
+        let calls = 0;
+        // nobody reads, so processing parks on the push of the first response
+        stream._transform(Buffer.from('* 1 EXISTS\r\n* 2 EXISTS\r\n'), 'binary', () => {
+            calls++;
+        });
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(calls, 0, 'the chunk is still being processed');
+        stream.destroy();
+        await new Promise(resolve => setImmediate(resolve));
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(calls, 1, 'the transform callback runs exactly once');
+    });
+
+    it('a literal marker terminated by a bare LF starts a literal', async () => {
+        const { items, err } = await collect(new ImapStream({ cid: 'test' }), [Buffer.from('* 1 FETCH (BODY[] {3}\nabc)\r\n')]);
+        assert.equal(err, null);
+        assert.equal(items.length, 1);
+        assert.deepEqual(
+            items[0].literals.map((literal: Buffer) => literal.toString()),
+            ['abc']
+        );
+    });
+
+    it('a size without its closing brace is not a literal marker', async () => {
+        const stream = new ImapStream({ cid: 'test' });
+        assert.equal(stream.checkLiteralMarker(Buffer.from('* OK {12\r\n')), false);
+        assert.equal(stream.checkLiteralMarker(Buffer.from('* OK 12}\r\n')), false);
+        const { items } = await collect(stream, [Buffer.from('* OK {12\r\n* 1 EXISTS\r\n')]);
+        assert.deepEqual(
+            items.map(item => item.payload.toString()),
+            ['* OK {12', '* 1 EXISTS']
+        );
+    });
+
+    it('a 19 digit size is read and reported, a 20 digit size is refused unread', async () => {
+        for (const [digits, literalSize] of [
+            ['1' + '0'.repeat(18), 1e18],
+            ['1' + '0'.repeat(19), Infinity]
+        ] as const) {
+            const stream = new ImapStream({ cid: 'test' });
+            let error: any = null;
+            stream.on('error', err => {
+                error = err;
+            });
+            assert.equal(stream.checkLiteralMarker(Buffer.from(`* OK {${digits}}\r\n`)), false);
+            await new Promise(resolve => setImmediate(resolve));
+            assert.equal(error && error.code, 'LiteralTooLarge');
+            assert.equal(error.literalSize, literalSize, `${digits.length} digits`);
+        }
+    });
+
+    it('a response of exactly maxResponseSize bytes is accepted, also when its line is split', async () => {
+        const line = '* OK ' + 'a'.repeat(13) + '\r\n';
+        assert.equal(line.length, 20);
+        for (const chunks of [[line], [line.slice(0, 10), line.slice(10)]]) {
+            const { items, err } = await collect(
+                new ImapStream({ cid: 'test', maxResponseSize: 20 }),
+                chunks.map(chunk => Buffer.from(chunk))
+            );
+            assert.equal(err, null, `chunks ${JSON.stringify(chunks)}`);
+            assert.equal(items.length, 1);
+        }
+        const { err } = await collect(new ImapStream({ cid: 'test', maxResponseSize: 19 }), [Buffer.from(line)]);
+        assert.equal(err && err.code, 'ResponseTooLarge');
+    });
+
+    it('nothing is processed once the stream is destroyed', async () => {
+        const stream = new ImapStream({ cid: 'test' });
+        stream.on('error', () => {});
+        stream.destroy();
+        assert.equal(await stream.processChunkSegment(Buffer.from('* 1 EXISTS\r\n'), 0), null);
+        assert.equal(stream.readableLength, 0);
+    });
+
+    it('trailingAfterLine tells whether more input followed a response', async () => {
+        const { items } = await collect(new ImapStream({ cid: 'test' }), [Buffer.from('* 1 EXISTS\r\n* 2 EXISTS\r\n'), Buffer.from('* 3 EXISTS\r\n')]);
+        assert.deepEqual(
+            items.map(item => [item.payload.toString(), item.trailingAfterLine]),
+            [
+                ['* 1 EXISTS', true],
+                ['* 2 EXISTS', false],
+                ['* 3 EXISTS', false]
+            ]
         );
     });
 });

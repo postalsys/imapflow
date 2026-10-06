@@ -79,17 +79,35 @@ describe('imap-compiler', () => {
             ).toString(),
             '* CMD 0'
         ));
-    it('IMAP Compiler: unrecognized value type compiles to empty buffer', async () => {
-        // A SEQUENCE node whose value is neither string/number/Buffer falls through
-        // formatRespEntry to an empty Buffer rather than throwing.
-        let out = (
-            await (compiler as any)({
+    it('IMAP Compiler: a sequence set that is not a string, number or Buffer is refused', async () => {
+        // Writing nothing would leave the next argument in the sequence set's place
+        await assert.rejects(
+            (compiler as any)({
                 tag: '*',
                 command: 'CMD',
                 attributes: [{ type: 'SEQUENCE', value: { unexpected: true } }]
-            })
-        ).toString();
-        assert.equal(out, '* CMD ');
+            }),
+            { code: 'InvalidSequenceSet' }
+        );
+    });
+    it('IMAP Compiler: an empty or missing sequence set is refused', async () => {
+        for (let value of ['', null, undefined]) {
+            await assert.rejects(compiler({ tag: 'A', command: 'UID FETCH', attributes: [{ type: 'SEQUENCE', value }, 'X'] }), { code: 'InvalidSequenceSet' });
+        }
+    });
+    it('IMAP Compiler: a sequence set of 0 is written, not dropped', async () => {
+        assert.equal((await compiler({ tag: 'A', command: 'CMD', attributes: [{ type: 'SEQUENCE', value: 0 }] })).toString(), 'A CMD 0');
+    });
+    it('IMAP Compiler: an atom ending in an opening delimiter does not swallow the next separator', async () => {
+        assert.equal(
+            (await compiler({ tag: 'A', command: 'CMD', attributes: [{ type: 'ATOM', value: 'X[' }, { type: 'ATOM', value: 'D<' }, ''] })).toString(),
+            'A CMD X[ D< ""'
+        );
+    });
+    it('IMAP Compiler: non-array output is a single Buffer', async () => {
+        let out = await compiler({ tag: 'A', command: 'CMD', attributes: [{ type: 'LITERAL', value: 'abc' }, 'x'] });
+        assert.ok(Buffer.isBuffer(out));
+        assert.equal(out.toString(), 'A CMD {3}\r\nabc "x"');
     });
     it('IMAP Compiler: SECTION', async () =>
         assert.equal(
@@ -696,5 +714,37 @@ describe('imap-compiler', () => {
             )
         ).toString();
         assert.ok(compiled.includes('\\r\\n'), 'control characters stay escaped for the log');
+    });
+
+    it('IMAP Compiler: a lone CR in the tag or command name is refused', async () => {
+        // a bare CR ends the line for some servers, so it counts as a line terminator too
+        await assert.rejects(compiler({ tag: 'A\r', command: 'NOOP' }), { code: 'InvalidTokenValue' });
+        await assert.rejects(compiler({ tag: 'A', command: 'NOOP\rB' }), { code: 'InvalidTokenValue' });
+    });
+    it('IMAP Compiler: logging shortens strings longer than 100 characters only', async () => {
+        let s100 = 'x'.repeat(100);
+        for (let value of [s100, { type: 'STRING', value: s100 }]) {
+            assert.equal((await compiler({ tag: 'A', command: 'X', attributes: [value as any] }, { isLogging: true })).toString(), `A X "${s100}"`);
+        }
+        for (let value of [s100 + 'x', { type: 'STRING', value: s100 + 'x' }]) {
+            assert.equal((await compiler({ tag: 'A', command: 'X', attributes: [value as any] }, { isLogging: true })).toString(), 'A X "(* 101B string *)"');
+        }
+    });
+    it('IMAP Compiler: a literal without a value is written as an empty literal', async () => {
+        assert.equal((await compiler({ tag: 'A', command: 'X', attributes: [{ type: 'LITERAL', value: null }] })).toString(), 'A X {0}\r\n');
+    });
+    it('IMAP Compiler: synchronizing literal data may carry line breaks in array mode', async () => {
+        let parts = await compiler({ tag: 'A', command: 'X', attributes: [{ type: 'LITERAL', value: 'a\r\nb' }, 'z'] }, { asArray: true });
+        assert.deepEqual(
+            parts.map(part => part.toString()),
+            ['A X {4}\r\n', 'a\r\nb "z"']
+        );
+    });
+    it('IMAP Compiler: an empty atom is quoted, an empty atom with a section is only the section', async () => {
+        assert.equal((await compiler({ tag: 'A', command: 'X', attributes: [{ type: 'ATOM', value: '' }] })).toString(), 'A X ""');
+        assert.equal(
+            (await compiler({ tag: 'A', command: 'X', attributes: [{ type: 'ATOM', value: '', section: [{ type: 'ATOM', value: 'ALERT' }] }] })).toString(),
+            'A X [ALERT]'
+        );
     });
 });
