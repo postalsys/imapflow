@@ -913,8 +913,12 @@ describe('imap-parser', () => {
     it('IMAP Parser: Sequence: fail non-range wildchar 2', async () => {
         await assert.rejects(async () => assert.ok(await parser('TAG1 CMD 5,* TEST')));
     });
-    it('IMAP Parser: Sequence: failextra comma', async () => {
-        await assert.rejects(async () => assert.ok(await parser('TAG1 CMD 5, TEST')));
+    it('IMAP Parser: Sequence: a trailing comma makes the token an atom', async () => {
+        // "5," is no sequence set, but "," is an ATOM-CHAR, so it is a valid atom
+        assert.deepEqual((await parser('TAG1 CMD 5, TEST')).attributes, [
+            { type: 'ATOM', value: '5,' },
+            { type: 'ATOM', value: 'TEST' }
+        ]);
     });
     it('IMAP Parser: escaped quotes', async () =>
         assert.deepEqual((await parser('* 331 FETCH (ENVELOPE ("=?ISO-8859-1?Q?\\"G=FCnter__Hammerl\\"?="))')).attributes, [

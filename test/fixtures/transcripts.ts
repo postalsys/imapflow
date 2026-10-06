@@ -228,5 +228,67 @@ export const transcripts: QuirkTranscript[] = [
             assert.equal(status.messages, 12);
             assert.equal(status.uidNext, 99);
         }
+    },
+    {
+        name: 'Dovecot sends digit-led mailbox names and keywords unquoted',
+        origin: 'Dovecot 2.4.4, src/handler/token-parser.ts digit-led atom fallback',
+        transcript: `
+            S: * OK [CAPABILITY IMAP4rev1 LITERAL+ SASL-IR LOGIN-REFERRALS ID ENABLE IDLE AUTH=PLAIN] Dovecot ready.
+            C: ID (
+            S: * ID ("name" "Dovecot" "version" "2.4.4")
+            S: TAG OK ID completed.
+            C: AUTHENTICATE PLAIN
+            S: TAG OK [CAPABILITY IMAP4rev1 SASL-IR LOGIN-REFERRALS ID ENABLE IDLE NAMESPACE UIDPLUS CHILDREN UNSELECT MOVE] Logged in
+            C: NAMESPACE
+            S: * NAMESPACE (("" "/")) NIL NIL
+            S: TAG OK Namespace completed.
+            C: LIST "" "*"
+            S: * LIST (\\HasNoChildren) "/" 1,a
+            S: * LIST (\\HasNoChildren) "/" 2024:Q1
+            S: * LIST (\\HasNoChildren) "/" 10:
+            S: * LIST (\\HasNoChildren) "/" 12:30:00
+            S: * LIST (\\HasNoChildren) "/" INBOX
+            S: TAG OK List completed.
+            C: LSUB "" "*"
+            S: * LSUB () "/" 2024:Q1
+            S: * LSUB () "/" INBOX
+            S: TAG OK Lsub completed.
+            C: STATUS 2024:Q1 (MESSAGES UNSEEN)
+            S: * STATUS 2024:Q1 (MESSAGES 4 UNSEEN 1)
+            S: TAG OK Status completed.
+            C: SELECT INBOX
+            S: * FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft 1:x 2024:taxes)
+            S: * OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft 1:x 2024:taxes \\*)] Flags permitted.
+            S: * 2 EXISTS
+            S: * OK [UIDVALIDITY 1791276000] UIDs valid
+            S: * OK [UIDNEXT 3] Predicted next UID
+            S: TAG OK [READ-WRITE] Select completed.
+            C: FETCH 1:* (FLAGS UID)
+            S: * 1 FETCH (UID 1 FLAGS (\\Seen 1:x))
+            S: * 2 FETCH (UID 2 FLAGS (2024:taxes))
+            S: TAG OK Fetch completed.
+        `,
+        async run(client) {
+            const paths = (await client.list()).map(entry => entry.path).sort();
+            assert.deepEqual(paths, ['1,a', '10:', '12:30:00', '2024:Q1', 'INBOX']);
+
+            const status = await client.status('2024:Q1', { messages: true, unseen: true });
+            assert.ok(status);
+            assert.equal(status.messages, 4);
+            assert.equal(status.unseen, 1);
+
+            await client.mailboxOpen('INBOX');
+            assert.ok(client.mailbox && client.mailbox.flags.has('2024:taxes'));
+            assert.ok(client.mailbox && client.mailbox.permanentFlags?.has('1:x'));
+
+            const messages = await client.fetchAll('1:*', { flags: true });
+            assert.deepEqual(
+                messages.map(message => [message.uid, [...(message.flags || [])]]),
+                [
+                    [1, ['\\Seen', '1:x']],
+                    [2, ['2024:taxes']]
+                ]
+            );
+        }
     }
 ];

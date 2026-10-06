@@ -13,7 +13,6 @@ const STATE_PARTIAL = 0x004;
 const STATE_SEQUENCE = 0x005;
 const STATE_STRING = 0x006;
 
-const RE_DIGITS = /^\d+$/;
 const RE_SINGLE_DIGIT = /^\d$/;
 
 // Prevents stack overflow from maliciously crafted deeply-nested IMAP input (e.g., (((((...))))))
@@ -253,6 +252,53 @@ export class TokenParser {
         const closesNode = (c: string, node: TokenNode | undefined): boolean =>
             !!node && ((c === ')' && node.type === 'LIST') || (c === ']' && node.type === 'SECTION'));
 
+        // Facts about the ATOM, SEQUENCE or PARTIAL token being read, kept up to date as its
+        // characters are appended. Reading them back from the value instead (value.at(-1),
+        // value.includes('*'), a regex test) makes V8 flatten the string built with += on every
+        // character, which is quadratic in the token length, and the server decides that length:
+        // a 600 KB ESEARCH result took seconds of event loop time
+        let tokenLength = 0;
+        let tokenLast = '';
+        let tokenPrev = '';
+        let tokenDigitsOnly = true;
+        let tokenHasStar = false;
+        let tokenHasDot = false;
+
+        const appendToToken = (c: string): void => {
+            this.currentNode.value += c;
+            tokenLength++;
+            tokenPrev = tokenLast;
+            tokenLast = c;
+            tokenDigitsOnly = tokenDigitsOnly && RE_SINGLE_DIGIT.test(c);
+            tokenHasStar = tokenHasStar || c === '*';
+            tokenHasDot = tokenHasDot || c === '.';
+        };
+
+        // A digit-led token is only a guess at a sequence set. ":" and "," are ATOM-CHARs, so a
+        // server sends a mailbox name, keyword or label such as "2024:Q1" or "1,a" unquoted, and
+        // rejecting it would drop the whole response line: the mailbox missing from LIST, the
+        // message missing from FETCH. When the sequence grammar breaks, such a token is read on as
+        // an atom, and the atom rules decide whether the current character is acceptable. A token
+        // holding "*" can not be an atom ("*" is not an ATOM-CHAR), so it keeps the sequence errors
+        const continueAsAtom = (): void => {
+            this.currentNode.type = 'ATOM';
+            this.state = STATE_ATOM;
+            // read the current character again, in STATE_ATOM
+            i--;
+        };
+
+        // Starts the value of the current node as a new token, with its first character if any
+        const startToken = (first?: string): void => {
+            this.currentNode.value = '';
+            tokenLength = 0;
+            tokenLast = tokenPrev = '';
+            tokenDigitsOnly = true;
+            tokenHasStar = tokenHasDot = false;
+            if (first) {
+                appendToToken(first);
+            }
+        };
+
         // ImapStream supplies one buffer per literal marker it framed, {0} included. A marker
         // without a buffer means the line and its literals do not match up, so fail with a parser
         // error instead of reading a missing buffer or shifting every later literal by one
@@ -282,7 +328,7 @@ export class TokenParser {
 
             this.currentNode = this.createNode(this.currentNode, this.pos + i);
             this.currentNode.type = 'ATOM';
-            this.currentNode.value = chr;
+            startToken(chr);
             this.state = STATE_ATOM;
         };
 
@@ -346,11 +392,12 @@ export class TokenParser {
                             if (this.str.charAt(i - 1) !== ']') {
                                 this.currentNode = this.createNode(this.currentNode, this.pos + i);
                                 this.currentNode.type = 'ATOM';
-                                this.currentNode.value = chr;
+                                startToken(chr);
                                 this.state = STATE_ATOM;
                             } else {
                                 this.currentNode = this.createNode(this.currentNode, this.pos + i);
                                 this.currentNode.type = 'PARTIAL';
+                                startToken();
                                 this.state = STATE_PARTIAL;
                                 this.currentNode.isClosed = false;
                             }
@@ -399,7 +446,7 @@ export class TokenParser {
                         case '*':
                             this.currentNode = this.createNode(this.currentNode, this.pos + i);
                             this.currentNode.type = 'SEQUENCE';
-                            this.currentNode.value = chr;
+                            startToken(chr);
                             this.currentNode.isClosed = false;
                             this.state = STATE_SEQUENCE;
                             break;
@@ -536,7 +583,7 @@ export class TokenParser {
 
                     // If the atom so far is all digits and we see ',' or ':', it is actually
                     // a sequence set (e.g., "1:5" or "1,3,5"), so reclassify and switch state
-                    if ((chr === ',' || chr === ':') && RE_DIGITS.test(this.currentNode.value as string)) {
+                    if ((chr === ',' || chr === ':') && tokenLength && tokenDigitsOnly) {
                         this.currentNode.type = 'SEQUENCE';
                         this.currentNode.isClosed = true;
                         this.state = STATE_SEQUENCE;
@@ -544,7 +591,11 @@ export class TokenParser {
 
                     // [ starts a section group for this element
                     // Allowed only for selected elements, otherwise falls through to regular ATOM processing
-                    if (chr === '[' && ['BODY', 'BODY.PEEK', 'BINARY', 'BINARY.PEEK'].includes((this.currentNode.value as string).toUpperCase())) {
+                    if (
+                        chr === '[' &&
+                        tokenLength <= 11 &&
+                        ['BODY', 'BODY.PEEK', 'BINARY', 'BINARY.PEEK'].includes((this.currentNode.value as string).toUpperCase())
+                    ) {
                         this.currentNode.endPos = this.pos + i;
                         this.currentNode = this.createNode(this.currentNode.parentNode, this.pos + i);
                         this.currentNode.type = 'SECTION';
@@ -572,7 +623,7 @@ export class TokenParser {
                         throw error;
                     }
 
-                    this.currentNode.value += chr;
+                    appendToToken(chr);
                     break;
 
                 case STATE_STRING:
@@ -604,7 +655,7 @@ export class TokenParser {
 
                 case STATE_PARTIAL:
                     if (chr === '>') {
-                        if ((this.currentNode.value as string).at(-1) === '.') {
+                        if (tokenLast === '.') {
                             let error: ImapFlowError = new Error(`Unexpected end of partial at position ${this.pos + i} [E19]`);
                             error.code = 'ParserError19';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
@@ -618,7 +669,7 @@ export class TokenParser {
                         break;
                     }
 
-                    if (chr === '.' && (this.currentNode.value === '' || (this.currentNode.value as string).includes('.'))) {
+                    if (chr === '.' && (!tokenLength || tokenHasDot)) {
                         let error: ImapFlowError = new Error(`Unexpected partial separator . at position ${this.pos + i} [E20]`);
                         error.code = 'ParserError20';
                         error.parserContext = { input: this.str, pos: this.pos + i, chr };
@@ -632,14 +683,14 @@ export class TokenParser {
                         throw error;
                     }
 
-                    if ((this.currentNode.value === '0' || (this.currentNode.value as string).endsWith('.0')) && chr !== '.') {
+                    if (tokenLast === '0' && (tokenLength === 1 || tokenPrev === '.') && chr !== '.') {
                         let error: ImapFlowError = new Error(`Invalid partial at position ${this.pos + i} [E22: ${JSON.stringify(chr)}]`);
                         error.code = 'ParserError22';
                         error.parserContext = { input: this.str, pos: this.pos + i, chr };
                         throw error;
                     }
 
-                    this.currentNode.value += chr;
+                    appendToToken(chr);
                     break;
 
                 case STATE_LITERAL:
@@ -777,18 +828,19 @@ export class TokenParser {
                     let closesParent = closesNode(chr, this.currentNode.parentNode);
 
                     if (chr === ' ' || closesParent) {
-                        if (!RE_SINGLE_DIGIT.test((this.currentNode.value as string).at(-1)!) && (this.currentNode.value as string).at(-1) !== '*') {
+                        if (!RE_SINGLE_DIGIT.test(tokenLast) && tokenLast !== '*') {
+                            if (!tokenHasStar) {
+                                // a dangling separator, "10:" or "1,"
+                                continueAsAtom();
+                                break;
+                            }
                             let error: ImapFlowError = new Error(`Unexpected end of sequence at position ${this.pos + i} [E27: ${JSON.stringify(chr)}]`);
                             error.code = 'ParserError27';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
                             throw error;
                         }
 
-                        if (
-                            this.currentNode.value !== '*' &&
-                            (this.currentNode.value as string).at(-1) === '*' &&
-                            (this.currentNode.value as string).at(-2) !== ':'
-                        ) {
+                        if (this.currentNode.value !== '*' && tokenLast === '*' && tokenPrev !== ':') {
                             let error: ImapFlowError = new Error(`Unexpected end of sequence at position ${this.pos + i} [E28: ${JSON.stringify(chr)}]`);
                             error.code = 'ParserError28';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
@@ -810,50 +862,67 @@ export class TokenParser {
                     }
 
                     if (chr === ':') {
-                        if (!RE_SINGLE_DIGIT.test((this.currentNode.value as string).at(-1)!) && (this.currentNode.value as string).at(-1) !== '*') {
+                        if (!RE_SINGLE_DIGIT.test(tokenLast) && tokenLast !== '*') {
+                            if (!tokenHasStar) {
+                                continueAsAtom();
+                                break;
+                            }
                             let error: ImapFlowError = new Error(`Unexpected range separator : at position ${this.pos + i} [E29]`);
                             error.code = 'ParserError29';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
                             throw error;
                         }
                     } else if (chr === '*') {
-                        if (![',', ':'].includes((this.currentNode.value as string).at(-1)!)) {
+                        if (![',', ':'].includes(tokenLast)) {
                             let error: ImapFlowError = new Error(`Unexpected range wildcard at position ${this.pos + i} [E30]`);
                             error.code = 'ParserError30';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
                             throw error;
                         }
                     } else if (chr === ',') {
-                        if (!RE_SINGLE_DIGIT.test((this.currentNode.value as string).at(-1)!) && (this.currentNode.value as string).at(-1) !== '*') {
+                        if (!RE_SINGLE_DIGIT.test(tokenLast) && tokenLast !== '*') {
+                            if (!tokenHasStar) {
+                                continueAsAtom();
+                                break;
+                            }
                             let error: ImapFlowError = new Error(`Unexpected sequence separator , at position ${this.pos + i} [E31]`);
                             error.code = 'ParserError31';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
                             throw error;
                         }
-                        if ((this.currentNode.value as string).at(-1) === '*' && (this.currentNode.value as string).at(-2) !== ':') {
+                        if (tokenLast === '*' && tokenPrev !== ':') {
                             let error: ImapFlowError = new Error(`Unexpected sequence separator , at position ${this.pos + i} [E32]`);
                             error.code = 'ParserError32';
                             error.parserContext = { input: this.str, pos: this.pos + i, chr };
                             throw error;
                         }
                     } else if (!RE_SINGLE_DIGIT.test(chr)) {
+                        if (!tokenHasStar) {
+                            continueAsAtom();
+                            break;
+                        }
                         let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E33: ${JSON.stringify(chr)}]`);
                         error.code = 'ParserError33';
                         error.parserContext = { input: this.str, pos: this.pos + i, chr };
                         throw error;
                     }
 
-                    if (RE_SINGLE_DIGIT.test(chr) && (this.currentNode.value as string).at(-1) === '*') {
+                    if (RE_SINGLE_DIGIT.test(chr) && tokenLast === '*') {
                         let error: ImapFlowError = new Error(`Unexpected number at position ${this.pos + i} [E34: ${JSON.stringify(chr)}]`);
                         error.code = 'ParserError34';
                         error.parserContext = { input: this.str, pos: this.pos + i, chr };
                         throw error;
                     }
 
-                    this.currentNode.value += chr;
+                    appendToToken(chr);
                     break;
                 }
             }
+        }
+
+        // the same applies to a digit-led token that ends the input on a dangling separator ("10:")
+        if (this.state === STATE_SEQUENCE && (tokenLast === ':' || tokenLast === ',') && !tokenHasStar) {
+            this.currentNode.type = 'ATOM';
         }
     }
 }

@@ -163,21 +163,7 @@ describe('parser fuzzing', () => {
             const framed = await frame([Buffer.concat([compiled, Buffer.from('\r\n')])]);
             assert.equal(framed.error, null, compiledContext);
             assert.equal(framed.items.length, 1, `${context}: command split into ${framed.items.length} ${show(compiled)}`);
-            let parsed: ImapResponse;
-            try {
-                parsed = await parse(framed.items[0]!);
-            } catch (err) {
-                // The response parser reads a digit-led token with ":" or "," as a sequence set and
-                // holds it to the sequence grammar (E29-E34), so an atom like "1:a", valid on the
-                // wire, does not read back. Any other parse failure is a compiler bug
-                assertCodedError(err, context);
-                assert.match((err as ImapFlowError).code!, /^ParserError(29|3[0-4])$/, compiledContext);
-                assert.ok(
-                    attributes.some(attr => attr && attr.type === 'ATOM' && /^\d+[:,]/.test(attr.value)),
-                    compiledContext
-                );
-                continue;
-            }
+            const parsed = await parse(framed.items[0]!);
             assert.equal(parsed.tag, command.tag, context);
             assert.equal(parsed.command, command.command, context);
             assert.equal((parsed.attributes || []).length, attributes.length, compiledContext);

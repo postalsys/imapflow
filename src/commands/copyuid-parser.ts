@@ -1,6 +1,22 @@
 import { expandRange, parseBigIntValue } from '../tools.js';
-import type { ImapAttributeList, ImapResponse } from '../handler/types.js';
+import type { ImapAttribute, ImapAttributeList, ImapResponse } from '../handler/types.js';
 import type { CopyResponseObject } from '../types.js';
+
+/**
+ * Whether a value is a complete uid-set (RFC 4315): comma separated UIDs and UID ranges. The UID
+ * map pairs the source and destination sets by position, so a set with a malformed element must
+ * be refused as a whole: skipping the element, as expandRange() does, would shift every UID after
+ * it onto the wrong counterpart. Checked per element, as a whole-set regex with an unbounded
+ * repeat can overflow the regex engine on very long sets.
+ */
+const UID_SET_ELEMENT = /^\d+(:\d+)?$/;
+const isUidSet = (value: unknown): value is string => typeof value === 'string' && value.split(',').every(part => UID_SET_ELEMENT.test(part));
+
+// The UIDs of a uid-set attribute, or false when the attribute is not a complete uid-set
+const uidSetValues = (attribute: ImapAttribute | undefined): number[] | false => {
+    const value = attribute && attribute.value;
+    return isUidSet(value) ? expandRange(value) : false;
+};
 
 /**
  * Parses COPYUID response code from an IMAP response (RFC 4315).
@@ -28,8 +44,8 @@ export function parseCopyUid(response: ImapResponse, map: CopyResponseObject): v
         map.uidValidity = uidValidity;
     }
 
-    const sourceUids = codeSection[2] && typeof codeSection[2].value === 'string' ? expandRange(codeSection[2].value) : false;
-    const destinationUids = codeSection[3] && typeof codeSection[3].value === 'string' ? expandRange(codeSection[3].value) : false;
+    const sourceUids = uidSetValues(codeSection[2]);
+    const destinationUids = uidSetValues(codeSection[3]);
     if (sourceUids && destinationUids && sourceUids.length === destinationUids.length) {
         map.uidMap = new Map(sourceUids.map((uid: number, i: number): [number, number] => [uid, destinationUids[i]]));
     }

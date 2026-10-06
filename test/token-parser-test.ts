@@ -290,21 +290,13 @@ describe('token-parser', () => {
     });
 
     /**
-     * E29: Range separator ':' after a character that is not a digit or '*'.
-     * Input "1,:5" starts as ATOM "1", ',' triggers SEQUENCE reclassification and
-     * appends ',' (value becomes "1,"). Then ':' fires E29 because last char ','
-     * is not a digit or '*'.
+     * E29: Range separator ':' after a character that is not a digit or '*', in a token holding
+     * '*'. Input "1:*,:" passes "1:*," (a range ending in '*' may be followed by ','), then ':'
+     * after ',' fires E29. A token without '*' is read as an atom instead, see the
+     * "digit-led atoms" tests below.
      */
     it('Token Parser: E29: range separator after non-digit/non-star throws ParserError29', async () => {
-        let err: any;
-        try {
-            await parser('* FETCH 1,:5');
-        } catch (e) {
-            err = e;
-        }
-        if (!err) throw new Error('Expected parser to throw but it did not');
-        assert.ok(err, 'expected an error to be thrown');
-        assert.equal(err.code, 'ParserError29');
+        await assert.rejects(parser('* FETCH 1:*,:5'), { code: 'ParserError29' });
     });
 
     /**
@@ -325,20 +317,12 @@ describe('token-parser', () => {
     });
 
     /**
-     * E31: Separator ',' after a character that is not a digit or '*'.
-     * Input "1:,5" enters SEQUENCE after "1" and appends ':' (value "1:").
-     * Then ',' fires E31 because last char ':' is not a digit or '*'.
+     * E31: Separator ',' after a character that is not a digit or '*', in a token holding '*'.
+     * Input "5:*:," appends ':' after '*' (value "5:*:"), then ',' fires E31 because the last
+     * char ':' is not a digit or '*'.
      */
     it('Token Parser: E31: comma after colon throws ParserError31', async () => {
-        let err: any;
-        try {
-            await parser('* FETCH 1:,5');
-        } catch (e) {
-            err = e;
-        }
-        if (!err) throw new Error('Expected parser to throw but it did not');
-        assert.ok(err, 'expected an error to be thrown');
-        assert.equal(err.code, 'ParserError31');
+        await assert.rejects(parser('* FETCH 5:*:,5'), { code: 'ParserError31' });
     });
 
     /**
@@ -360,20 +344,11 @@ describe('token-parser', () => {
     });
 
     /**
-     * E33: Non-digit, non-special character in sequence position.
-     * Input "1:a" enters SEQUENCE after "1" and appends ':' (value "1:").
-     * Then 'a' is not a digit, not ':', not '*', not ',' so E33 fires.
+     * E33: Non-digit, non-special character in a sequence holding '*'. Input "1:*a" can not be
+     * an atom ('*' is not an ATOM-CHAR), so 'a' fires E33.
      */
     it('Token Parser: E33: non-digit non-special char in sequence throws ParserError33', async () => {
-        let err: any;
-        try {
-            await parser('* FETCH 1:a');
-        } catch (e) {
-            err = e;
-        }
-        if (!err) throw new Error('Expected parser to throw but it did not');
-        assert.ok(err, 'expected an error to be thrown');
-        assert.equal(err.code, 'ParserError33');
+        await assert.rejects(parser('* FETCH 1:*a'), { code: 'ParserError33' });
     });
 
     /**
@@ -430,7 +405,10 @@ describe('token-parser', () => {
     it('Token Parser: E21: non-digit in partial throws ParserError21', expectParserError('* 1 FETCH BODY[]<0.x>', 'ParserError21'));
     it('Token Parser: E22: invalid leading-zero partial throws ParserError22', expectParserError('* 1 FETCH BODY[]<00>', 'ParserError22'));
     it('Token Parser: E24: literal prefix not followed by CRLF throws ParserError24', expectParserError('* 1 FETCH {3}xyz', 'ParserError24'));
-    it('Token Parser: E27: whitespace mid-sequence throws ParserError27', expectParserError('* 1 FETCH 1: 2', 'ParserError27'));
+    it(
+        'Token Parser: E27: whitespace after a dangling separator in a starred sequence throws ParserError27',
+        expectParserError('* 1 FETCH 1:*, 2', 'ParserError27')
+    );
     it('Token Parser: bare * is normalized to an ATOM', async () => {
         let r: any = await parser('* 1 FETCH *');
         let last: any = r.attributes[r.attributes!.length - 1];
@@ -536,4 +514,169 @@ describe('token-parser', () => {
         assert.deepEqual((await parser('* X {3}\r\nabc', { maxLiteralSize: 3 })).attributes, [{ type: 'LITERAL', value: 'abc' }]);
         await assert.rejects(parser('* X {3}\r\nabc', { maxLiteralSize: 2 }), { code: 'LiteralTooLarge' });
     });
+});
+
+// A digit-led token is read as a sequence set only while it follows the sequence grammar. ":" and
+// "," are ATOM-CHARs, so servers send mailbox names, keywords and labels like "2024:Q1" unquoted
+// (Dovecot 2.4 does), and such a token must parse as an atom wherever it stands.
+describe('token-parser: digit-led atoms', () => {
+    // tokens that start like a sequence set but are not one
+    const atoms = ['2024:Q1', '1,a', '1:a', '10:', '10,', '1::2', '1,,2', '1:,5', '1,:5', '12:30:x', '1:2:3a', '1,2,b', '7:-1', '2024:Q1.Reports', '1:été'];
+
+    // every place a token can end: the end of the line, a space, a list or section delimiter
+    const positions: Array<[string, (token: string) => string, (token: any) => any]> = [
+        ['at the end of the line', token => `* LIST () "/" ${token}`, token => [[], { type: 'STRING', value: '/' }, token]],
+        [
+            'before a space',
+            token => `* STATUS ${token} (MESSAGES 3)`,
+            token => [
+                token,
+                [
+                    { type: 'ATOM', value: 'MESSAGES' },
+                    { type: 'ATOM', value: '3' }
+                ]
+            ]
+        ],
+        ['last in a list', token => `* FLAGS (\\Seen ${token})`, token => [[{ type: 'ATOM', value: '\\Seen' }, token]]],
+        ['first in a list', token => `* FLAGS (${token} \\Seen)`, token => [[token, { type: 'ATOM', value: '\\Seen' }]]],
+        [
+            'alone in a list',
+            token => `* 1 FETCH (X-GM-LABELS (${token}))`,
+            token => [{ type: 'ATOM', value: 'FETCH' }, [{ type: 'ATOM', value: 'X-GM-LABELS' }, [token]]]
+        ],
+        [
+            'last in a response code',
+            token => `* OK [PERMANENTFLAGS (\\Seen ${token})] Limited`,
+            token => [
+                { type: 'ATOM', value: '', section: [{ type: 'ATOM', value: 'PERMANENTFLAGS' }, [{ type: 'ATOM', value: '\\Seen' }, token]] },
+                { type: 'TEXT', value: 'Limited' }
+            ]
+        ],
+        [
+            'last in a section',
+            token => `* 1 FETCH (BODY[${token}] NIL)`,
+            token => [{ type: 'ATOM', value: 'FETCH' }, [{ type: 'ATOM', value: 'BODY', section: [token] }, null]]
+        ]
+    ];
+
+    for (const value of atoms) {
+        for (const [where, line, expected] of positions) {
+            it(`reads ${JSON.stringify(value)} ${where} as an atom`, async () => {
+                assert.deepEqual((await parser(line(value))).attributes, expected({ type: 'ATOM', value }));
+            });
+        }
+    }
+
+    // well-formed sequence sets are still sequence sets, in the same positions
+    for (const value of ['1:5', '1,3:5,10', '5:*', '1:*,7', '12:30:00', '4294967295:1']) {
+        for (const [where, line, expected] of positions) {
+            it(`keeps the sequence set ${JSON.stringify(value)} ${where}`, async () => {
+                assert.deepEqual((await parser(line(value))).attributes, expected({ type: 'SEQUENCE', value }));
+            });
+        }
+    }
+
+    it('keeps a single number an atom', async () => {
+        assert.deepEqual((await parser('* SEARCH 12 3')).attributes, [
+            { type: 'ATOM', value: '12' },
+            { type: 'ATOM', value: '3' }
+        ]);
+    });
+
+    it('splits on the space after the atom and reads the next token on its own', async () => {
+        assert.deepEqual((await parser('* X 2024:Q1 1:5 1,a 7')).attributes, [
+            { type: 'ATOM', value: '2024:Q1' },
+            { type: 'SEQUENCE', value: '1:5' },
+            { type: 'ATOM', value: '1,a' },
+            { type: 'ATOM', value: '7' }
+        ]);
+    });
+
+    it('applies the atom rules to the rest of the token', async () => {
+        // characters an atom can not hold still fail, now under the atom error
+        for (const line of ['* X 1:a(', '* X 1:a"b"', '* X 1:a{3}', '* X 1:%', '* X 1,\\a']) {
+            await assert.rejects(parser(line), (err: any) => typeof err.code === 'string' && err.code.startsWith('ParserError'), line);
+        }
+    });
+
+    it('keeps the sequence errors for a token holding "*", which can not be an atom', async () => {
+        for (const [line, code] of [
+            ['* X 1:*a', 'ParserError33'],
+            ['* X 1:*,:5', 'ParserError29'],
+            ['* X 5:*:,5', 'ParserError31'],
+            ['* X 1:*, 2', 'ParserError27'],
+            ['* X 1:2*', 'ParserError30'],
+            ['* X *,5', 'ParserError32'],
+            ['* X *1', 'ParserError34']
+        ]) {
+            await assert.rejects(parser(line), { code }, line);
+        }
+    });
+
+    it('reads a starred token that ends the line on a separator as it did before', async () => {
+        // the end-of-input conversion only applies to tokens that can be atoms
+        assert.deepEqual((await parser('* X 1:*,')).attributes, [{ type: 'SEQUENCE', value: '1:*,' }]);
+    });
+});
+
+describe('token-parser: tracked token facts', () => {
+    // These checks read what the tokenizer tracked while appending, not the token value, so the
+    // boundaries of each one are pinned here
+
+    it('rejects a second "." in a partial range', async () => {
+        await assert.rejects(parser('* 1 FETCH (BODY[]<1.2.3> NIL)'), { code: 'ParserError20' });
+        await assert.rejects(parser('* 1 FETCH (BODY[]<.1> NIL)'), { code: 'ParserError20' });
+        assert.deepEqual((await parser('* 1 FETCH (BODY[]<10.20> NIL)')).attributes, [
+            { type: 'ATOM', value: 'FETCH' },
+            [{ type: 'ATOM', value: 'BODY', section: [], partial: [10, 20] }, null]
+        ]);
+    });
+
+    it('rejects a leading zero in either number of a partial range', async () => {
+        await assert.rejects(parser('* 1 FETCH (BODY[]<01> NIL)'), { code: 'ParserError22' });
+        await assert.rejects(parser('* 1 FETCH (BODY[]<1.01> NIL)'), { code: 'ParserError22' });
+        assert.deepEqual((await parser('* 1 FETCH (BODY[]<0.10> NIL)')).attributes, [
+            { type: 'ATOM', value: 'FETCH' },
+            [{ type: 'ATOM', value: 'BODY', section: [], partial: [0, 10] }, null]
+        ]);
+    });
+
+    it('opens a section after every section-taking name, the longest one included', async () => {
+        for (const name of ['BODY', 'BODY.PEEK', 'BINARY', 'BINARY.PEEK', 'binary.peek']) {
+            assert.deepEqual((await parser(`* 1 FETCH (${name}[1] NIL)`)).attributes, [
+                { type: 'ATOM', value: 'FETCH' },
+                [{ type: 'ATOM', value: name, section: [{ type: 'ATOM', value: '1' }] }, null]
+            ]);
+        }
+        // a longer name is an ordinary atom that holds the bracket
+        assert.deepEqual((await parser('* 1 FETCH (BINARY.PEEKX[1] NIL)')).attributes, [
+            { type: 'ATOM', value: 'FETCH' },
+            [{ type: 'ATOM', value: 'BINARY.PEEKX[1]' }, null]
+        ]);
+    });
+});
+
+// The tokenizer must stay linear in the token length. Reading a token's last character back from a
+// string built with += makes V8 copy the whole string on every character, and a server decides how
+// long a sequence set, atom or partial range is: before the fix a 600 KB ESEARCH ALL result blocked
+// the event loop for seconds. 1 MB tokens parse in milliseconds when linear and take minutes when
+// quadratic, so the generous bound below does not depend on the speed of the machine
+describe('token-parser: long tokens parse in linear time', () => {
+    const size = 1024 * 1024;
+    const uids = Array.from({ length: size / 8 }, (_, i) => String(1000000 + i)).join(',');
+    const cases: Array<[string, string]> = [
+        ['a sequence set', `* ESEARCH (TAG "A1") UID ALL ${uids}`],
+        ['a sequence set in a list', `* X (${uids})`],
+        ['a digit-led atom', `* X 1:${'a,'.repeat(size / 2)}a`],
+        ['an atom with commas', `* X ${'a,'.repeat(size / 2)}a`],
+        ['an atom with brackets', `* X ${'a['.repeat(size / 2)}a`],
+        ['a partial range', `* 1 FETCH (BODY[]<1.${'1'.repeat(size)}> NIL)`]
+    ];
+    for (const [name, line] of cases) {
+        it(`parses ${name} of ${line.length} bytes`, async () => {
+            const started = Date.now();
+            await parser(line).catch(() => false);
+            assert.ok(Date.now() - started < 3000, `took ${Date.now() - started}ms`);
+        });
+    }
 });

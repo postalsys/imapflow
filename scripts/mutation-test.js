@@ -37,7 +37,8 @@ const FILES = opt('file', '')
           'src/handler/imap-stream.ts',
           'src/handler/imap-compiler.ts',
           'src/handler/limits.ts',
-          'src/search-compiler.ts'
+          'src/search-compiler.ts',
+          'src/commands/copyuid-parser.ts'
       ];
 const WORKERS = Number(opt('workers', Math.max(2, os.cpus().length - 2)));
 const MAX = Number(opt('max', 0));
@@ -57,8 +58,10 @@ const HANDLER_TESTS = [
     'test/commands/security-regression-test.ts'
 ];
 const SEARCH_TESTS = ['test/search-compiler-test.ts', 'test/search-test.ts', 'test/commands/search-test.ts', 'test/commands/security-regression-test.ts'];
-const testsFor = file => (file === 'src/search-compiler.ts' ? SEARCH_TESTS : HANDLER_TESTS);
-const ALL_TESTS = [...new Set([...HANDLER_TESTS, ...SEARCH_TESTS])];
+const COPYUID_TESTS = ['test/copyuid-parser-test.ts', 'test/commands/copy-test.ts', 'test/commands/move-test.ts', 'test/transcript-replay-test.ts'];
+const TESTS_BY_FILE = { 'src/search-compiler.ts': SEARCH_TESTS, 'src/commands/copyuid-parser.ts': COPYUID_TESTS };
+const testsFor = file => TESTS_BY_FILE[file] || HANDLER_TESTS;
+const ALL_TESTS = [...new Set([...HANDLER_TESTS, ...SEARCH_TESTS, ...COPYUID_TESTS])];
 
 // operator replacements, applied to code (comments are skipped)
 const OPERATORS = [

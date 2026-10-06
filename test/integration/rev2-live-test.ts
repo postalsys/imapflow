@@ -474,4 +474,56 @@ describe('rev2-live', () => {
             await client.logout();
         }
     });
+
+    // Dovecot writes mailbox names and keywords as unquoted atoms whenever they only hold
+    // ATOM-CHARs, and ":" and "," are ATOM-CHARs. Before the parser read such digit-led tokens as
+    // atoms, every response line holding one was dropped: the mailbox was missing from list(),
+    // status() came back without counts and a message with such a keyword was missing from fetch
+    for (const disableIMAP4rev2 of [false, true]) {
+        it(`Live rev2: digit-led mailbox names and keywords survive (${disableIMAP4rev2 ? 'IMAP4rev1' : 'IMAP4rev2'})`, async () => {
+            const logs: any[] = [];
+            const client = await connectClient({ disableIMAP4rev2 }, logs);
+            try {
+                const names = ['2024:Q1', '1,a', '10:', '12:30:00'];
+                for (const name of names) {
+                    await client.mailboxCreate(name);
+                }
+
+                const paths = (await client.list()).map((entry: any) => entry.path);
+                for (const name of names) {
+                    assert.ok(paths.includes(name), `${name} listed in ${JSON.stringify(paths)}`);
+                }
+                // the scenario only holds while the server really sends the names unquoted
+                assert.ok(
+                    wireLines(logs).some((entry: any) => entry.src === 's' && / 2024:Q1$/.test(entry.msg)),
+                    'the server sent 2024:Q1 as an unquoted atom'
+                );
+
+                await client.append('2024:Q1', Buffer.from('Subject: q1\r\n\r\nbody\r\n'), ['1:x']);
+                await client.append('2024:Q1', Buffer.from('Subject: q1b\r\n\r\nbody\r\n'), ['\\Seen', '2024:taxes']);
+
+                const status: any = await client.status('2024:Q1', { messages: true, unseen: true });
+                assert.equal(status.messages, 2);
+                assert.equal(status.unseen, 1);
+
+                const mailbox: any = await client.mailboxOpen('2024:Q1');
+                assert.equal(mailbox.path, '2024:Q1');
+                assert.ok(mailbox.flags.has('1:x') && mailbox.flags.has('2024:taxes'), 'keywords listed in FLAGS');
+
+                const messages = await client.fetchAll('1:*', { flags: true, uid: true });
+                assert.deepEqual(
+                    // the Recent system flag only exists in IMAP4rev1 sessions
+                    messages.map((message: any) => [...message.flags].filter(flag => flag !== '\\Recent').sort()),
+                    [['1:x'], ['2024:taxes', '\\Seen']]
+                );
+
+                const moved: any = await client.messageMove('1', '1,a');
+                assert.equal(moved.uidMap.size, 1, 'COPYUID mapped the moved message');
+                const target: any = await client.status('1,a', { messages: true });
+                assert.equal(target.messages, 1);
+            } finally {
+                await client.logout();
+            }
+        });
+    }
 });

@@ -148,4 +148,42 @@ describe('copyuid-parser', () => {
         assert.equal(map2.uidValidity, undefined);
         assert.equal((map2 as any).uidMap.get(1), 100);
     });
+
+    // ============================================
+    // Malformed uid-sets
+    // ============================================
+    it('CopyUID Parser: a uid-set with a malformed element builds no uidMap', () => {
+        // The map pairs the sets by position, so dropping only the bad element would map every
+        // later UID to the wrong destination. The parser reads such sets as atoms ("1:x,3"), so
+        // they reach this code instead of failing the whole response line
+        for (let [source, destination] of [
+            ['1,x,3', '10:11'],
+            ['1:2,x', '10:11'],
+            ['1:x,3', '10:11'],
+            ['1,2', '10,y'],
+            ['1:2', '10:'],
+            ['1,,2', '10:11'],
+            ['1:*', '10:11'],
+            ['', '10'],
+            ['1:x', '10:y']
+        ]) {
+            let map: any = {};
+            parseCopyUid(makeResponse([{ value: 'COPYUID' }, { value: '5' }, { value: source }, { value: destination }]) as any, map);
+            assert.equal(map.uidValidity, 5n, `${source} ${destination}`);
+            assert.equal(map.uidMap, undefined, `${source} ${destination}`);
+        }
+    });
+
+    it('CopyUID Parser: uid-sets mixing single UIDs and ranges still map', () => {
+        let map: any = {};
+        parseCopyUid(makeResponse([{ value: 'COPYUID' }, { value: '5' }, { value: '1,3:4' }, { value: '10:12' }]) as any, map);
+        assert.deepEqual(
+            [...map.uidMap],
+            [
+                [1, 10],
+                [3, 11],
+                [4, 12]
+            ]
+        );
+    });
 });

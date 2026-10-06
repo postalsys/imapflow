@@ -108,6 +108,21 @@ const atomValue = (rng: Rng): string => {
     return value.toUpperCase() === 'NIL' ? value + 'X' : value;
 };
 
+// A token that starts like a sequence set but is not one ("2024:Q1", "1,a", "10:", "1::2"). ":" and
+// "," are ATOM-CHARs, so servers send such mailbox names and keywords unquoted, and they parse as
+// atoms
+const digitLedAtomValue = (rng: Rng): string => {
+    let head = rng.string(DIGITS, rng.int(1, 5)) + rng.pick([':', ',']);
+    switch (rng.int(0, 2)) {
+        case 0:
+            return head + rng.string(LETTERS, 1) + rng.string(ATOM_REST, rng.int(0, 8));
+        case 1:
+            return head;
+        default:
+            return head + rng.pick([':', ',']) + rng.string(DIGITS, rng.int(0, 3));
+    }
+};
+
 const numberValue = (rng: Rng): string => String(rng.int(0, 1) ? rng.int(0, 99) : rng.int(0, 4294967295));
 
 const seqNumber = (rng: Rng): string => String(rng.int(1, 99999));
@@ -187,7 +202,7 @@ const genAttribute = (rng: Rng, depth: number): Part => {
     switch (kind) {
         case 0:
         case 1: {
-            let value = atomValue(rng);
+            let value = rng.chance(0.25) ? digitLedAtomValue(rng) : atomValue(rng);
             return { wire: [ascii(value)], value: { type: 'ATOM', value } };
         }
         case 2: {
