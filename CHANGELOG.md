@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.6](https://github.com/postalsys/imapflow/compare/v2.2.5...v2.2.6) (2026-10-06)
+
+
+### Bug Fixes
+
+* harden response parsing and command compilation found by fuzzing ([85b842a](https://github.com/postalsys/imapflow/commit/85b842a2eafd92afad90649968a11cdeee363758))
+* read digit-led atoms like "2024:Q1" instead of dropping the response line ([47bf6ec](https://github.com/postalsys/imapflow/commit/47bf6eca2178bad831ccc878f75f165ed1b8d4e9))
+
 ## [2.2.5](https://github.com/postalsys/imapflow/compare/v2.2.4...v2.2.5) (2026-10-04)
 
 
