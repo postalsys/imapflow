@@ -45,6 +45,7 @@
         "pretest:workers": "npm run build",
         "test:workers": "node --import tsx --test test/cloudflare/cloudflare-test.ts",
         "test:rev2": "bash test/integration/run-rev2-tests.sh",
+        "test:mutation": "node scripts/mutation-test.js",
         "format": "prettier --write \"**/*.{js,cjs,ts,json,md,yml,yaml}\"",
         "format:check": "prettier --check \"**/*.{js,cjs,ts,json,md,yml,yaml}\"",
         "lint": "npm run typecheck && eslint .",

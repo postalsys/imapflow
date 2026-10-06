@@ -54,6 +54,7 @@ npm run update        # Refresh deps: remove node_modules + lockfile, ncu -u, np
 npm run test:rev2     # Live IMAP4rev2 tests against Dovecot in Docker (see test/integration/)
 npm run test:bun      # Build, then run the same suite under Bun (needs bun on PATH)
 npm run test:workers  # Build, then run test/cloudflare/ on a local Cloudflare Workers runtime through wrangler
+npm run test:mutation # Mutation testing of the parser, stream, compiler and search compiler (slow, not in CI)
 ```
 
 Single file: `node --import tsx --test test/search-compiler-test.ts`.
@@ -84,6 +85,10 @@ Single file: `node --import tsx --test test/search-compiler-test.ts`.
 - The suite runs serially (`--test-concurrency=1`): several suites swap `globalThis.setTimeout` through `test/fixtures/fake-timers.ts`.
 - The `test` scripts pass `--test-force-exit`, so a test that leaves a socket or a server open still finishes with its result instead of hanging the run until the CI job timeout. Where cleanup is the point of a test, assert it explicitly (`test/timer-policy-test.ts`, `test/memory-leak-test.ts`), the flag does not report leaked handles.
 - New tests go in `test/` as `*-test.ts`. The parser, command compiler, and search compiler are the most security-sensitive areas - add hostile/malformed-input cases there.
+- Seeded fuzzing: `test/parser-fuzz-test.ts` generates server responses together with the structure the parser must produce (`test/fixtures/imap-fuzz.ts`) and checks the parse result against it, chunk-split invariance of the stream framing, compile-then-parse round trips, that corrupted input fails only with coded errors (never a TypeError or RangeError), and that no compiled command value can break out of its command. `test/client-fuzz-test.ts` plays generated and corrupted responses at a real client and checks that every pending command settles and nothing escapes as an unhandled rejection. `FUZZ_SEED` and `FUZZ_ITERATIONS` control a run; a failure message names its seed and case, reproduce with `FUZZ_SEED=<seed> FUZZ_ITERATIONS=<n>` (and `FUZZ_CASE=<n>` with a debug logger for the client suite). Raise `FUZZ_ITERATIONS` for a soak run after touching `src/handler/`.
+- Server quirks are pinned as transcripts in `test/fixtures/transcripts.ts` (format in `test/fixtures/transcript-server.ts`: `S:` lines are sent, `C:` lines are the commands the client must send) and replayed against a real client by `test/transcript-replay-test.ts`. A new server quirk gets a transcript there. Captured real sessions that can not be committed are checked locally with `IMAPFLOW_TRANSCRIPT_DIR=/path/to/dir npm test` (every server line of each `*.txt` transcript must parse).
+- `test/fixtures/scripted-server.ts` is the shared scriptable mock server for end-to-end client tests (defaults for a full session, `handlers` override single commands).
+- `npm run test:mutation` (`scripts/mutation-test.js`) applies one-operator mutants to the parser, stream, compiler and search compiler in private copies of the repository and lists the mutants no test catches. Not part of CI; run it after larger changes to those files and either add a test for a surviving mutant or confirm it is equivalent. `--file <path>` limits it to one file, `--survivors <json>` re-runs the survivors of an earlier run.
 - `npm run test:rev2` starts a Dovecot 2.4 container (real IMAP4rev2 server) and runs `test/integration/rev2-live-test.ts` against it - use it to verify rev2-facing changes end to end, mocks alone are not enough.
 
 ## Other runtimes
