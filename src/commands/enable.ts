@@ -55,6 +55,12 @@ export default async function enable(connection: ImapFlow, extensionList: string
         // extensions enabled by this command (RFC 5161), so a replace would drop
         // grants from an earlier ENABLE call
         connection.enabled = new Set([...connection.enabled, ...enabled]);
+        if (connection.enabled.has('QRESYNC')) {
+            // ENABLE QRESYNC is a CONDSTORE enabling command (RFC 7162 3.2.3), whether or not the
+            // server lists CONDSTORE in its ENABLED answer. Apache James advertises only QRESYNC
+            // and leaves a lone ENABLE CONDSTORE unanswered, which the RFC allows.
+            connection.enabled.add('CONDSTORE');
+        }
         response.next();
         return connection.enabled;
     } catch (err) {

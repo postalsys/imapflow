@@ -337,7 +337,8 @@ export function buildStatusQueryAttributes(connection: ImapFlow, statusQuery: St
                 break;
 
             case 'HIGHESTMODSEQ':
-                if (connection.capabilities.has('CONDSTORE')) {
+                // QRESYNC implies CONDSTORE (RFC 7162 3.2.3)
+                if (connection.capabilities.has('CONDSTORE') || connection.capabilities.has('QRESYNC')) {
                     attributes.push({ type: 'ATOM', value: key.toUpperCase() });
                 }
                 break;
@@ -769,10 +770,22 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
     map.seq = parseUintValue(untagged.command, MAX_UINT32_DIGITS) || undefined;
 
     let key: string | undefined;
+    // the <origin> of a partial section ("BODY[2]<1024>"), kept for the value that follows
+    let origin: number | false = false;
+    let partialOrigins: Map<string, number> | undefined;
+    let recordOrigin = (sectionKey: string) => {
+        if (origin !== false) {
+            if (!partialOrigins) {
+                partialOrigins = new Map();
+            }
+            partialOrigins.set(sectionKey, origin);
+        }
+    };
     let attributes = ((untagged.attributes && untagged.attributes[1]) || []) as ImapAttributeList;
     for (let i = 0, len = attributes.length; i < len; i++) {
         let attribute = attributes[i];
         if (i % 2 === 0) {
+            origin = false;
             key = (
                 await compiler({
                     attributes: [attribute]
@@ -780,7 +793,10 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
             )
                 .toString()
                 .toLowerCase()
-                .replace(/<\d+(\.\d+)?>$/, '');
+                .replace(/<(\d+)(\.\d+)?>$/, (match, start: string) => {
+                    origin = parseUintValue(start, MAX_UINT32_DIGITS);
+                    return '';
+                });
             continue;
         }
         /* c8 ignore start */ // defensive: key is always a string produced by the compiler above
@@ -830,6 +846,7 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
             case 'body[]':
             case 'binary[]':
                 map.source = getBuffer(attribute) as Buffer | undefined;
+                recordOrigin('');
                 break;
 
             case 'uid':
@@ -936,6 +953,7 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
                         map.bodyParts = new Map();
                     }
                     map.bodyParts.set(partKey, value);
+                    recordOrigin(partKey);
 
                     if (match[1].toLowerCase() === 'binary') {
                         // The part arrived via FETCH BINARY (RFC 3516, FETCH side folded
@@ -979,6 +997,11 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
             createHash(idHashAlgorithm || 'md5')
                 .update([path, mailbox.uidValidity?.toString() || '', (map.uid as number).toString()].join(':'))
                 .digest('hex');
+    }
+
+    if (partialOrigins) {
+        // non-enumerable, so it stays out of logged and serialized fetch results
+        Object.defineProperty(map, 'partialOrigins', { value: partialOrigins, writable: true, configurable: true });
     }
 
     if (map.flags) {

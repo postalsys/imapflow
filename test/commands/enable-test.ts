@@ -79,6 +79,28 @@ describe('commands/enable', () => {
         assert.ok(enableAttrs.some((attr: any) => attr.value === 'IMAP4REV2'));
         assert.ok((result as any).has('IMAP4REV2'));
     });
+    it('Commands: ENABLE QRESYNC counts as enabling CONDSTORE', async () => {
+        // RFC 7162 3.2.3: ENABLE QRESYNC is a CONDSTORE enabling command. Apache James
+        // advertises only QRESYNC and answers ENABLED QRESYNC alone
+        let requested: any = null;
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map([
+                ['ENABLE', true],
+                ['QRESYNC', true]
+            ]),
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                requested = attrs.map((attr: any) => attr.value);
+                await opts.untagged.ENABLED({ attributes: [{ value: 'QRESYNC' }] });
+                return { next: () => {} };
+            }
+        });
+
+        await enableCommand(connection, ['CONDSTORE', 'UTF8=ACCEPT', 'QRESYNC']);
+        assert.deepEqual(requested, ['QRESYNC'], 'CONDSTORE is not advertised, so not asked for by itself');
+        assert.ok(connection.enabled.has('QRESYNC'));
+        assert.ok(connection.enabled.has('CONDSTORE'));
+    });
     it('Commands: enable merges into previously enabled extensions', async () => {
         const connection = createMockConnection({
             state: 2,

@@ -35,6 +35,25 @@ const collect: any = (stream: any) =>
         stream.on('error', reject);
     });
 
+// Answers fetchOne() the way Apache James does: of the sections asked for one MIME part path
+// (N.MIME and N) only the first is served, the other comes back as an empty literal
+const jamesFetchOne = (sections: Record<string, Buffer>, calls: any[]) => async (range: any, query: any, options: any) => {
+    calls.push({ range, query, options });
+    let served = new Set<string>();
+    let bodyParts = new Map<string, Buffer>();
+    for (let request of query.bodyParts || []) {
+        let key = typeof request === 'string' ? request : request.key;
+        let path = key.replace(/\.mime$/, '');
+        let value = sections[key] || Buffer.alloc(0);
+        if (typeof request !== 'string') {
+            value = value.subarray(request.start, request.start + request.maxLength);
+        }
+        bodyParts.set(key, served.has(path) ? Buffer.alloc(0) : value);
+        served.add(path);
+    }
+    return { uid: 7, size: 1000, bodyParts };
+};
+
 describe('imap-flow-fetch-download', () => {
     // ============================================================================
     // fetch() generator
@@ -952,6 +971,200 @@ describe('imap-flow-fetch-download', () => {
         let res: any = await client.downloadMany('1', ['2']);
         assert.equal(res['2'].content.toString(), 'hello');
         assert.equal(res['2'].meta.contentType, 'text/plain');
+    });
+    it('Download: content dropped next to its MIME headers (Apache James) is fetched again on its own', async () => {
+        let client = makeClient();
+        let calls: any[] = [];
+        let payload = Buffer.from('attachment bytes');
+        client.fetchOne = jamesFetchOne(
+            {
+                '2.mime': Buffer.from('Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n'),
+                '2': Buffer.from(payload.toString('base64'))
+            },
+            calls
+        );
+        let { meta, content }: any = await client.download('3', '2', { chunkSize: 1024 });
+        assert.equal(meta.encoding, 'base64');
+        assert.deepEqual(await collect(content), payload);
+        assert.equal(calls.length, 2);
+        // the retry asks the content alone, by the UID the first answer carried
+        assert.equal(calls[1].range, 7);
+        assert.equal(calls[1].options.uid, true);
+        assert.deepEqual(calls[1].query.bodyParts, [{ key: '2', start: 0, maxLength: 1024 }]);
+    });
+    it('Download: MIME headers dropped next to the content are fetched again on its own', async () => {
+        let client = makeClient();
+        let calls: any[] = [];
+        let payload = Buffer.from('attachment bytes');
+        let mime = Buffer.from('Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n');
+        let encoded = Buffer.from(payload.toString('base64'));
+        client.fetchOne = async (range: any, query: any, options: any) => {
+            calls.push({ range, query, options });
+            let bodyParts = new Map();
+            if (calls.length === 1) {
+                // content first, the headers lost
+                bodyParts.set('2', encoded);
+                bodyParts.set('2.mime', Buffer.alloc(0));
+            } else {
+                bodyParts.set('2.mime', mime);
+            }
+            return { uid: 7, size: 1000, bodyParts };
+        };
+        let { meta, content }: any = await client.download('7', '2', { uid: true, chunkSize: 1024 });
+        assert.equal(meta.encoding, 'base64', 'the transfer encoding comes from the refetched headers');
+        assert.deepEqual(await collect(content), payload);
+        assert.deepEqual(calls[1].query.bodyParts, ['2.mime']);
+    });
+    it('Download: a part that really is empty costs one extra fetch and ends empty', async () => {
+        let client = makeClient();
+        let calls: any[] = [];
+        client.fetchOne = jamesFetchOne({ '2.mime': Buffer.from('Content-Type: text/plain\r\n\r\n') }, calls);
+        let { content }: any = await client.download('7', '2', { uid: true, chunkSize: 1024 });
+        assert.equal((await collect(content)).length, 0);
+        assert.equal(calls.length, 2);
+    });
+    it('Download: a compliant answer is not fetched again', async () => {
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            let bodyParts = new Map();
+            bodyParts.set('2.mime', Buffer.from('Content-Type: text/plain\r\n\r\n'));
+            bodyParts.set('2', Buffer.from('hello'));
+            return { uid: 7, size: 1000, bodyParts };
+        };
+        let { content }: any = await client.download('7', '2', { uid: true, chunkSize: 1024 });
+        assert.equal((await collect(content)).toString(), 'hello');
+        assert.equal(calls, 1);
+    });
+    it('Download: a dropped section of a binary fetch keeps the binary marker', async () => {
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            let bodyParts = new Map();
+            if (calls === 1) {
+                bodyParts.set('2.mime', Buffer.from('Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n'));
+                bodyParts.set('2', Buffer.alloc(0));
+                return { uid: 7, size: 1000, bodyParts };
+            }
+            // the retry is answered with an already decoded BINARY section
+            bodyParts.set('2', Buffer.from('raw'));
+            return { uid: 7, bodyParts, binaryParts: new Set(['2']) };
+        };
+        let { content }: any = await client.download('7', '2', { uid: true, binary: true, chunkSize: 1024 });
+        assert.equal((await collect(content)).toString(), 'raw', 'not base64 decoded a second time');
+    });
+    it('DownloadMany: sections dropped next to their companions (Apache James) are fetched again in one command', async () => {
+        let client = makeClient();
+        let calls: any[] = [];
+        client.fetchOne = jamesFetchOne(
+            {
+                '1.mime': Buffer.from('Content-Type: text/plain\r\n\r\n'),
+                '1': Buffer.from('body text'),
+                '2.mime': Buffer.from('Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n'),
+                '2': Buffer.from(Buffer.from('attachment').toString('base64'))
+            },
+            calls
+        );
+        let res: any = await client.downloadMany('3', ['1', '2']);
+        assert.equal(res['1'].content.toString(), 'body text');
+        assert.equal(res['2'].content.toString(), 'attachment');
+        assert.equal(res['2'].meta.contentType, 'application/octet-stream');
+        assert.equal(calls.length, 2);
+        assert.equal(calls[1].range, 7);
+        assert.deepEqual(calls[1].query.bodyParts, ['1', '2']);
+    });
+    it('DownloadMany: a dropped MIME header and a dropped content are asked together', async () => {
+        let client = makeClient();
+        let calls: any[] = [];
+        client.fetchOne = async (range: any, query: any) => {
+            calls.push(query);
+            let bodyParts = new Map();
+            if (calls.length === 1) {
+                bodyParts.set('1.mime', Buffer.from('Content-Type: text/plain\r\n\r\n'));
+                bodyParts.set('1', Buffer.alloc(0));
+                bodyParts.set('2.mime', Buffer.alloc(0));
+                bodyParts.set('2', Buffer.from('aGk='));
+            } else {
+                bodyParts.set('1', Buffer.from('text'));
+                bodyParts.set('2.mime', Buffer.from('Content-Type: text/plain\r\nContent-Transfer-Encoding: base64\r\n\r\n'));
+            }
+            return { uid: 7, bodyParts };
+        };
+        let res: any = await client.downloadMany('7', ['1', '2'], { uid: true, maxBytes: 100 });
+        assert.deepEqual(calls[1].bodyParts, [{ key: '1', start: 0, maxLength: 100 }, '2.mime']);
+        assert.equal(res['1'].content.toString(), 'text');
+        assert.equal(res['2'].content.toString(), 'hi');
+    });
+    it('Download: an answer for another offset (Apache James, late answer) is dropped and asked again', async () => {
+        // James sometimes writes a FETCH answer after its tagged OK, so the data of one chunk
+        // arrives within the next chunk's command
+        let client = makeClient();
+        let body = Buffer.from('ABCDEFGHIJ');
+        let requests: number[] = [];
+        client.fetchOne = async (range: any, query: any) => {
+            let start = query.source.start;
+            requests.push(start);
+            // the third request is answered with the data of the second one
+            let from = requests.length === 3 ? start - 4 : start;
+            return { uid: 7, size: body.length, source: body.subarray(from, from + 4), partialOrigins: new Map([['', from]]) };
+        };
+        let { content } = await client.download('7', false as any, { uid: true, chunkSize: 4 });
+        assert.equal((await collect(content)).toString(), 'ABCDEFGHIJ');
+        assert.deepEqual(requests, [0, 4, 8, 8]);
+    });
+    it('Download: an answer for another message is dropped and asked again', async () => {
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            let bodyParts = new Map([
+                ['2.mime', Buffer.from('Content-Type: text/plain\r\n\r\n')],
+                ['2', Buffer.from(calls === 1 ? 'other message' : 'right one')]
+            ]);
+            return { uid: calls === 1 ? 6 : 7, size: 100, bodyParts };
+        };
+        let { content }: any = await client.download('7', '2', { uid: true, chunkSize: 1024 });
+        assert.equal((await collect(content)).toString(), 'right one');
+        assert.equal(calls, 2);
+    });
+    it('Download: an answer without an origin is taken as is', async () => {
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            return { uid: 7, size: 5, source: Buffer.from('whole') };
+        };
+        let { content }: any = await client.download('7', false as any, { uid: true, chunkSize: 1024 });
+        assert.equal((await collect(content)).toString(), 'whole');
+        assert.equal(calls, 1);
+    });
+    it('Download: a server that keeps answering for another offset fails the download', async () => {
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            return { uid: 7, size: 100, source: Buffer.from('xxxx'), partialOrigins: new Map([['', 40]]) };
+        };
+        await assert.rejects(client.download('7', false as any, { uid: true, chunkSize: 4 }), (err: any) => err.code === 'DownloadIncomplete');
+        assert.equal(calls, 3);
+    });
+    it('DownloadMany: an answer for another message or offset is dropped and asked again', async () => {
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            let bodyParts = new Map([
+                ['2.mime', Buffer.from('Content-Type: text/plain\r\n\r\n')],
+                ['2', Buffer.from(calls === 3 ? 'right' : 'wrong')]
+            ]);
+            // first a stale answer for another message, then one for another offset
+            return { uid: calls === 1 ? 3 : 7, bodyParts, partialOrigins: new Map([['2', calls === 2 ? 100 : 0]]) };
+        };
+        let res: any = await client.downloadMany('7', ['2'], { uid: true, maxBytes: 100 });
+        assert.equal(res['2'].content.toString(), 'right');
+        assert.equal(calls, 3);
     });
     it('Download: charset pipeline forwards a mid-stream fetch error', async () => {
         let client = makeClient();

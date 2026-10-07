@@ -633,6 +633,12 @@ export interface FetchMessageObject {
     bodyParts?: Map<string, Buffer> | undefined;
     /** Part identifiers from bodyParts that arrived via FETCH BINARY, i.e. with the content-transfer-encoding already decoded by the server */
     binaryParts?: Set<string> | undefined;
+    /**
+     * Start offsets the server reported for partial sections (`BODY[2]<1024>`), keyed like
+     * bodyParts, with an empty string for the whole message. Non-enumerable.
+     * @internal
+     */
+    partialOrigins?: Map<string, number> | undefined;
     /** Requested header lines as Buffer */
     headers?: Buffer | undefined;
     /** Account unique ID for this email */

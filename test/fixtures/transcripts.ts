@@ -313,5 +313,146 @@ export const transcripts: QuirkTranscript[] = [
                 ]
             );
         }
+    },
+    {
+        name: 'Apache James answers only the first of the MIME header and content sections of one part',
+        origin: 'Twake Mail (Apache James 3.9) report, refetchDroppedSections() in src/download.ts',
+        transcript: `
+            S: * OK [CAPABILITY SPECIAL-USE QRESYNC PARTIAL UNSELECT ACL ENABLE CHILDREN UIDPLUS IDLE LITERAL+ MOVE LIST-EXTENDED IMAP4REV1 ESEARCH LIST-MYRIGHTS METADATA NAMESPACE LIST-STATUS SEARCHRES SAVEDATE QUOTA WITHIN SASL-IR AUTH=PLAIN OBJECTID STATUS=SIZE I18NLEVEL=1 QUOTA=RES-STORAGE APPENDLIMIT ID QUOTA=RES-MESSAGE] JAMES IMAP4rev1 Server is ready.
+            C: ID (
+            S: * ID NIL
+            S: TAG OK ID completed.
+            C: AUTHENTICATE PLAIN
+            S: TAG OK AUTHENTICATE completed.
+            C: CAPABILITY
+            S: * CAPABILITY SPECIAL-USE QRESYNC PARTIAL UNSELECT ACL ENABLE CHILDREN UIDPLUS IDLE LITERAL+ MOVE LIST-EXTENDED IMAP4REV1 ESEARCH LIST-MYRIGHTS METADATA NAMESPACE LIST-STATUS SEARCHRES SAVEDATE QUOTA WITHIN SASL-IR AUTH=PLAIN OBJECTID STATUS=SIZE I18NLEVEL=1 QUOTA=RES-STORAGE APPENDLIMIT ID QUOTA=RES-MESSAGE
+            S: TAG OK CAPABILITY completed.
+            C: ID (
+            S: * ID NIL
+            S: TAG OK ID completed.
+            C: NAMESPACE
+            S: * NAMESPACE (("" ".")) (("#user." ".")) NIL
+            S: TAG OK NAMESPACE completed.
+            C: LIST "" "INBOX"
+            S: * LIST (\\HasNoChildren \\Subscribed) "." "INBOX"
+            S: TAG OK LIST completed.
+            C: SELECT INBOX
+            S: * OK [MAILBOXID (1)] Ok
+            S: * FLAGS (\\Answered \\Deleted \\Draft \\Flagged \\Seen)
+            S: * 1 EXISTS
+            S: * 0 RECENT
+            S: * OK [UIDVALIDITY 3384120651] UIDs valid
+            S: * OK [PERMANENTFLAGS (\\Answered \\Deleted \\Draft \\Flagged \\Seen \\*)] Limited
+            S: * OK [UIDNEXT 8] Predicted next UID
+            S: TAG OK [READ-WRITE] SELECT completed.
+            # the content section asked next to its MIME headers comes back as an empty literal
+            C: UID FETCH 7 (UID RFC822.SIZE EMAILID BODY.PEEK[2.MIME] BODY.PEEK[2]<0.65536>)
+            S: * 1 FETCH (RFC822.SIZE 4421 UID 7 BODY[2.MIME] {77}
+            S: Content-Type: application/octet-stream
+            S: Content-Transfer-Encoding: base64
+            S:
+            S:  BODY[2]<0> {0}
+            S:  EMAILID (1))
+            S: TAG OK FETCH completed.
+            C: UID FETCH 7 (UID EMAILID BODY.PEEK[2]<0.65536>)
+            S: * 1 FETCH (UID 7 BODY[2]<0> {8}
+            S: aGVsbG8= EMAILID (1))
+            S: TAG OK FETCH completed.
+            # downloadMany() asks every MIME header and content in one command, James keeps the headers
+            C: UID FETCH 7 (EMAILID UID BODY.PEEK[1.MIME] BODY.PEEK[1] BODY.PEEK[2.MIME] BODY.PEEK[2])
+            S: * 1 FETCH (UID 7 BODY[1.MIME] {28}
+            S: Content-Type: text/plain
+            S:
+            S:  BODY[1] {0}
+            S:  BODY[2.MIME] {77}
+            S: Content-Type: application/octet-stream
+            S: Content-Transfer-Encoding: base64
+            S:
+            S:  BODY[2] {0}
+            S:  EMAILID (1))
+            S: TAG OK FETCH completed.
+            C: UID FETCH 7 (UID EMAILID BODY.PEEK[1] BODY.PEEK[2])
+            S: * 1 FETCH (UID 7 BODY[1] {4}
+            S: text BODY[2] {8}
+            S: aGVsbG8= EMAILID (1))
+            S: TAG OK FETCH completed.
+        `,
+        async run(client) {
+            await client.mailboxOpen('INBOX');
+
+            const download = await client.download('7', '2', { uid: true });
+            assert.ok(download.content);
+            assert.equal(download.meta.encoding, 'base64');
+            const chunks: Buffer[] = [];
+            for await (const chunk of download.content) {
+                chunks.push(chunk);
+            }
+            assert.equal(Buffer.concat(chunks).toString(), 'hello');
+
+            const parts = await client.downloadMany('7', ['1', '2'], { uid: true });
+            assert.equal(parts['1']?.content?.toString(), 'text');
+            assert.equal(parts['2']?.content?.toString(), 'hello');
+            assert.equal(parts['2']?.meta?.contentType, 'application/octet-stream');
+        }
+    },
+    {
+        name: 'Apache James delivers the data of one FETCH within the answer to the next one',
+        origin: 'Apache James 3.9 live tests, fetchExpected() in src/download.ts',
+        transcript: `
+            S: * OK [CAPABILITY SPECIAL-USE QRESYNC PARTIAL UNSELECT ACL ENABLE CHILDREN UIDPLUS IDLE LITERAL+ MOVE LIST-EXTENDED IMAP4REV1 ESEARCH LIST-MYRIGHTS METADATA NAMESPACE LIST-STATUS SEARCHRES SAVEDATE QUOTA WITHIN SASL-IR AUTH=PLAIN OBJECTID STATUS=SIZE I18NLEVEL=1 QUOTA=RES-STORAGE APPENDLIMIT ID QUOTA=RES-MESSAGE] JAMES IMAP4rev1 Server is ready.
+            C: ID (
+            S: * ID NIL
+            S: TAG OK ID completed.
+            C: AUTHENTICATE PLAIN
+            S: TAG OK AUTHENTICATE completed.
+            C: CAPABILITY
+            S: * CAPABILITY SPECIAL-USE QRESYNC PARTIAL UNSELECT ACL ENABLE CHILDREN UIDPLUS IDLE LITERAL+ MOVE LIST-EXTENDED IMAP4REV1 ESEARCH LIST-MYRIGHTS METADATA NAMESPACE LIST-STATUS SEARCHRES SAVEDATE QUOTA WITHIN SASL-IR AUTH=PLAIN OBJECTID STATUS=SIZE I18NLEVEL=1 QUOTA=RES-STORAGE APPENDLIMIT ID QUOTA=RES-MESSAGE
+            S: TAG OK CAPABILITY completed.
+            C: ID (
+            S: * ID NIL
+            S: TAG OK ID completed.
+            C: NAMESPACE
+            S: * NAMESPACE (("" ".")) (("#user." ".")) NIL
+            S: TAG OK NAMESPACE completed.
+            C: LIST "" "INBOX"
+            S: * LIST (\\HasNoChildren \\Subscribed) "." "INBOX"
+            S: TAG OK LIST completed.
+            C: SELECT INBOX
+            S: * OK [MAILBOXID (1)] Ok
+            S: * FLAGS (\\Answered \\Deleted \\Draft \\Flagged \\Seen)
+            S: * 1 EXISTS
+            S: * 0 RECENT
+            S: * OK [UIDVALIDITY 3384120651] UIDs valid
+            S: * OK [PERMANENTFLAGS (\\Answered \\Deleted \\Draft \\Flagged \\Seen \\*)] Limited
+            S: * OK [UIDNEXT 8] Predicted next UID
+            S: TAG OK [READ-WRITE] SELECT completed.
+            C: UID FETCH 7 (UID RFC822.SIZE BODY.PEEK[]<0.4> EMAILID)
+            S: * 1 FETCH (RFC822.SIZE 10 UID 7 BODY[]<0> {4}
+            S: ABCD EMAILID (1))
+            S: TAG OK FETCH completed.
+            C: UID FETCH 7 (BODY.PEEK[]<4.4> EMAILID UID)
+            S: * 1 FETCH (UID 7 BODY[]<4> {4}
+            S: EFGH EMAILID (1))
+            S: TAG OK FETCH completed.
+            # a late copy of the previous answer, its offset gives it away
+            C: UID FETCH 7 (BODY.PEEK[]<8.4> EMAILID UID)
+            S: * 1 FETCH (UID 7 BODY[]<4> {4}
+            S: EFGH EMAILID (1))
+            S: TAG OK FETCH completed.
+            C: UID FETCH 7 (BODY.PEEK[]<8.4> EMAILID UID)
+            S: * 1 FETCH (UID 7 BODY[]<8> {2}
+            S: IJ EMAILID (1))
+            S: TAG OK FETCH completed.
+        `,
+        async run(client) {
+            await client.mailboxOpen('INBOX');
+            const download = await client.download('7', undefined, { uid: true, chunkSize: 4 });
+            assert.ok(download.content);
+            const chunks: Buffer[] = [];
+            for await (const chunk of download.content) {
+                chunks.push(chunk);
+            }
+            assert.equal(Buffer.concat(chunks).toString(), 'ABCDEFGHIJ');
+        }
     }
 ];

@@ -30,6 +30,151 @@ import type {
     SequenceString
 } from './types.js';
 
+type BodyPartRequest = NonNullable<FetchQueryObject['bodyParts']>[number];
+
+const isEmptySection = (value: Buffer | undefined): boolean => !value?.length;
+
+/**
+ * The section to ask again when exactly one of a part's MIME headers and content came back
+ * empty (see refetchDroppedSections()), undefined when both or neither did
+ */
+const droppedSection = (
+    mime: Buffer | undefined,
+    content: Buffer | undefined,
+    mimeRequest: BodyPartRequest,
+    contentRequest: BodyPartRequest
+): BodyPartRequest | undefined => {
+    if (isEmptySection(mime) === isEmptySection(content)) {
+        return undefined;
+    }
+    return isEmptySection(content) ? contentRequest : mimeRequest;
+};
+
+/** Start offset of every partial section among the requests, keyed by section */
+const partialStarts = (requests: BodyPartRequest[]): Map<string, number> => {
+    let starts = new Map<string, number>();
+    for (let request of requests) {
+        if (typeof request !== 'string') {
+            starts.set(request.key, Number(request.start) || 0);
+        }
+    }
+    return starts;
+};
+
+// How many times a request is repeated after answers that belong to another request
+const MAX_FOREIGN_ANSWERS = 3;
+
+/** What an answer must match to be taken as the answer to a request */
+interface ExpectedAnswer {
+    /** UID of the message, when the request addressed it by UID */
+    uid?: number | undefined;
+    /** Start offset of every partial section asked, keyed like bodyParts ('' for the whole message) */
+    origins: Map<string, number>;
+}
+
+const requestedUid = (range: SequenceString | number, options: FetchOptions): number | undefined =>
+    options.uid && /^\d+$/.test(String(range)) ? Number(range) : undefined;
+
+const isForeignAnswer = (response: FetchMessageObject, expected: ExpectedAnswer): boolean => {
+    if (expected.uid && response.uid && response.uid !== expected.uid) {
+        return true;
+    }
+    for (let [key, start] of expected.origins) {
+        let origin = response.partialOrigins && response.partialOrigins.get(key);
+        // An answer without the origin is taken as is: some servers leave it out, and some
+        // ignore the partial specifier altogether
+        if (typeof origin === 'number' && origin !== start) {
+            return true;
+        }
+    }
+    return false;
+};
+
+/**
+ * fetchOne() that takes only an answer belonging to the request. Apache James now and then
+ * writes the head of a FETCH answer after its tagged OK, so the data of one request shows up
+ * within the answer to the next one. Taken at face value it would be the data of that next
+ * request, and a download would end without an error but with misplaced bytes. An answer for
+ * another UID, or with a partial section that starts at another offset than asked, is dropped
+ * and the request repeated.
+ */
+async function fetchExpected(
+    client: ImapFlow,
+    range: SequenceString | number,
+    query: FetchQueryObject,
+    options: FetchOptions,
+    expected: ExpectedAnswer
+): Promise<FetchMessageObject | false | undefined> {
+    for (let attempt = 1; ; attempt++) {
+        let response = await client.fetchOne(range, query, options);
+        if (!response || !isForeignAnswer(response, expected)) {
+            return response;
+        }
+        client.log.warn({
+            msg: 'Server answered with data of another request, asking again',
+            uid: response.uid,
+            origins: response.partialOrigins && Object.fromEntries(response.partialOrigins),
+            attempt,
+            cid: client.id
+        });
+        if (attempt >= MAX_FOREIGN_ANSWERS) {
+            let err: ImapFlowError = new Error('Server kept answering with data of another request');
+            err.code = 'DownloadIncomplete';
+            err.cid = client.id;
+            throw err;
+        }
+    }
+}
+
+/**
+ * Apache James (and the servers built on it, Twake Mail among them) answers only the first
+ * section it is asked for each MIME part of one FETCH and returns the other one empty:
+ * BODY[2.MIME] with BODY[2] yields the headers and a zero-length body, the reverse order loses
+ * the headers (FetchGroup.addPartContent() keeps the first descriptor for a part path). Asks the
+ * sections that came back empty again, in a FETCH of their own, and merges the answer into
+ * `response`. Callers only list a section whose companion did arrive, so a compliant server
+ * pays the extra round trip only for a part that really is empty.
+ */
+async function refetchDroppedSections(
+    client: ImapFlow,
+    response: FetchMessageObject,
+    range: SequenceString | number,
+    options: FetchOptions,
+    sections: BodyPartRequest[]
+): Promise<void> {
+    if (!sections.length) {
+        return;
+    }
+
+    client.log.debug({
+        msg: 'Server answered a body section empty while its companion section was not, asking it again separately',
+        sections: sections.map(section => (typeof section === 'string' ? section : section.key)),
+        cid: client.id
+    });
+
+    // the UID pins the message even when the first command addressed it by sequence number
+    let uid = response.uid;
+    let retry = await fetchExpected(client, uid || range, { uid: true, bodyParts: sections }, uid ? { ...options, uid: true } : options, {
+        uid,
+        origins: partialStarts(sections)
+    });
+    if (!retry) {
+        return;
+    }
+
+    if (retry.headers) {
+        response.headers = retry.headers;
+    }
+    for (let [key, value] of retry.bodyParts || []) {
+        (response.bodyParts ??= new Map()).set(key, value);
+        if (retry.binaryParts && retry.binaryParts.has(key)) {
+            (response.binaryParts ??= new Set()).add(key);
+        } else if (response.binaryParts) {
+            response.binaryParts.delete(key);
+        }
+    }
+}
+
 /**
  * Implements ImapFlow.download(), see its documentation
  *
@@ -101,6 +246,7 @@ export async function downloadMessage(
         query = query || {};
 
         let mimeKey: string | undefined;
+        let contentRequest: BodyPartRequest | undefined;
 
         if (!part) {
             query.source = {
@@ -125,14 +271,19 @@ export async function downloadMessage(
                 }
             }
 
-            query.bodyParts.push({
+            contentRequest = {
                 key: part,
                 start: processed,
                 maxLength: chunkSize
-            });
+            };
+            query.bodyParts.push(contentRequest);
         }
 
-        let response = await client.fetchOne(range, query, downloadOptions);
+        let expected: ExpectedAnswer = {
+            uid: uid || requestedUid(range, downloadOptions),
+            origins: new Map([[part || '', processed]])
+        };
+        let response = await fetchExpected(client, range, query, downloadOptions, expected);
 
         if (!response) {
             return { response: false, chunk: false };
@@ -143,6 +294,18 @@ export async function downloadMessage(
             // force UID from now on even if first range was a sequence number
             range = uid;
             downloadOptions.uid = true;
+        }
+
+        if (mimeKey && contentRequest) {
+            let dropped = droppedSection(
+                mimeKey === 'header' ? response.headers : response.bodyParts?.get(mimeKey),
+                response.bodyParts?.get(part!),
+                mimeKey,
+                contentRequest
+            );
+            if (dropped) {
+                await refetchDroppedSections(client, response, range, downloadOptions, [dropped]);
+            }
         }
 
         let chunk = !part ? response.source : response.bodyParts && response.bodyParts.get(part);
@@ -540,18 +703,34 @@ export async function downloadMessageParts(
 
     let query: FetchQueryObject & { bodyParts: NonNullable<FetchQueryObject['bodyParts']> } = { bodyParts: [] };
 
+    let contentRequests = new Map<string, BodyPartRequest>();
     for (let part of parts) {
         query.bodyParts.push(part + '.mime');
         // The partial specifier carries a 32-bit length (RFC 9051 "number"), so a cap beyond
         // that is applied on the answer alone
-        query.bodyParts.push(maxBytes > 0xffffffff ? part : { key: part, start: 0, maxLength: maxBytes });
+        let contentRequest: BodyPartRequest = maxBytes > 0xffffffff ? part : { key: part, start: 0, maxLength: maxBytes };
+        contentRequests.set(part, contentRequest);
+        query.bodyParts.push(contentRequest);
     }
 
-    let response = await client.fetchOne(range, query, downloadOptions);
+    let response = await fetchExpected(client, range, query, downloadOptions, {
+        uid: requestedUid(range, downloadOptions),
+        origins: partialStarts(query.bodyParts)
+    });
 
     if (!response || !response.bodyParts) {
         return {};
     }
+
+    let dropped: BodyPartRequest[] = [];
+    for (let [part, contentRequest] of contentRequests) {
+        let section = droppedSection(response.bodyParts.get(part + '.mime'), response.bodyParts.get(part), part + '.mime', contentRequest);
+        if (section) {
+            dropped.push(section);
+        }
+    }
+    // Sections of different parts do not collide, so every dropped one fits in one FETCH
+    await refetchDroppedSections(client, response, range, downloadOptions, dropped);
 
     let data: { [part: string]: { meta?: DownloadMeta | undefined; content?: Buffer | null | undefined } } = {};
 

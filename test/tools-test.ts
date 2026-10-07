@@ -1330,6 +1330,23 @@ describe('tools', () => {
         assert.deepEqual(r.bodyParts.get('4'), Buffer.alloc(0));
         assert.ok(r.bodyParts.has('5') && !r.bodyParts.get('5'));
     });
+    it('Tools: formatMessageResponse keeps the origin of partial sections out of sight', async () => {
+        let untagged = await parser('* 1 FETCH (UID 7 BODY[]<4096> "abc" BODY[2]<0> "x" BODY[2.MIME] "y" BINARY[3]<12> "z")');
+        let r: any = await tools.formatMessageResponse(untagged, { path: 'INBOX' } as MailboxObject);
+        assert.deepEqual(
+            [...r.partialOrigins],
+            [
+                ['', 4096],
+                ['2', 0],
+                ['3', 12]
+            ]
+        );
+        assert.ok(!Object.keys(r).includes('partialOrigins'), 'not enumerable, so logged and serialized results stay unchanged');
+        assert.deepEqual(r.source, Buffer.from('abc'));
+
+        let whole: any = await tools.formatMessageResponse(await parser('* 1 FETCH (UID 7 BODY[] "abc")'), { path: 'INBOX' } as MailboxObject);
+        assert.equal(whole.partialOrigins, undefined);
+    });
     it('Tools: formatMessageResponse keeps invalid INTERNALDATE as raw string', async () => {
         let untagged = await parser('* 1 FETCH (INTERNALDATE "not a date")');
         let r = await tools.formatMessageResponse(untagged, { path: 'INBOX' } as MailboxObject);

@@ -258,6 +258,21 @@ describe('commands/status', () => {
         assert.ok(queryStr.includes('HIGHESTMODSEQ'));
         assert.equal(result.highestModseq, BigInt('9876543210'));
     });
+    it('Commands: status asks HIGHESTMODSEQ when only QRESYNC is advertised', async () => {
+        // QRESYNC implies CONDSTORE (RFC 7162 3.2.3), Apache James advertises only QRESYNC
+        let queryAttrs = null;
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map([['QRESYNC', true]]),
+            exec: async (cmd: any, attrs: any) => {
+                queryAttrs = attrs;
+                return { next: () => {} };
+            }
+        });
+
+        await statusCommand(connection, 'INBOX', { highestModseq: true });
+        assert.ok(JSON.stringify(queryAttrs).includes('HIGHESTMODSEQ'));
+    });
     it('Commands: status ignores HIGHESTMODSEQ without CONDSTORE', async () => {
         const connection = createMockConnection({
             state: 2,
