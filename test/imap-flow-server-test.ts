@@ -421,6 +421,81 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
+    // issue #426: a server may send unsolicited FETCH responses (a flag change by another
+    // session) inside the answer to a FETCH. The first row was taken as the answer, and the
+    // download ended cleanly after its first chunk
+    for (let unsolicited of ['* 1 FETCH (FLAGS (\\Seen))', '* 2 FETCH (UID 8 FLAGS (\\Seen))', '* 1 FETCH (UID 7 FLAGS (\\Seen))']) {
+        it(`Server: download() takes the requested rows when ${unsolicited} arrives within a chunk FETCH`, async () => {
+            let body = Buffer.from('0123456789'.repeat(3000));
+            let mime = 'Content-Type: text/plain\r\n\r\n';
+            let server = createServer({
+                handlers: {
+                    UID(ctx: any) {
+                        let [, start, length] = ctx.args.match(/BODY\.PEEK\[2\]<(\d+)\.(\d+)>/).map(Number);
+                        let data = body.subarray(start, start + length);
+                        // before the answer for every chunk after the first one, after it for the first
+                        if (start) {
+                            ctx.write(`${unsolicited}\r\n`);
+                        }
+                        let mimeSection = /2\.MIME/.test(ctx.args) ? ` BODY[2.MIME] {${mime.length}}\r\n${mime}` : '';
+                        ctx.write(`* 1 FETCH (UID 7 RFC822.SIZE 40000${mimeSection} BODY[2]<${start}> {${data.length}}\r\n`);
+                        ctx.write(Buffer.concat([data, Buffer.from(')\r\n')]));
+                        if (!start) {
+                            ctx.write(`${unsolicited}\r\n`);
+                        }
+                        ctx.ok('UID FETCH completed');
+                    }
+                }
+            });
+            let port = await listen(server);
+            let client = makeClient(port);
+            client.on('error', () => {});
+
+            await client.connect();
+            await client.mailboxOpen('INBOX');
+            let { content }: any = await client.download('7', '2', { uid: true, chunkSize: 10000 });
+            assert.deepEqual(Buffer.concat(await content.toArray()), body);
+
+            await client.logout();
+            client.close();
+            server.close();
+        });
+    }
+    it('Server: fetchOne() merges the rows of the requested message and skips other messages', async () => {
+        let server = createServer({
+            handlers: {
+                FETCH(ctx: any) {
+                    ctx.write('* 3 FETCH (FLAGS (\\Seen))\r\n');
+                    ctx.write('* 2 FETCH (UID 12 RFC822.SIZE 42)\r\n');
+                    ctx.write('* 2 FETCH (FLAGS (\\Flagged))\r\n');
+                    // the same sequence number with another UID is not merged in
+                    ctx.write('* 2 FETCH (UID 99 RFC822.SIZE 1)\r\n');
+                    ctx.ok('FETCH completed');
+                },
+                UID(ctx: any) {
+                    ctx.write('* 3 FETCH (UID 13 FLAGS ())\r\n');
+                    ctx.ok('UID FETCH completed');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port);
+        client.on('error', () => {});
+
+        await client.connect();
+        await client.mailboxOpen('INBOX');
+        let msg: any = await client.fetchOne('2', { uid: true, flags: true, size: true });
+        assert.equal(msg.seq, 2);
+        assert.equal(msg.uid, 12);
+        assert.equal(msg.size, 42);
+        assert.deepEqual([...msg.flags], ['\\Flagged']);
+        // a UID that is not in the answer, only a row of another message
+        assert.equal(await client.fetchOne('99', { uid: true, flags: true }, { uid: true }), false);
+
+        await client.logout();
+        client.close();
+        server.close();
+    });
     it('Server: APPEND with synchronizing literal', async () => {
         let server = createServer({
             capabilities: 'IMAP4rev1 ID ENABLE NAMESPACE UIDPLUS',

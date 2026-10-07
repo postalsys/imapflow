@@ -1194,6 +1194,24 @@ describe('tools', () => {
     });
 
     // ============================================
+    it('Tools: mergeFetchRows combines the rows of one message', () => {
+        const single: any = { seq: 1, uid: 7 };
+        assert.equal(tools.mergeFetchRows([single]), single);
+
+        const first: any = { seq: 1, uid: 7, size: 10, bodyParts: new Map([['2.mime', Buffer.from('a')]]), binaryParts: new Set(['x']) };
+        Object.defineProperty(first, 'partialOrigins', { value: new Map([['2', 0]]), writable: true, configurable: true });
+        const second: any = { seq: 1, flags: new Set(['\\Seen']), bodyParts: new Map([['2', Buffer.from('b')]]), binaryParts: new Set(['2']) };
+        Object.defineProperty(second, 'partialOrigins', { value: new Map([['2', 100]]), writable: true, configurable: true });
+        const merged: any = tools.mergeFetchRows([first, second]);
+        assert.equal(merged.uid, 7);
+        assert.equal(merged.size, 10);
+        assert.deepEqual([...merged.flags], ['\\Seen']);
+        assert.deepEqual([...merged.bodyParts.keys()], ['2.mime', '2']);
+        assert.deepEqual([...merged.binaryParts], ['x', '2']);
+        // later rows win, and the origins stay non-enumerable like on a single row
+        assert.equal(merged.partialOrigins.get('2'), 100);
+        assert.ok(!Object.keys(merged).includes('partialOrigins'));
+    });
     // formatMessageResponse: the fallback id when the server provides no email id
     it('Tools: formatMessageResponse derives the fallback id with MD5 unless told otherwise', async () => {
         const untagged = await parser('* 1 FETCH (UID 42)');

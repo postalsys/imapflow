@@ -756,6 +756,35 @@ export function getColorFlags(color: string | null | undefined): { add: string[]
 }
 
 /**
+ * Merges the FETCH rows a server sent for one message into one message object. A server may
+ * split the data items of a message over several FETCH responses, and may put an unsolicited
+ * one (a flag change made by another session) in between (RFC 9051 sections 7.5.2 and 5.2).
+ * Later rows win for single values, bodyParts, binaryParts and partialOrigins are combined.
+ *
+ * @param rows - Formatted rows of the same message, in the order they arrived
+ * @returns One message object holding the data of every row
+ */
+export function mergeFetchRows(rows: FetchMessageObject[]): FetchMessageObject {
+    if (rows.length === 1) {
+        return rows[0];
+    }
+    let merged = {} as FetchMessageObject;
+    let partialOrigins: Map<string, number> | undefined;
+    for (let row of rows) {
+        let { bodyParts, binaryParts, ...rest } = row;
+        Object.assign(merged, rest);
+        // combined into collections of their own, so the rows stay untouched
+        bodyParts?.forEach((value, key) => (merged.bodyParts ??= new Map()).set(key, value));
+        binaryParts?.forEach(key => (merged.binaryParts ??= new Set()).add(key));
+        row.partialOrigins?.forEach((value, key) => (partialOrigins ??= new Map()).set(key, value));
+    }
+    if (partialOrigins) {
+        Object.defineProperty(merged, 'partialOrigins', { value: partialOrigins, writable: true, configurable: true });
+    }
+    return merged;
+}
+
+/**
  * Formats a raw untagged FETCH response into a structured message object.
  *
  * @param untagged - Parsed untagged IMAP response

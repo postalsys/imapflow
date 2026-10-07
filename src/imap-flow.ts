@@ -24,6 +24,7 @@ import {
     updateCapabilities,
     getFolderTree,
     formatMessageResponse,
+    mergeFetchRows,
     packMessageRange,
     normalizePath,
     expandRange,
@@ -2277,6 +2278,13 @@ export class ImapFlow extends EventEmitter {
             // socket event cannot re-enter an already settled upgrade or leave state behind.
             const settle = (err?: ImapFlowError | null | undefined, result?: boolean): void => {
                 if (settled) {
+                    // A failed handshake can produce more than one error (Bun emits ECONNRESET on
+                    // the TLS socket after the one that settled the upgrade). settle() stays the
+                    // error listener of both sockets until they are torn down, so later errors
+                    // end up here instead of being thrown as unhandled 'error' events.
+                    if (err) {
+                        this.log.debug({ msg: 'Socket error after the TLS upgrade was settled', err, cid: this.id });
+                    }
                     return;
                 }
                 settled = true;
@@ -2286,9 +2294,12 @@ export class ImapFlow extends EventEmitter {
                 this.upgrading = false;
                 this._upgradeReject = null;
 
-                socketPlain.removeListener('error', settle);
-                if (this.socket && this.socket !== socketPlain) {
-                    this.socket.removeListener('error', settle);
+                if (!err) {
+                    // the generic socket handlers took over in the success callback
+                    socketPlain.removeListener('error', settle);
+                    if (this.socket && this.socket !== socketPlain) {
+                        this.socket.removeListener('error', settle);
+                    }
                 }
 
                 if (err) {
@@ -2310,7 +2321,7 @@ export class ImapFlow extends EventEmitter {
             // one function, one settlement, and removeListener() in settle() needs no separate
             // handler references. A TLS handshake failure (bad certificate, protocol mismatch)
             // is emitted on the new TLS socket rather than on the plain one, so both are covered.
-            socketPlain.once('error', settle);
+            socketPlain.on('error', settle);
 
             /* c8 ignore start */ // UPGRADE_TIMEOUT is 10s; firing it deterministically would make the test suite hang
             this.upgradeTimeout = setTimeout(() => {
@@ -2394,7 +2405,7 @@ export class ImapFlow extends EventEmitter {
             // error listener during the handshake window; the generic handlers are installed
             // by setSocketHandlers() inside the success callback above, so a handshake error
             // has a single error path.
-            tlsSocket.once('error', settle);
+            tlsSocket.on('error', settle);
 
             this.writeSocket = tlsSocket;
         });
@@ -4163,7 +4174,21 @@ export class ImapFlow extends EventEmitter {
             return false;
         }
 
-        return response.list[0];
+        // Every FETCH row that arrived during the command is in the list, also unsolicited ones
+        // for other messages or with only a flag change, and a server may split the answer for
+        // one message over several rows. Taking the first row returned a flag update instead
+        // of the requested data, which ended a download after its first chunk (issue #426).
+        let rows: FetchMessageObject[] = response.list;
+        let requested = parseUintValue(String(seq), MAX_UINT32_DIGITS);
+        // a range: the first message of the answer, as before
+        let target = requested === false ? rows[0] : rows.find(row => (options && options.uid ? row.uid : row.seq) === requested);
+        if (!target) {
+            return false;
+        }
+        // rows of the same message, without the ones a malformed answer gives no usable
+        // sequence number or another UID
+        let { seq: targetSeq, uid: targetUid } = target;
+        return targetSeq ? mergeFetchRows(rows.filter(row => row.seq === targetSeq && (!row.uid || !targetUid || row.uid === targetUid))) : target;
     }
 
     /**
