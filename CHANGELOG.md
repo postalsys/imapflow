@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.2.8](https://github.com/postalsys/imapflow/compare/v2.2.7...v2.2.8) (2026-10-07)
+
+
+### Bug Fixes
+
+* decrement mailbox.exists on untagged VANISHED (RFC 7162 section 3.2.10) ([b40cea2](https://github.com/postalsys/imapflow/commit/b40cea22d19edd10428fe1cda98115c2f8b6cd7a))
+* do not send sequence sets to an empty mailbox ([b40cea2](https://github.com/postalsys/imapflow/commit/b40cea22d19edd10428fe1cda98115c2f8b6cd7a))
+* drop flags and keywords that are not atoms instead of sending them quoted ([b40cea2](https://github.com/postalsys/imapflow/commit/b40cea22d19edd10428fe1cda98115c2f8b6cd7a))
+* encode and decode non-ASCII Gmail labels as modified UTF-7 like mailbox names ([b40cea2](https://github.com/postalsys/imapflow/commit/b40cea22d19edd10428fe1cda98115c2f8b6cd7a))
+* expand the FETCH ALL, FAST and FULL macros instead of sending them in a list ([b40cea2](https://github.com/postalsys/imapflow/commit/b40cea22d19edd10428fe1cda98115c2f8b6cd7a))
+* leave servername out of tls.connect() for IP literal hosts, which Bun rejects ([b40cea2](https://github.com/postalsys/imapflow/commit/b40cea22d19edd10428fe1cda98115c2f8b6cd7a))
+* refetch body sections Apache James drops, check FETCH answers belong to the download, enable CONDSTORE with QRESYNC ([6973263](https://github.com/postalsys/imapflow/commit/697326393a4a66e743822d7fb0ac045454458492))
+* send the OAuth token after the continuation request when SASL-IR is not advertised ([b40cea2](https://github.com/postalsys/imapflow/commit/b40cea22d19edd10428fe1cda98115c2f8b6cd7a))
+* send the STORE UNCHANGEDSINCE modifier before the flags (RFC 7162 section 3.1.3) ([b40cea2](https://github.com/postalsys/imapflow/commit/b40cea22d19edd10428fe1cda98115c2f8b6cd7a))
+
 ## [2.2.7](https://github.com/postalsys/imapflow/compare/v2.2.6...v2.2.7) (2026-10-07)
 
 
