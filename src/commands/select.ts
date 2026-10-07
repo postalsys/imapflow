@@ -14,16 +14,8 @@ import type { ImapFlowError } from '../errors.js';
 import type { ImapAttributeList, ImapAttributeNode, ImapCompileNode, ImapResponse } from '../handler/types.js';
 import type { ListResponse, MailboxObject, MailboxOpenOptions } from '../types.js';
 
-/**
- * Options for SELECT/EXAMINE: the public open options plus the QRESYNC resynchronization
- * parameters, which are only honored when the QRESYNC extension has been enabled
- */
-export interface SelectOptions extends MailboxOpenOptions {
-    /** QRESYNC modseq value to fetch changes since */
-    changedSince?: bigint | number | string | undefined;
-    /** QRESYNC UID validity value */
-    uidValidity?: bigint | number | string | undefined;
-}
+/** SELECT/EXAMINE options, the QRESYNC parameters are part of the public mailboxOpen() options */
+export type SelectOptions = MailboxOpenOptions;
 
 /**
  * The mailbox object built by SELECT/EXAMINE. `qresync` is a temporary marker used while the
@@ -95,10 +87,7 @@ const VALUED_RESPONSE_CODES: { [code: string]: ValuedResponseCode } = Object.ass
  *
  * @param connection - IMAP connection instance
  * @param path - Mailbox path to select
- * @param options - Select options
- * @param options.readOnly - If true, use EXAMINE instead of SELECT (read-only access)
- * @param options.changedSince - QRESYNC modseq value to fetch changes since
- * @param options.uidValidity - QRESYNC UID validity value
+ * @param options - Select options, see MailboxOpenOptions
  * @returns Mailbox info object with path, flags, exists, uidNext, uidValidity, highestModseq, etc., or undefined if preconditions not met
  * @throws If the SELECT/EXAMINE command fails
  */

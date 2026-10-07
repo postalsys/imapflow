@@ -292,7 +292,7 @@ describe('imap-flow-fetch-download', () => {
             bodyParts.set('2', decoded);
             return { uid: 1, size: decoded.length, bodyParts, binaryParts: new Set(['2']) };
         };
-        let { meta, content }: any = await client.download('1', '2', { chunkSize: 1024, binary: true } as any);
+        let { meta, content }: any = await client.download('1', '2', { chunkSize: 1024, binary: true });
         assert.equal(meta.encoding, 'base64');
         let data: any = await collect(content);
         assert.equal(data.toString(), 'Hello World');
@@ -306,7 +306,7 @@ describe('imap-flow-fetch-download', () => {
             bodyParts.set('2', Buffer.from('part two'));
             return { uid: 1, bodyParts, binaryParts: new Set(['2']) };
         };
-        let res: any = await client.downloadMany('1', ['2'], { binary: true } as any);
+        let res: any = await client.downloadMany('1', ['2'], { binary: true });
         assert.equal(res['2'].content.toString(), 'part two');
         assert.equal(res['2'].meta.encoding, 'base64');
     });
@@ -323,7 +323,7 @@ describe('imap-flow-fetch-download', () => {
             bodyParts.set('2', encoded);
             return { uid: 1, size: encoded.length, bodyParts };
         };
-        let { content } = await client.download('1', '2', { chunkSize: 1024, binary: true } as any);
+        let { content } = await client.download('1', '2', { chunkSize: 1024, binary: true });
         let data: any = await collect(content);
         assert.equal(data.toString(), 'Hello World');
     });

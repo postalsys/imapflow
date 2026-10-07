@@ -195,7 +195,7 @@ export async function downloadMessage(
         return {};
     }
 
-    let downloadOptions: DownloadOptions & FetchOptions = Object.assign(
+    let downloadOptions: DownloadOptions = Object.assign(
         {
             chunkSize: 64 * 1024,
             maxBytes: Infinity
@@ -695,7 +695,7 @@ export async function downloadMessageParts(
         return {};
     }
 
-    let downloadOptions: DownloadManyOptions & FetchOptions = options || {};
+    let downloadOptions: DownloadManyOptions = options || {};
 
     // Asked as a partial fetch so at most maxBytes of each part crosses the wire, and enforced
     // again on the answer for servers that ignore the partial specifier

@@ -523,6 +523,8 @@ export interface FetchQueryObject {
               maxLength?: number | undefined;
           }
         | undefined;
+    /** Email ID (OBJECTID EMAILID or Gmail X-GM-MSGID) is always requested when the server supports either extension, so this is accepted but changes nothing */
+    emailId?: boolean | undefined;
     /** If true then include thread ID in the response (only if server supports either OBJECTID or X-GM-EXT-1 extensions) */
     threadId?: boolean | undefined;
     /** If true then include GMail labels in the response (only if server supports X-GM-EXT-1 extension) */
@@ -687,10 +689,12 @@ export interface DownloadOptions {
     maxBytes?: number | undefined;
     /** How large content parts to ask from the server. Defaults to 65536 */
     chunkSize?: number | undefined;
+    /** If true then requests the content with FETCH BINARY when the server supports it (BINARY or IMAP4rev2), so the server removes the transfer encoding */
+    binary?: boolean | undefined;
 }
 
 /** Options for downloadMany(): the download() options without `chunkSize`, as the parts come in one FETCH */
-export type DownloadManyOptions = Pick<DownloadOptions, 'uid' | 'maxBytes'>;
+export type DownloadManyOptions = Pick<DownloadOptions, 'uid' | 'maxBytes' | 'binary'>;
 
 export interface DownloadManyPart {
     meta: DownloadMeta;
@@ -746,6 +750,10 @@ export interface MailboxOpenOptions {
     readOnly?: boolean | undefined;
     /** Optional description for mailbox lock tracking */
     description?: string | undefined;
+    /** QRESYNC (RFC 7162): HIGHESTMODSEQ from an earlier session. With `uidValidity` and QRESYNC enabled, changes since then are reported as `flags` and `expunge` events. getMailboxLock() only applies it when it selects the mailbox, not when the mailbox is already open */
+    changedSince?: bigint | number | string | undefined;
+    /** QRESYNC (RFC 7162): the UIDVALIDITY known from the previous session, required with `changedSince` */
+    uidValidity?: bigint | number | string | undefined;
 }
 
 export interface MailboxLockOptions extends MailboxOpenOptions {

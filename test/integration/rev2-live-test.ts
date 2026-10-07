@@ -359,7 +359,7 @@ describe('rev2-live', () => {
             await client.append('INBOX', Buffer.from(content));
 
             await client.mailboxOpen('INBOX');
-            const { content: downloadStream }: any = await client.download('1', '1', { binary: true } as any);
+            const { content: downloadStream }: any = await client.download('1', '1', { binary: true });
             const chunks = [];
             for await (let chunk of downloadStream) {
                 chunks.push(chunk);

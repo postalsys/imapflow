@@ -152,7 +152,7 @@ export async function run(): Promise<void> {
             appended.uid;
         }
 
-        const download = await client.download('1', '2', { uid: true, maxBytes: 1024, chunkSize: 512 });
+        const download = await client.download('1', '2', { uid: true, maxBytes: 1024, chunkSize: 512, binary: true });
         const missing: DownloadNotFound | DownloadObject = download;
         missing.content?.destroy();
         if (download.content) {
@@ -161,7 +161,7 @@ export async function run(): Promise<void> {
             full.meta.contentType;
             download.content.on('data', () => {});
         }
-        const many = await client.downloadMany('1', ['2', '3'], { uid: true });
+        const many = await client.downloadMany('1', ['2', '3'], { uid: true, binary: true });
         Object.keys(many).forEach(part => many[part].content);
 
         const created = await client.mailboxCreate(['Parent', 'Child']);
@@ -174,6 +174,9 @@ export async function run(): Promise<void> {
         await client.mailboxUnsubscribe('INBOX');
         const opened: MailboxObject = await client.mailboxOpen('INBOX', { readOnly: false });
         opened.exists;
+        // QRESYNC resync from the state of an earlier session
+        await client.mailboxOpen('INBOX', { changedSince: opened.highestModseq, uidValidity: opened.uidValidity });
+        await client.getMailboxLock('INBOX', { changedSince: 100n, uidValidity: 1 });
         await client.mailboxClose();
         await client.noop();
         const stats: { sent: number; received: number } = client.stats(true);
@@ -281,14 +284,14 @@ const client = new ImapFlow({
 });
 
 export async function run(): Promise<void> {
-    const fetchQuery: FetchQueryObject = { uid: maybeBoolean, envelope: maybeBoolean, headers: maybeBoolean, bodyParts: [{ key: '1', start: maybeNumber, maxLength: maybeNumber }] };
+    const fetchQuery: FetchQueryObject = { uid: maybeBoolean, emailId: maybeBoolean, threadId: maybeBoolean, envelope: maybeBoolean, headers: maybeBoolean, bodyParts: [{ key: '1', start: maybeNumber, maxLength: maybeNumber }] };
     const fetchOptions: FetchOptions = { uid: maybeBoolean, changedSince: maybeBigint, binary: maybeBoolean };
     const search: SearchObject = { seen: maybeBoolean, from: maybeString, larger: maybeNumber, modseq: maybeBigint };
     const searchOptions: SearchOptions = { uid: maybeBoolean };
     const listOptions: ListOptions = { statusQuery: { messages: maybeBoolean, unseen: maybeBoolean }, specialUseHints: { sent: maybeString } };
     const storeOptions: StoreOptions = { uid: maybeBoolean, unchangedSince: maybeBigint, useLabels: maybeBoolean, silent: maybeBoolean };
-    const lockOptions: MailboxLockOptions = { readOnly: maybeBoolean, description: maybeString, acquireTimeout: maybeNumber, maxLockHoldTime: maybeNumber };
-    const downloadOptions: DownloadOptions = { uid: maybeBoolean, maxBytes: maybeNumber, chunkSize: maybeNumber };
+    const lockOptions: MailboxLockOptions = { readOnly: maybeBoolean, description: maybeString, acquireTimeout: maybeNumber, maxLockHoldTime: maybeNumber, changedSince: maybeBigint, uidValidity: maybeBigint };
+    const downloadOptions: DownloadOptions = { uid: maybeBoolean, maxBytes: maybeNumber, chunkSize: maybeNumber, binary: maybeBoolean };
 
     await client.getMailboxLock('INBOX', lockOptions);
     await client.list(listOptions);
