@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.2.7](https://github.com/postalsys/imapflow/compare/v2.2.6...v2.2.7) (2026-10-07)
+
+
+### Bug Fixes
+
+* close the transport with a failed connect, report a lost login once, and other reliability fixes ([6a3915a](https://github.com/postalsys/imapflow/commit/6a3915a0391442a9f4c98cf2622b70918387d26b))
+* enforce downloadMany maxBytes, warn on cleartext STARTTLS fallback, refuse unknown search keys ([44f7b7f](https://github.com/postalsys/imapflow/commit/44f7b7ff0b93414507e3824597919b831868f257))
+* harden session setup, SASL, search and folder handling found in code review ([d71d27e](https://github.com/postalsys/imapflow/commit/d71d27e9ccd44974c4424532b83920114126aacb))
+
 ## [2.2.6](https://github.com/postalsys/imapflow/compare/v2.2.5...v2.2.6) (2026-10-06)
 
 
