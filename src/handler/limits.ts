@@ -23,6 +23,22 @@ export const MAX_LINE_SIZE = MAX_LITERAL_SIZE;
 // the same headroom - set maxResponseSize above maxLiteralSize, not equal to it.
 export const MAX_RESPONSE_SIZE = 2 * MAX_LITERAL_SIZE;
 
+// How much of the offending input a parse error carries along. The error travels whole into log
+// entries (pino copies every property of a logged error) and into the rejection of the command
+// the line belonged to, and the line can be as long as the configured line cap.
+export const ERROR_CONTEXT_LENGTH = 1024;
+
+/**
+ * The input a parse error carries: a bounded prefix with the full length.
+ *
+ * @param input - The input that failed to parse
+ * @returns The bounded prefix and the full length
+ */
+export const boundedInput = (input: string): { input: string; inputLength: number } => ({
+    input: input.slice(0, ERROR_CONTEXT_LENGTH),
+    inputLength: input.length
+});
+
 /**
  * Normalizes a configured size limit. A non-negative integer is honored as-is (including 0, which
  * means "reject anything non-empty"), and `Infinity` disables the limit; anything else falls back

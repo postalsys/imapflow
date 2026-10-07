@@ -95,8 +95,11 @@ async function runIdle(connection: ImapFlow): Promise<void | false> {
                     path: connection.mailbox && connection.mailbox.path,
                     cid: connection.id
                 });
-                connection.write('DONE');
+                // Marked before the write: write() closes the connection when the transport is
+                // already gone, and close() breaks IDLE through this very function, which
+                // would otherwise write DONE again from inside itself
                 doneSent = true;
+                connection.write('DONE');
 
                 releaseIdling();
                 if (connection.preCheck === ownPreCheck) {
@@ -396,7 +399,11 @@ export default async function idle(connection: ImapFlow, maxIdleTime?: number | 
             }
             let resp = await runIdle(connection);
             clearTimeout(idleTimer);
-            if (!stillIdling) {
+            // A restart only makes sense with nothing queued behind the break (a CLOSE, say; run()
+            // re-arms auto-IDLE once that command is done) and the mailbox still selected on a
+            // usable connection
+            const canRestart = stillIdling && !connection.requestQueue.length && !!getSelectedMailbox(connection) && connection.usable;
+            if (!canRestart) {
                 return resp;
             }
             stillIdling = false;

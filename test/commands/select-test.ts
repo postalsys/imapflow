@@ -56,6 +56,32 @@ describe('commands/select', () => {
         assert.equal(result.exists, 100);
         assert.equal(result.readOnly, false);
     });
+    it('Commands: select of the open mailbox reports a changed message count', async () => {
+        // The SELECT polling fallback re-selects the open mailbox to look for new mail, and the
+        // EXISTS in the answer goes to the command rather than to the global handler: polling
+        // in that mode never said a word
+        let events: any[] = [];
+        const connection = createMockConnection({
+            state: 3,
+            mailbox: { path: 'INBOX', exists: 100, flags: new Set(), permanentFlags: new Set(['\\*']), noModseq: true },
+            folders: new Map([['INBOX', { path: 'INBOX', delimiter: '/' }]]),
+            run: async () => [],
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                await opts.untagged.EXISTS({ command: '105' });
+                return { next: () => {}, response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] } };
+            },
+            emit: (event: string, payload: any) => events.push([event, payload])
+        });
+
+        await selectCommand(connection, 'INBOX');
+        assert.deepEqual(events, [['exists', { path: 'INBOX', count: 105, prevCount: 100 }]]);
+        assert.equal(connection.mailbox && connection.mailbox.exists, 105);
+
+        // An unchanged count is not an event
+        events = [];
+        await selectCommand(connection, 'INBOX');
+        assert.deepEqual(events, []);
+    });
     it('Commands: select with readOnly option uses EXAMINE', async () => {
         let execCommand = '';
         const connection = createMockConnection({

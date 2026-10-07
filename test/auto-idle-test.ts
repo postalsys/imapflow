@@ -415,6 +415,74 @@ describe('auto-idle', () => {
         client.close();
     });
 
+    it('Auto-IDLE: a recovery NOOP that cannot be sent is a dead connection at the next timeout', async () => {
+        // IDLE was written but the server never sent its "+", so DONE can not go out and the
+        // recovery NOOP never reaches the wire. The inactivity timer is one-shot, re-armed only
+        // by traffic, so without re-arming it here nothing would ever fire again on the silent
+        // peer and the connection would sit there for good.
+        let { client, errors }: any = makeWatchdogClient();
+        let armed: number[] = [];
+        client.socket.setTimeout = (ms: number) => armed.push(ms);
+        client.run = () => new Promise(() => {});
+        client.idling = true;
+        client.currentRequest = { tag: 'A001', command: 'IDLE', sent: true };
+
+        client._socketTimeout();
+        assert.equal(client._recoveryPending, true);
+        assert.deepEqual(armed, [client.socketTimeout], 'the watchdog is re-armed');
+        assert.deepEqual(errors, []);
+
+        client._socketTimeout();
+        assert.equal(errors.length, 1, 'the pending recovery counts as stuck');
+        assert.equal((errors[0] as any).code, 'ETIMEOUT');
+
+        client.close();
+    });
+    it('Auto-IDLE: a recovery NOOP that settles clears the pending flag', async () => {
+        let { client, recovered }: any = makeWatchdogClient();
+        client.idling = true;
+
+        client._socketTimeout();
+        assert.equal(client._recoveryPending, true);
+        await drainImmediate();
+        assert.deepEqual(recovered, ['NOOP']);
+        assert.equal(client._recoveryPending, false);
+
+        client.close();
+    });
+    it('Auto-IDLE: a response handler in progress is not a dead connection', async () => {
+        // The reader is parked in a fetch consumer, so nothing is read from the socket: the
+        // quiet is this side's. The timer is re-armed and nothing else happens.
+        let { client, errors, recovered }: any = makeWatchdogClient();
+        let armed: number[] = [];
+        client.socket.setTimeout = (ms: number) => armed.push(ms);
+        client.currentRequest = { tag: 'A001', command: 'FETCH', sent: true };
+        client._processingResponse = true;
+
+        client._socketTimeout();
+        assert.deepEqual(errors, []);
+        assert.deepEqual(recovered, []);
+        assert.deepEqual(armed, [client.socketTimeout]);
+
+        client._processingResponse = false;
+        client._socketTimeout();
+        assert.equal(errors.length, 1, 'with the handler done, a stuck FETCH is a dead connection');
+
+        client.close();
+    });
+    it('Auto-IDLE: a throttle back-off is expected quiet', async () => {
+        let { client, errors, recovered }: any = makeWatchdogClient();
+        client._throttleWaits.add({});
+
+        client._socketTimeout();
+        await drainImmediate();
+        assert.deepEqual(errors, []);
+        assert.deepEqual(recovered, ['NOOP'], 'the server is probed instead');
+
+        client._throttleWaits.clear();
+        client.close();
+    });
+
     // ============================================================================
     // re-arming auto-IDLE after a session that ended on its own
     //

@@ -52,6 +52,8 @@ export const createMockConnection = (overrides: Record<string, unknown> = {}): M
         mailbox: { ...defaultMailbox },
         namespace: { delimiter: '/', prefix: '' },
         expectCapabilityUpdate: false,
+        usable: true,
+        requestQueue: [],
         log: {
             warn: () => {},
             info: () => {},

@@ -462,6 +462,43 @@ describe('token-parser', () => {
         });
     });
 
+    it('Token Parser: a parse error carries only a bounded prefix of the input', async () => {
+        // The error travels whole into log entries and into the rejection of the command the
+        // line belonged to, and the line can be as long as the configured line cap
+        let long = 'a'.repeat(5000);
+
+        // an attribute error, raised by the token parser on the attribute part of the line
+        await assert.rejects(parser(`* X "${long}`), (err: any) => {
+            assert.equal(err.code, 'ParserError9');
+            assert.equal(err.parserContext.input.length, 1024);
+            assert.equal(err.parserContext.inputLength, long.length + 1);
+            return true;
+        });
+
+        // a line error, raised by the line parser on the whole line
+        await assert.rejects(parser(` * OK ${long}`), (err: any) => {
+            assert.equal(err.code, 'ParserError1');
+            assert.equal(err.parserContext.input.length, 1024);
+            assert.equal(err.parserContext.inputLength, long.length + 6);
+            return true;
+        });
+
+        // the element that failed is bounded the same way
+        await assert.rejects(parser(`* SEARCH  ${long}`), (err: any) => {
+            assert.equal(err.code, 'ParserError7');
+            assert.equal(err.parserContext.element.length, 1024);
+            assert.equal(err.parserContext.elementLength, long.length + 1);
+            return true;
+        });
+
+        // the nesting error keeps its own copy of the attribute part
+        await assert.rejects(parser('* FETCH ' + '('.repeat(26) + long), (err: any) => {
+            assert.equal(err.code, 'MAX_IMAP_NESTING_REACHED');
+            assert.equal(err._imapStr.length, 1024);
+            return true;
+        });
+    });
+
     it('Token Parser: E9: every unterminated token is refused', async () => {
         // one open token per input, so no enclosing open list reports it instead
         for (let input of ['* X "abc', '* X (a', '* 1 FETCH BODY[]<0', '* X {3', '* OK [UIDNEXT 3', '* 1 FETCH BODY[HEADER']) {

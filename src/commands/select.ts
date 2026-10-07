@@ -299,6 +299,10 @@ export default async function select(
 
         if (!currentMailbox || currentMailbox.path !== path) {
             emitSafe(connection, 'mailboxOpen', connection.mailbox);
+        } else if (typeof map.exists === 'number' && map.exists !== currentMailbox.exists) {
+            // A re-SELECT of the open mailbox (the SELECT polling fallback) gets its EXISTS here
+            // instead of in the global handler, so it is reported the same way
+            emitSafe(connection, 'exists', { path, count: map.exists, prevCount: currentMailbox.exists });
         }
 
         response.next();

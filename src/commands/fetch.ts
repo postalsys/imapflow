@@ -58,6 +58,12 @@ export default async function fetch(
     const maxRetries = 4;
     const baseDelay = 1000; // Start with 1 second delay
 
+    // The highest UID (sequence number for a plain FETCH) handed to the streaming consumer. A
+    // retried FETCH answers with every message again, so a retry skips up to it: servers answer
+    // in ascending order, which keeps this to one comparison per row rather than a set of every
+    // row delivered. The consumer was otherwise given the rows before the throttle twice.
+    let maxDelivered = 0;
+
     for (let retryCount = 0; ; retryCount++) {
         let messages: FetchCommandResult = {
             count: 0,
@@ -240,6 +246,12 @@ export default async function fetch(
                         }
                         let formatted = await formatMessageResponse(untagged, mailbox, connection.idHashAlgorithm);
                         if (typeof options.onUntaggedFetch === 'function') {
+                            /* c8 ignore next */ // a UID FETCH row without its UID is a non-compliant server, so the seq fallback is not exercised
+                            let key = options.uid ? formatted.uid || formatted.seq : formatted.seq;
+                            if (retryCount && key <= maxDelivered) {
+                                return;
+                            }
+                            maxDelivered = Math.max(maxDelivered, key);
                             try {
                                 await new Promise<void>((resolve, reject) => {
                                     (options.onUntaggedFetch as NonNullable<FetchCommandOptions['onUntaggedFetch']>)(formatted, err => {

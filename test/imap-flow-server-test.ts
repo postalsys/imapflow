@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import type { MailboxObject } from '../src/types.js';
 import { createServer, listen, makeClient } from './fixtures/scripted-server.js';
+import { installRejectionDetector } from './fixtures/test-client.js';
 
 // End-to-end ImapFlow tests against a scriptable in-process mock IMAP server.
 // This exercises the connection lifecycle that pure unit tests cannot reach:
@@ -684,6 +685,96 @@ describe('imap-flow-server', () => {
 
         await client.logout();
         client.close();
+        server.close();
+    });
+    it('Server: a refused login closes the connection with the rejected connect', async () => {
+        // The socket used to stay open after connect() had been rejected: the instance can not be
+        // reused, so nothing would ever use it, and the inactivity watchdog raised ETIMEOUT on
+        // it minutes later (as an uncaught exception without an 'error' listener)
+        let server = createServer({
+            handlers: {
+                LOGIN(ctx: any) {
+                    ctx.no('[AUTHENTICATIONFAILED] Invalid credentials');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port, { socketTimeout: 200 });
+        let errors: any[] = [];
+        let closed = 0;
+        client.on('error', err => errors.push(err));
+        client.on('close', () => closed++);
+
+        await assert.rejects(client.connect(), (err: any) => err.authenticationFailed === true);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(client.isClosed, true, 'the transport went with the failed attempt');
+        assert.equal(closed, 1);
+
+        // Past the socket timeout: nothing fires on a connection that is gone
+        await new Promise(resolve => setTimeout(resolve, 400));
+        assert.deepEqual(errors, []);
+
+        server.close();
+    });
+    it('Server: a connection lost during login is reported once, through the rejected connect', async () => {
+        // The socket close rejects connect() and fails the in-flight LOGIN; the session setup
+        // then fails as a consequence, and that used to be raised as a second 'error' event,
+        // an unhandled rejection for a caller without an 'error' listener
+        let server = createServer({
+            handlers: {
+                LOGIN(ctx: any) {
+                    ctx.socket.end();
+                }
+            }
+        });
+        let port = await listen(server);
+        let detector = installRejectionDetector();
+        let client = makeClient(port);
+        let errors: any[] = [];
+        client.on('error', err => errors.push(err));
+
+        await assert.rejects(client.connect(), (err: any) => err.code === 'ClosedAfterConnectText');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        assert.deepEqual(errors, [], 'no second report');
+        assert.equal(client.isClosed, true);
+        detector.check();
+
+        server.close();
+    });
+    it('Server: an unsolicited BYE closes the connection without waiting for the socket to go', async () => {
+        // The server says it is about to close but keeps the socket open (a FIN lost to a
+        // partition, a middlebox). The in-flight command and everything queued behind it used to
+        // wait for the socket watchdog, minutes later.
+        let server = createServer({
+            handlers: {
+                NOOP(ctx: any) {
+                    ctx.write('* BYE Session expired\r\n');
+                    ctx.ok('NOOP completed');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port);
+        client.on('error', () => {});
+        await client.connect();
+
+        let first = client.noop().then(
+            () => 'resolved',
+            (err: any) => err.code
+        );
+        // Queued straight behind it, the way the command pipeline queues them
+        let queued = ['NOOP', 'LIST'].map(command =>
+            client.exec(command).then(
+                () => 'resolved',
+                (err: any) => err.rejectedFrom || err.code
+            )
+        );
+        assert.equal(await first, 'resolved', 'the command the BYE answered completes');
+        assert.deepEqual(await Promise.all(queued), ['sendAfterLogout', 'sendAfterLogout'], 'the queued commands fail at once');
+        assert.equal(client.state, client.states.LOGOUT);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(client.isClosed, true, 'the connection is closed without waiting for the socket');
+
         server.close();
     });
     it('Server: NAMESPACE BAD with auth message surfaces auth failure', async () => {

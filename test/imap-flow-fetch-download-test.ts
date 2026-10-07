@@ -748,6 +748,53 @@ describe('imap-flow-fetch-download', () => {
         await new Promise(resolve => setTimeout(resolve, 30));
         assert.ok(true, 'no crash when content destroyed before streaming starts');
     });
+    it('Download: a base64 download goes on fetching once the head write has drained', async () => {
+        // The head write of a base64 part returns false (the decoder defers its callback), so
+        // the rest of the part is fetched from the drain wait rather than straight away
+        let client = makeClient();
+        let chunkSize = 64 * 1024;
+        let big = Buffer.alloc(chunkSize, 0x41);
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            let bodyParts = new Map<string, Buffer>();
+            bodyParts.set('2.mime', Buffer.from('Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n'));
+            bodyParts.set('2', calls <= 2 ? big : big.subarray(0, 8));
+            return { uid: 1, size: 400 * 1024, bodyParts };
+        };
+
+        let { content }: any = await client.download('1', '2', { chunkSize });
+        let data = await collect(content);
+        assert.equal(calls, 3, 'the remaining chunks were fetched');
+        assert.equal(data.length, Buffer.from(big.toString() + big.toString() + 'AAAAAAAA', 'base64').length);
+        assert.equal(client._openDownloads, 0);
+    });
+    it('Download: destroying a base64 download right after the head write releases the open-download count', async () => {
+        // A base64 decoder defers its callback, so a head chunk the size of its buffer never
+        // drains synchronously and the download waits for 'drain'. A consumer destroying the
+        // stream in that window closes it without a drain, which left the download counted as
+        // open for the life of the connection: auto-IDLE never armed again, and the watchdog
+        // kept treating the connection as expectedly quiet.
+        let client = makeClient();
+        let chunkSize = 64 * 1024;
+        let big = Buffer.alloc(chunkSize, 0x41);
+        client.fetchOne = async () => {
+            let bodyParts = new Map<string, Buffer>();
+            bodyParts.set('2.mime', Buffer.from('Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n'));
+            bodyParts.set('2', big);
+            return { uid: 1, size: 400 * 1024, bodyParts };
+        };
+
+        let { content }: any = await client.download('1', '2', { chunkSize });
+        assert.equal(client._openDownloads, 1);
+        // Queued behind the deferred head write, ahead of the decoder's deferred callback
+        await new Promise(resolve => setImmediate(resolve));
+        content.destroy();
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        assert.equal(client._openDownloads, 0, 'the download is no longer counted as open');
+        assert.equal(client.connectionBusy(), false);
+    });
     it('Download: aborting mid-backpressure stops the fetch loop', async () => {
         let client = makeClient();
         let big = Buffer.alloc(64 * 1024, 0x61);

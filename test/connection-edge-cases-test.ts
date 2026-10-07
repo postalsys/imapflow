@@ -4,7 +4,7 @@ import { ImapFlow } from '../src/imap-flow.js';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import type { MailboxObject } from '../src/types.js';
-import { makeClient, makeLoggingClient } from './fixtures/test-client.js';
+import { makeClient, makeLoggingClient, makeIdleReadyClient } from './fixtures/test-client.js';
 
 // Helper to create a mock client with compression enabled
 async function setupCompressedClient() {
@@ -556,12 +556,42 @@ describe('connection-edge-cases', () => {
         client.requestTagMap = new Map();
         client.requestTagMap.set('A001', request);
 
-        // Try to send command
-        client.send({ tag: 'A001', command: 'NOOP' } as any).then(() => {
-            assert.ok(errorReceived, 'Should reject command after logout');
-            assert.equal(errorReceived.code, 'NoConnection');
-            done();
-        });
+        // send() refuses the command by throwing: trySend() then takes it off currentRequest and
+        // rejects it, so the request itself is not settled here
+        client.send({ tag: 'A001', command: 'NOOP' } as any).then(
+            () => done(new Error('send() must not resolve after logout')),
+            (err: any) => {
+                assert.equal(err.code, 'NoConnection');
+                assert.equal(err.rejectedFrom, 'sendAfterLogout');
+                assert.equal(err.command, 'NOOP');
+                assert.equal(errorReceived, null, 'the request is settled by trySend(), not here');
+                done();
+            }
+        );
+    });
+    it('Connection Edge: a queued command after logout does not strand the ones behind it', async () => {
+        let client = makeClient();
+        // Two commands queued before a server BYE moved the connection to LOGOUT. The first
+        // refusal used to leave its request as currentRequest with nothing ever clearing it,
+        // so the second never settled until the socket watchdog fired.
+        let settled: any[] = [];
+        for (let tag of ['A1', 'A2']) {
+            client.requestQueue.push({ tag, command: 'NOOP', attributes: [], options: {} });
+            client.requestTagMap.set(tag, {
+                command: 'NOOP',
+                resolve: () => settled.push([tag, 'resolved']),
+                reject: (err: any) => settled.push([tag, err.rejectedFrom])
+            });
+        }
+        client.state = client.states.LOGOUT;
+
+        await client.trySend();
+        assert.deepEqual(settled, [
+            ['A1', 'sendAfterLogout'],
+            ['A2', 'sendAfterLogout']
+        ]);
+        assert.equal(client.currentRequest, false);
+        assert.equal(client.requestQueue.length, 0);
     });
     it('Connection Edge: Race condition in mailbox lock', (t, done) => {
         let client = new ImapFlow({
@@ -1010,6 +1040,52 @@ describe('connection-edge-cases', () => {
         ({ client, warnings } = makeLoggingClient({ port: 143, doSTARTTLS: true }));
         await assert.rejects(client.upgradeToSTARTTLS(), (err: any) => err.tlsFailed === true);
         assert.equal(warnings.length, 0);
+    });
+    it('Connection Edge: a throwing expunge listener does not cut a VANISHED response short', async () => {
+        let client = makeClient();
+        client.mailbox = { path: 'INBOX', exists: 3 };
+        let seen: number[] = [];
+        client.on('expunge', (event: any) => {
+            seen.push(event.uid);
+            if (event.uid === 1) {
+                throw new Error('listener boom');
+            }
+        });
+
+        await client.untaggedVanished({ attributes: [{ type: 'ATOM', value: '1:3' }] });
+        assert.deepEqual(seen, [1, 2, 3], 'every vanished UID is reported');
+    });
+    it('Connection Edge: a tagged completion discards the unsent literal parts', async () => {
+        // A tagged NO before the "+" (a refused APPEND) leaves the literal unsent. It belongs to
+        // the finished command: it must not stay referenced, nor answer a later continuation
+        let client = makeClient();
+        client.commandParts = [Buffer.from('message body')];
+        let settled: any = null;
+        client.currentRequest = { tag: 'A1', command: 'APPEND', sent: true };
+        client.requestTagMap.set('A1', { command: 'APPEND', resolve: (value: any) => (settled = value), reject: (err: any) => (settled = err) });
+
+        await client.handleResponse({ payload: Buffer.from('A1 NO [OVERQUOTA] Rejected'), literals: [], next: () => {} });
+        assert.equal(settled.responseStatus, 'NO');
+        assert.deepEqual(client.commandParts, []);
+
+        // The same for a command failed from this side
+        client.commandParts = [Buffer.from('message body')];
+        client.currentRequest = { tag: 'A2', command: 'APPEND', sent: true };
+        client.requestTagMap.set('A2', { command: 'APPEND', resolve: () => {}, reject: () => {} });
+        client.rejectCurrentRequest(new Error('failed'));
+        assert.deepEqual(client.commandParts, []);
+    });
+    it('Connection Edge: a lock is not granted when the open yields no mailbox', async () => {
+        // select() resolves with nothing once the connection is no longer authenticated (a BYE
+        // arrived meanwhile): the lock used to be granted anyway, on no mailbox at all
+        let client = makeIdleReadyClient();
+        client.mailbox = false;
+        client.state = client.states.AUTHENTICATED;
+        client.mailboxOpen = async () => undefined;
+
+        await assert.rejects(client.getMailboxLock('INBOX'), (err: any) => err.code === 'NoConnection' && err.rejectedFrom === 'mailboxLock');
+        assert.equal(client.currentLock, false);
+        client.close();
     });
     it('Connection Edge: unbind removes socket listeners and returns sockets', () => {
         let client: any = new ImapFlow({

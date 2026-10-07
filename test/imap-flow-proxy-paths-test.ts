@@ -303,6 +303,57 @@ describe('imap-flow-proxy-paths', () => {
             socket.on('data', onData);
         });
 
+    it('Proxy: close() between the tunnel and the deferred connect step arms no greeting timer', async () => {
+        // The cleartext proxy path runs its connect step from a setImmediate. A close() landing
+        // before it used to arm the greeting timer on a connection that was already gone, so a
+        // GREETING_TIMEOUT fired (and was logged) seconds after connect() had been rejected.
+        let server = createServer();
+        let port = await listen(server);
+
+        let proxy = createHttpProxy();
+        let proxyPort = await listen(proxy);
+
+        let logged: any[] = [];
+        let client: ImapFlow;
+        let logger: any = {
+            error: (entry: any) => logged.push(entry),
+            warn() {},
+            // The tunnel is reported right before the proxy step resolves: a tick scheduled here
+            // runs after connect()'s own microtasks and before the deferred connect step
+            info: (entry: any) => {
+                if (/Established a socket via HTTP proxy/.test(entry.msg)) {
+                    process.nextTick(() => client.close());
+                }
+            },
+            debug() {},
+            trace() {},
+            fatal() {}
+        };
+        client = new ImapFlow({
+            host: '127.0.0.1',
+            port,
+            secure: false,
+            proxy: `http://127.0.0.1:${proxyPort}`,
+            greetingTimeout: 100,
+            logger,
+            auth: { user: 'test', pass: 'secret' }
+        });
+        client.on('error', () => {});
+
+        await assert.rejects(client.connect(), (err: any) => err.code === 'ClosedAfterConnectText');
+        await new Promise(resolve => setImmediate(resolve));
+        await new Promise(resolve => setImmediate(resolve));
+        assert.ok(!client.greetingTimeout, 'no greeting timer');
+        await new Promise(resolve => setTimeout(resolve, 200));
+        assert.deepEqual(
+            logged.filter(entry => entry.err && entry.err.code === 'GREETING_TIMEOUT'),
+            [],
+            'no greeting timeout after the close'
+        );
+
+        proxy.close();
+        server.close();
+    });
     it('Proxy: session established through a real HTTP CONNECT proxy', async () => {
         let imapServer = createServer();
         let imapPort = await listen(imapServer);

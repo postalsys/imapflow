@@ -10,6 +10,10 @@ import { Headers } from '@zone-eu/mailsplit';
 import FlowedDecoder from '@zone-eu/mailsplit/lib/flowed-decoder.js';
 
 import { LimitedPassthrough, normalizeByteLimit } from './limited-passthrough.js';
+
+// What a wait on the head stream listens for: it can take more input, it failed, or it went
+// away (a consumer destroying it closes it without a 'drain')
+const DRAIN_WAIT_EVENTS = ['drain', 'error', 'close'];
 import type { ImapFlowError } from './errors.js';
 import { getDecoder, isUnsafeKey } from './tools.js';
 import type { ImapFlow } from './imap-flow.js';
@@ -361,11 +365,55 @@ export async function downloadMessage(
     // size, which leaves the loop bounded by maxBytes alone.
     let maxTotalBytes = normalizeByteLimit(meta.expectedSize ? meta.expectedSize * 2 + chunkSize : 0);
 
-    // Fetch remaining chunks in a loop, writing each to the decoder stream.
-    // Stops when the server returns a short chunk (< chunkSize), answers with more than the
-    // requested window, the byte limiter is satisfied, or the consumer destroys the output
-    // stream. Throws when the ceiling above is crossed.
-    let fetchAllParts = async () => {
+    // Resolves once the head stream can take more input, rejects when it fails, and resolves
+    // when it goes away. finish() is the listener itself: 'drain' and 'close' emit no arguments,
+    // 'error' emits the error, and removal needs no separate handler references. It removes
+    // only the listeners this wait installed - removeAllListeners('error') also took off the
+    // forwarder pipeStage() attached to the head stream when the pipeline was built, and the
+    // head must keep that forwarder for the life of the download or a chunk failure has nowhere
+    // to go.
+    let waitForDrain = (): Promise<void> =>
+        new Promise<void>((resolve, reject) => {
+            const finish = (err?: Error | undefined) => {
+                for (let event of DRAIN_WAIT_EVENTS) {
+                    stream.removeListener(event, finish);
+                }
+                /* c8 ignore next 2 */ // stream error during a backpressure drain wait is timing-dependent
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            };
+            for (let event of DRAIN_WAIT_EVENTS) {
+                stream.once(event, finish);
+            }
+        });
+
+    // Writes a chunk and waits out the backpressure. A base64 decoder defers its write callback,
+    // so a chunk the size of its buffer is never taken synchronously and the head chunk waits
+    // here as much as any other. A stream failure during the wait is thrown unless the download
+    // was already aborted (the consumer destroyed the stream).
+    let writeAndDrain = async (chunk: Buffer): Promise<void> => {
+        if (writeChunk(chunk) !== false) {
+            return;
+        }
+        try {
+            await waitForDrain();
+            /* c8 ignore next 5 */ // re-throw path only triggers on a stream error mid-drain, which is timing-dependent
+        } catch (err) {
+            if (!fetchAborted) {
+                throw err;
+            }
+        }
+    };
+
+    // Writes the head chunk, then fetches the remaining chunks in a loop, writing each to the
+    // decoder stream. Stops when the server returns a short chunk (< chunkSize), answers with
+    // more than the requested window, the byte limiter is satisfied, or the consumer destroys
+    // the output stream. Throws when the ceiling above is crossed.
+    let fetchAllParts = async (head: Buffer) => {
+        await writeAndDrain(head);
         while (hasMore && !isLimited() && !fetchAborted) {
             if (processed >= maxTotalBytes) {
                 // Loud on purpose. Everything written downstream by this point holds
@@ -379,7 +427,9 @@ export async function downloadMessage(
             }
 
             let { response, chunk } = await getNextPart();
-            if (fetchAborted) {
+            // A consumer that gave up while the chunk was in flight: its 'close' may still be a
+            // tick away from setting fetchAborted, so the stream's own flag is checked as well
+            if (fetchAborted || output.destroyed) {
                 break;
             }
 
@@ -397,49 +447,7 @@ export async function downloadMessage(
                 break;
             }
 
-            // Handle backpressure
-            if (writeChunk(chunk) === false) {
-                // Wait for drain event before continuing
-                try {
-                    await new Promise<void>((resolve, reject) => {
-                        // finish() is the listener itself, as settle() is for the TLS upgrade:
-                        // 'drain' and 'close' emit no arguments, 'error' emits the error, and
-                        // removal needs no separate handler references. It removes only the
-                        // three listeners this wait installed - removeAllListeners('error')
-                        // also took off the forwarder pipeStage() attached to the head stream
-                        // when the pipeline was built, and the head must keep that forwarder
-                        // for the life of the download or a chunk failure has nowhere to go.
-                        const finish = (err?: Error | undefined) => {
-                            for (let event of ['drain', 'error', 'close']) {
-                                stream.removeListener(event, finish);
-                            }
-
-                            /* c8 ignore next 2 */ // stream error during a backpressure drain wait is timing-dependent
-                            if (err) {
-                                reject(err);
-                            } else {
-                                resolve();
-                            }
-                        };
-
-                        stream.once('drain', finish);
-                        stream.once('error', finish);
-                        stream.once('close', finish);
-                    });
-                    /* c8 ignore start */ // re-throw path only triggers on a stream error mid-drain, which is timing-dependent
-                } catch (err) {
-                    // Re-throw only if not aborted
-                    if (!fetchAborted) {
-                        throw err;
-                    }
-                }
-                /* c8 ignore stop */
-
-                // Check if we should abort after waiting
-                if (fetchAborted) {
-                    break;
-                }
-            }
+            await writeAndDrain(chunk);
         }
     };
 
@@ -460,13 +468,10 @@ export async function downloadMessage(
         }
     };
 
-    // Kick off the download pipeline asynchronously. The first chunk was
-    // already fetched above (to get metadata); write it to the decoder
-    // stream and then fetch remaining chunks via fetchAllParts().
-    // setImmediate ensures the caller gets the {meta, content} return
-    // value before streaming begins.
-    let runFetchAllParts = () => {
-        fetchAllParts()
+    // Runs the download pipeline with the head chunk fetched above (for its metadata): it is
+    // written to the decoder stream and the remaining chunks follow
+    let runFetchAllParts = (head: Buffer) => {
+        fetchAllParts(head)
             .catch(err => {
                 if (!fetchAborted && stream && !stream.destroyed) {
                     stream.emit('error', err);
@@ -498,34 +503,8 @@ export async function downloadMessage(
             .catch(err => client.log.error({ msg: 'Failed to fail the download stream', err, cid: client.id }));
     };
 
-    setImmediate(() => {
-        let writeResult;
-        try {
-            writeResult = writeChunk(chunk);
-        } catch (err) {
-            stream.emit('error', err);
-            finishDownload();
-            /* c8 ignore next 3 */ // emitting the error above triggers cleanup (fetchAborted=true), so this end() guard is already false here
-            if (!fetchAborted && stream && !stream.destroyed) {
-                stream.end();
-            }
-            return;
-        }
-
-        /* c8 ignore next 9 */ // `stream` is piped to the limiter before this runs, so the head write drains synchronously and always returns true (verified for chunkSize up to 8MB); the drain-wait branch is unreachable
-        if (!writeResult) {
-            // Initial chunk filled the buffer, wait for drain
-            stream.once('drain', () => {
-                if (!fetchAborted) {
-                    runFetchAllParts();
-                } else {
-                    finishDownload();
-                }
-            });
-        } else {
-            runFetchAllParts();
-        }
-    });
+    // Deferred so the caller gets the {meta, content} return value before streaming begins
+    setImmediate(() => runFetchAllParts(chunk));
 
     return {
         meta,

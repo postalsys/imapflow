@@ -301,6 +301,94 @@ describe('commands-branches', () => {
         assert.ok(result);
         assert.equal(calls, 2);
     });
+    it('Branches: fetch retried after a throttle does not hand out the rows it already delivered', async () => {
+        // The retry reissues the whole FETCH, so the server answers with every message again:
+        // a streaming consumer was given the rows before the throttle twice
+        let calls = 0;
+        const row = (seq: number) => ({
+            command: String(seq),
+            attributes: [
+                { value: String(seq) },
+                [
+                    { type: 'ATOM', value: 'UID' },
+                    { type: 'ATOM', value: String(100 + seq) }
+                ]
+            ]
+        });
+        const connection = createMockConnection({
+            state: 3,
+            mailbox: { path: 'INBOX', exists: 3, flags: new Set(), permanentFlags: new Set(), noModseq: true },
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                calls++;
+                // two rows before the throttle, all three on the retry
+                for (let seq of calls === 1 ? [1, 2] : [1, 2, 3]) {
+                    await opts.untagged.FETCH(row(seq));
+                }
+                if (calls === 1) {
+                    const err: any = new Error('throttled');
+                    err.code = 'ETHROTTLE';
+                    err.responseText = 'throttled';
+                    throw err;
+                }
+                return { next: () => {}, response: { attributes: [] } };
+            }
+        });
+
+        let delivered: number[] = [];
+        const result = await fetchCommand(
+            connection,
+            '1:3',
+            { uid: true },
+            {
+                uid: true,
+                onUntaggedFetch: (message: any, next: any) => {
+                    delivered.push(message.uid);
+                    next();
+                }
+            }
+        );
+        assert.equal(calls, 2);
+        assert.deepEqual(delivered, [101, 102, 103]);
+        assert.equal(result!.count, 3);
+    });
+    it('Branches: fetch retried after a throttle keys delivered rows by sequence number without UIDs', async () => {
+        let calls = 0;
+        const row = (seq: number) => ({
+            command: String(seq),
+            attributes: [{ value: String(seq) }, [{ type: 'ATOM', value: 'FLAGS' }, [{ value: '\\Seen' }]]]
+        });
+        const connection = createMockConnection({
+            state: 3,
+            mailbox: { path: 'INBOX', exists: 2, flags: new Set(), permanentFlags: new Set(), noModseq: true },
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                calls++;
+                for (let seq of calls === 1 ? [1] : [1, 2]) {
+                    await opts.untagged.FETCH(row(seq));
+                }
+                if (calls === 1) {
+                    const err: any = new Error('throttled');
+                    err.code = 'ETHROTTLE';
+                    err.responseText = 'throttled';
+                    throw err;
+                }
+                return { next: () => {}, response: { attributes: [] } };
+            }
+        });
+
+        let delivered: number[] = [];
+        await fetchCommand(
+            connection,
+            '1:2',
+            { flags: true },
+            {
+                onUntaggedFetch: (message: any, next: any) => {
+                    delivered.push(message.seq);
+                    next();
+                }
+            }
+        );
+        assert.deepEqual(delivered, [1, 2]);
+    });
 
     // ============================================================================
     // search.js — line 98 branch: `options = options || {}` with undefined options.

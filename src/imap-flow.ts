@@ -656,6 +656,12 @@ export class ImapFlow extends EventEmitter {
     // cannot clear each other's suppression of auto-IDLE.
     /** @internal */
     _openDownloads: number;
+    // A recovery NOOP sent by the socket watchdog that has not settled yet, see _socketTimeout
+    /** @internal */
+    _recoveryPending: boolean;
+    // The reader is parked processing a response, see reader() and _socketTimeout
+    /** @internal */
+    _processingResponse: boolean;
     /** @internal */
     missingIdleCommand: string;
 
@@ -908,6 +914,8 @@ export class ImapFlow extends EventEmitter {
         this._lastPollAt = 0;
 
         this._openDownloads = 0;
+        this._recoveryPending = false;
+        this._processingResponse = false;
         this.missingIdleCommand = (this.options.missingIdleCommand || '').toString().toUpperCase().trim() || 'NOOP';
 
         this.disableBinary = !!this.options.disableBinary;
@@ -1082,15 +1090,11 @@ export class ImapFlow extends EventEmitter {
     /** @internal */
     async send(data: QueuedRequest): Promise<void> {
         if (this.state === this.states.LOGOUT) {
-            // already logged out
-            if (data.tag) {
-                let request = this.requestTagMap.get(data.tag);
-                if (request) {
-                    this.requestTagMap.delete(data.tag);
-                    request.reject(this.createNoConnectionError(false, { rejectedFrom: 'sendAfterLogout', command: request.command }));
-                }
-            }
-            return;
+            // Already logged out. Thrown rather than rejected here so trySend() clears the
+            // request from currentRequest and goes on to the next one: a request left there
+            // never gets a tagged response, and everything queued behind it would wait for
+            // the socket watchdog.
+            throw this.createNoConnectionError(false, { rejectedFrom: 'sendAfterLogout', command: data.command });
         }
 
         // Classify before the first await. Every frame of this command - the command line and
@@ -1172,7 +1176,6 @@ export class ImapFlow extends EventEmitter {
                 // nothing reached the wire, so no tagged response ever clears it, and
                 // every later command would queue behind it until the socket timeout.
                 // Reject the failed command and keep draining the queue.
-                this.commandParts = [];
                 this.rejectCurrentRequest(err as Error);
             }
         }
@@ -1307,16 +1310,55 @@ export class ImapFlow extends EventEmitter {
     // a way that leaves the command's outcome unknown.
     /** @internal */
     rejectCurrentRequest(err: Error): void {
+        let request = this.takeCurrentRequest();
+        if (request) {
+            request.reject(err);
+        }
+    }
+
+    /**
+     * Takes the in-flight command off the connection: its tag map entry, and the literal parts it
+     * still had to send (a tagged NO before the "+" of a refused APPEND leaves them behind, and
+     * they must neither stay referenced nor answer a later continuation). The parts are dropped
+     * whether or not a command is still current, as a failed dispatch may have cleared it already.
+     *
+     * @returns The pending request entry, if the command was still current
+     * @internal
+     */
+    takeCurrentRequest(): PendingRequest | undefined {
+        this.commandParts = [];
         if (!this.currentRequest) {
-            return;
+            return undefined;
         }
         let tag = this.currentRequest.tag;
         this.currentRequest = false;
         let request = this.requestTagMap.get(tag);
-        if (request) {
-            this.requestTagMap.delete(tag);
-            request.reject(err);
-        }
+        this.requestTagMap.delete(tag);
+        return request;
+    }
+
+    /**
+     * Resolves a command's promise with its tagged response and parks the reader until the
+     * command's handler calls next(). The release is kept in parkedRelease so a handler that
+     * throws before calling next() can be unparked (see releaseOrphanedResponse()); every path
+     * that resolves a command this way goes through here for that reason.
+     *
+     * @param request - Pending request entry
+     * @param parsed - Parsed tagged response
+     * @param hasTrailingData - Whether more input was already buffered after this line
+     * @internal
+     */
+    resolveParked(request: PendingRequest, parsed: ImapResponse, hasTrailingData?: boolean | undefined): Promise<void> {
+        return new Promise<void>(resolve => {
+            let release = (): void => {
+                if (this.parkedRelease === release) {
+                    this.parkedRelease = null;
+                }
+                resolve();
+            };
+            this.parkedRelease = release;
+            request.resolve({ response: parsed, next: release, hasTrailingData });
+        });
     }
 
     /**
@@ -1354,6 +1396,10 @@ export class ImapFlow extends EventEmitter {
             let keepReading;
 
             try {
+                // The reader is parked here for as long as processing takes (a fetch consumer
+                // working on a row), so a socket that goes quiet meanwhile is this side's doing,
+                // see _socketTimeout
+                this._processingResponse = true;
                 keepReading = await this.handleResponse(data);
             } catch (err) {
                 // Response handling past the parse step (log compilation, response shape
@@ -1368,6 +1414,7 @@ export class ImapFlow extends EventEmitter {
                 this.rejectCurrentRequest(error);
                 this.failProtocol(error);
             } finally {
+                this._processingResponse = false;
                 this.releaseStreamData(data);
             }
 
@@ -1555,9 +1602,7 @@ export class ImapFlow extends EventEmitter {
         // and an entirely unknown tag is recorded but tolerated.
         if (parsed.tag && !['*', '+'].includes(parsed.tag)) {
             if (this.currentRequest && this.currentRequest.tag === parsed.tag && this.currentRequest.sent) {
-                let request = this.requestTagMap.get(parsed.tag);
-                this.requestTagMap.delete(parsed.tag);
-                this.currentRequest = false;
+                let request = this.takeCurrentRequest();
 
                 if (request) {
                     await this.settleRequest(request, parsed, !!data.trailingAfterLine);
@@ -1620,16 +1665,7 @@ export class ImapFlow extends EventEmitter {
             case 'BYE':
                 // hasTrailingData is forwarded so STARTTLS can detect a plaintext
                 // injection (data buffered after the tagged OK, before the handshake).
-                await new Promise<void>(resolve => {
-                    let release = (): void => {
-                        if (this.parkedRelease === release) {
-                            this.parkedRelease = null;
-                        }
-                        resolve();
-                    };
-                    this.parkedRelease = release;
-                    request.resolve({ response: parsed, next: release, hasTrailingData });
-                });
+                await this.resolveParked(request, parsed, hasTrailingData);
                 break;
 
             case 'NO':
@@ -1663,7 +1699,7 @@ export class ImapFlow extends EventEmitter {
                         // is told nothing else about it, so this entry is the only record that
                         // the response was truncated.
                         this.log.warn({ msg: 'Partial FETCH response', cid: this.id, err });
-                        await new Promise<void>(resolve => request.resolve({ response: parsed, next: resolve }));
+                        await this.resolveParked(request, parsed);
                         break;
                     }
 
@@ -1771,6 +1807,17 @@ export class ImapFlow extends EventEmitter {
             socket.setKeepAlive(true, 5 * 1000);
         }
 
+        this.armSocketTimeout(socket);
+    }
+
+    /**
+     * Arms the inactivity watchdog on a socket. Guarded the same way as the rest of
+     * configureSocket(): other runtimes stub socket features.
+     *
+     * @param socket - The socket to arm
+     * @internal
+     */
+    armSocketTimeout(socket: ImapSocket): void {
         if (typeof socket.setTimeout === 'function') {
             socket.setTimeout(this.socketTimeout);
         }
@@ -1813,26 +1860,53 @@ export class ImapFlow extends EventEmitter {
         this._socketTimeout =
             this._socketTimeout ||
             (() => {
-                const err: ImapFlowError = new Error('Socket timeout');
-                err.code = 'ETIMEOUT';
+                const timeoutError = (): ImapFlowError => {
+                    const err: ImapFlowError = new Error('Socket timeout');
+                    err.code = 'ETIMEOUT';
+                    return err;
+                };
 
-                const quietExpected = this.idling || this._openDownloads || this.currentLock;
+                if (!this.usable || !this.socket || this.socket.destroyed) {
+                    this.emitError(timeoutError());
+                    return;
+                }
+
+                if (this._processingResponse) {
+                    // The reader is parked processing a response (a fetch consumer taking its
+                    // time over a row), so nothing is being read: the quiet is this side's, and
+                    // the server is not overdue with anything. The timer is one-shot and nothing
+                    // resumes it until reading does, so it is re-armed for the next check.
+                    this.log.debug({ msg: 'Socket timeout while a response is being processed', cid: this.id });
+                    this.armSocketTimeout(this.socket);
+                    return;
+                }
+
+                // A throttle back-off is quiet by design, the NOOP below probes that the server
+                // is still there
+                const quietExpected = this.idling || this._openDownloads || this.currentLock || this._throttleWaits.size;
                 const commandStuck = this.currentRequest && !(this.idling && this.currentRequest.command === 'IDLE');
 
-                if (quietExpected && !commandStuck) {
-                    if (!this.usable || !this.socket || this.socket.destroyed) {
-                        this.emitError(err);
-                        return;
-                    }
-                    this.run('NOOP').catch(err => {
-                        this.log.warn({ msg: 'Connection recovery failed after timeout', err, cid: this.id });
-                        if (!this.isClosed) {
-                            this.close();
-                        }
-                    });
+                // A recovery NOOP that has not settled by the next timeout means the peer is gone
+                if (quietExpected && !commandStuck && !this._recoveryPending) {
+                    // The inactivity timer is one-shot, re-armed only by traffic. The NOOP can not
+                    // reach the wire while IDLE still waits for its continuation (DONE is sent
+                    // only after the "+"), so without re-arming it here a peer that went silent
+                    // right after IDLE would never time out again.
+                    this._recoveryPending = true;
+                    this.armSocketTimeout(this.socket);
+                    this.run('NOOP')
+                        .catch(err => {
+                            this.log.warn({ msg: 'Connection recovery failed after timeout', err, cid: this.id });
+                            if (!this.isClosed) {
+                                this.close();
+                            }
+                        })
+                        .finally(() => {
+                            this._recoveryPending = false;
+                        });
                 } else {
                     this.log.debug({ msg: 'Socket timeout', cid: this.id });
-                    this.emitError(err);
+                    this.emitError(timeoutError());
                 }
             });
 
@@ -2407,7 +2481,7 @@ export class ImapFlow extends EventEmitter {
     }
 
     /** @internal */
-    beginSession(onUnhandledError: (err: Error) => void): void {
+    beginSession(): void {
         clearTimer(this.greetingTimeout);
         this.greetingReceived = true;
         this.untaggedHandlers.OK = null;
@@ -2428,9 +2502,12 @@ export class ImapFlow extends EventEmitter {
                 }
             })
             .catch(err => {
-                this.log.error({ err, cid: this.id });
+                // The transport goes with the failed attempt: the instance can not be reused, and
+                // an open socket would only trip the inactivity watchdog later
+                this.closeAfter();
 
                 if (typeof this.initialReject === 'function') {
+                    this.log.error({ err, cid: this.id });
                     clearTimer(this.greetingTimeout);
                     let reject = this.initialReject;
                     this.initialResolve = false;
@@ -2438,7 +2515,10 @@ export class ImapFlow extends EventEmitter {
                     return reject(err);
                 }
 
-                onUnhandledError(err);
+                // connect() was already settled by whatever took the connection down (a socket
+                // error or close rejected it first), so this failure is a consequence of that.
+                // A second 'error' event for it would throw when no listener is attached.
+                logConnectionError(this, 'Session setup failed', err);
             });
     }
 
@@ -2448,8 +2528,7 @@ export class ImapFlow extends EventEmitter {
             .filter(entry => entry)
             .join('');
 
-        // ALWAYS emit the error so users can handle it
-        this.beginSession(err => this.emitError(err));
+        this.beginSession();
     }
 
     /** @internal */
@@ -2461,10 +2540,7 @@ export class ImapFlow extends EventEmitter {
         // documented contract for the `authenticated` property: `true` when the
         // connection was authenticated by a PREAUTH greeting (no credentials known)
         this.authenticated = true;
-        this.beginSession(err => {
-            this.log.error({ err, cid: this.id });
-            this.closeAfter();
-        });
+        this.beginSession();
     }
 
     /** @internal */
@@ -2480,10 +2556,13 @@ export class ImapFlow extends EventEmitter {
         this.untaggedHandlers.BYE = null;
         this.state = this.states.LOGOUT;
 
-        // A BYE greeting rejects the connection outright. Do not wait for the server to close
-        // the socket: one that keeps it open would leave connect() pending until the greeting
-        // timeout.
-        if (!this.greetingReceived) {
+        // BYE means the server is about to close the connection (RFC 9051 7.1.5), so the socket
+        // is not waited out: a BYE greeting kept open would leave connect() pending until the
+        // greeting timeout, and an unsolicited BYE whose FIN never arrives would leave the
+        // in-flight command and the queue behind it waiting for the socket watchdog. The BYE
+        // that answers a LOGOUT is the exception: its tagged completion closes the connection.
+        const answersLogout = !!this.currentRequest && this.currentRequest.command.toUpperCase() === 'LOGOUT';
+        if (!this.greetingReceived || !answersLogout) {
             this.closeAfter();
         }
     }
@@ -2555,7 +2634,7 @@ export class ImapFlow extends EventEmitter {
         // keep exists up to date
         let prevCount = this.mailbox.exists;
         this.mailbox.exists = count;
-        this.emit('exists', {
+        emitSafe(this, 'exists', {
             path: this.mailbox.path,
             count,
             prevCount
@@ -2567,7 +2646,7 @@ export class ImapFlow extends EventEmitter {
     /** @internal */
     async notifyExpunge(payload: ExpungeEvent): Promise<void> {
         if (typeof this.options.expungeHandler !== 'function') {
-            this.emit('expunge', payload);
+            emitSafe(this, 'expunge', payload);
             return;
         }
 
@@ -2673,7 +2752,7 @@ export class ImapFlow extends EventEmitter {
                 updateEvent.flagColor = message.flagColor;
             }
 
-            this.emit('flags', updateEvent as FlagsEvent);
+            emitSafe(this, 'flags', updateEvent as FlagsEvent);
         }
     }
 
@@ -2888,6 +2967,12 @@ export class ImapFlow extends EventEmitter {
             }, deadline.remaining());
 
             let onConnect = () => {
+                // close() may have run between the socket assignment and this callback (the
+                // cleartext proxy path defers it): connect() is already rejected and the socket
+                // gone, so arming the greeting timer now would only fire a stray GREETING_TIMEOUT
+                if (this.isClosed || !this.socket) {
+                    return;
+                }
                 try {
                     clearTimer(this.connectTimeout);
 
@@ -2912,7 +2997,7 @@ export class ImapFlow extends EventEmitter {
                         reject(err);
                     }, this.options.greetingTimeout || GREETING_TIMEOUT);
 
-                    const connected = this.socket as ImapSocket;
+                    const connected = this.socket;
                     this.tls = (typeof connected.getCipher === 'function' && connected.getCipher()) || false;
 
                     let logInfo: { [key: string]: any } = {
@@ -3041,9 +3126,13 @@ export class ImapFlow extends EventEmitter {
             this.closeConnectSteps();
 
             if (typeof this.preCheck === 'function') {
-                // Runs while the connection is being torn down, so the rejection this sees is
-                // almost always the NoConnection close() is about to raise itself.
-                this.preCheck().catch(err => logConnectionError(this, 'Failed to break IDLE while closing', err));
+                // Taken off the connection first: breaking IDLE writes DONE, a write on a dead
+                // transport calls close(), and close() must not find this function here and
+                // re-enter it. The rejection this sees is almost always the NoConnection close()
+                // is about to raise itself.
+                let preCheck = this.preCheck;
+                this.preCheck = false;
+                preCheck().catch(err => logConnectionError(this, 'Failed to break IDLE while closing', err));
             }
 
             // Session-only public state must not survive the connection it describes: callers read
@@ -3176,6 +3265,8 @@ export class ImapFlow extends EventEmitter {
     closeRequests(): void {
         // Collect all pending requests to reject
         let pendingRequests: PendingRequest[] = [];
+
+        this.commandParts = [];
 
         // reject command that is currently processed
         if (this.currentRequest && this.requestTagMap.has(this.currentRequest.tag)) {
@@ -4331,6 +4422,11 @@ export class ImapFlow extends EventEmitter {
                 try {
                     // Need to SELECT/EXAMINE a different mailbox
                     await this.mailboxOpen(path, options);
+                    if (!this.mailbox) {
+                        // mailboxOpen() resolves with nothing when the connection is no longer
+                        // authenticated (a BYE arrived meanwhile): no mailbox, so no lock on it
+                        throw this.createNoConnectionError(false, { rejectedFrom: 'mailboxLock', path });
+                    }
                     this.log.trace({
                         msg: 'Mailbox lock acquired [selected]',
                         path,

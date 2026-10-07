@@ -455,6 +455,58 @@ describe('commands/idle', () => {
         // Loop should have run at least once (could run twice if timer works)
         assert.ok(loopCount >= 1, 'IDLE loop should have run');
     });
+    it('Commands: idle does not restart with a command queued behind the break', async () => {
+        // The max-IDLE-time break lets a queued command (a CLOSE, say) run next: restarting
+        // IDLE right behind it would idle in whatever state that command left the connection
+        let loopCount = 0;
+        const connection = createMockConnection({
+            state: 3,
+            capabilities: new Map([['IDLE', true]]),
+            idling: false,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                loopCount++;
+                if (opts && opts.onPlusTag) {
+                    await opts.onPlusTag();
+                }
+                // the max-IDLE-time timer breaks the session, with a command queued meanwhile
+                await new Promise(resolve => setTimeout(resolve, 20));
+                connection.requestQueue.push({ tag: 'A2', command: 'CLOSE', attributes: [], options: {} });
+                if (connection.preCheck) {
+                    await (connection as any).preCheck();
+                }
+                return { next: () => {} };
+            },
+            write: () => {}
+        });
+
+        await idleCommand(connection, 5);
+        assert.equal(loopCount, 1, 'IDLE is not restarted');
+    });
+    it('Commands: idle does not restart once the mailbox is no longer selected', async () => {
+        let loopCount = 0;
+        const connection = createMockConnection({
+            state: 3,
+            capabilities: new Map([['IDLE', true]]),
+            idling: false,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                loopCount++;
+                if (opts && opts.onPlusTag) {
+                    await opts.onPlusTag();
+                }
+                await new Promise(resolve => setTimeout(resolve, 20));
+                // the break let a CLOSE through, and it has completed
+                connection.state = 2;
+                if (connection.preCheck) {
+                    await (connection as any).preCheck();
+                }
+                return { next: () => {} };
+            },
+            write: () => {}
+        });
+
+        await idleCommand(connection, 5);
+        assert.equal(loopCount, 1, 'IDLE is not restarted');
+    });
     it('Commands: idle releases queued waiters when the server refuses IDLE', async () => {
         let waiter: any = null;
         const connection = createMockConnection({
