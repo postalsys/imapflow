@@ -1,4 +1,9 @@
+import { clearTimer } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
+
+// How long to wait for the server to answer LOGOUT before closing the socket anyway. Without a
+// bound of its own, an unanswered LOGOUT kept logout() pending until the socket timeout.
+const LOGOUT_TIMEOUT = 10 * 1000;
 
 /**
  * Logs out the user and closes the connection.
@@ -20,6 +25,8 @@ export default async function logout(connection: ImapFlow): Promise<boolean> {
     }
 
     let response: ExecResponse | undefined;
+    // close() rejects the pending LOGOUT with NoConnection, which counts as a completed logout
+    let timer = setTimeout(() => connection.close(), LOGOUT_TIMEOUT);
     try {
         response = await connection.exec('LOGOUT');
         return true;
@@ -35,6 +42,7 @@ export default async function logout(connection: ImapFlow): Promise<boolean> {
         // Set state to LOGOUT before closing to prevent any further commands from
         // being queued. The socket is closed unconditionally in this finally block
         // regardless of whether the LOGOUT command succeeded or failed.
+        clearTimer(timer);
         connection.state = connection.states.LOGOUT;
         if (response && typeof response.next === 'function') {
             response.next();

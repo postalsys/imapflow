@@ -22,7 +22,8 @@ export default async function deleteMailbox(connection: ImapFlow, path: string |
     // IMAP servers reject DELETE on the currently selected mailbox (RFC 3501 6.3.4).
     let selected = getSelectedMailbox(connection);
     if (selected && selected.path === path) {
-        await connection.run('CLOSE');
+        // UNSELECT where possible, CLOSE would expunge messages flagged \Deleted
+        await connection.run('CLOSE', { unselect: true });
     }
 
     let response: ExecResponse;

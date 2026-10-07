@@ -386,6 +386,22 @@ describe('imap-flow-fetch-download', () => {
         let data: any = await collect(content);
         assert.equal(data.toString(), 'untyped body text');
     });
+    it('Download: part 1 of a message whose BODYSTRUCTURE is NIL is read as the text body', async () => {
+        let client = makeClient();
+        let textBody = Buffer.from('untyped body text');
+        client.fetchOne = async (range: any, query: any) => {
+            if (query.bodyStructure) {
+                return { uid: 1, size: textBody.length }; // BODYSTRUCTURE NIL leaves bodyStructure unset
+            }
+            let bodyParts = new Map();
+            bodyParts.set('header', Buffer.from('\r\n'));
+            bodyParts.set('text', textBody);
+            return { uid: 1, size: textBody.length, bodyParts };
+        };
+        let { content } = await client.download('1', '1', { chunkSize: 1024 });
+        let data: any = await collect(content);
+        assert.equal(data.toString(), 'untyped body text');
+    });
     it('Download: returns {} when requested part missing from response', async () => {
         let client = makeClient();
         client.fetchOne = async () => {

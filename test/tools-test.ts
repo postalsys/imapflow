@@ -591,6 +591,25 @@ describe('tools', () => {
         assert.ok(Array.isArray(tree.folders));
         assert.equal(tree.folders.length, 2);
     });
+    it('Tools: getFolderTree nests a child that is listed before its parent', () => {
+        // the LIST command sorts special-use mailboxes first, ahead of their parent
+        let folders: any = [
+            { name: 'INBOX', path: 'INBOX', flags: new Set(), parent: [], specialUse: '\\Inbox' },
+            { name: 'Sent Mail', path: '[Gmail]/Sent Mail', flags: new Set(), parent: ['[Gmail]'], specialUse: '\\Sent' },
+            { name: '[Gmail]', path: '[Gmail]', flags: new Set(['\\HasChildren', '\\Noselect']), parent: [] },
+            { name: 'Spam', path: '[Gmail]/Spam', flags: new Set(), parent: ['[Gmail]'] }
+        ];
+        let tree: any = tools.getFolderTree(folders);
+
+        assert.deepEqual(
+            tree.folders.map((folder: any) => folder.path),
+            ['INBOX', '[Gmail]']
+        );
+        assert.deepEqual(
+            tree.folders[1].folders.map((folder: any) => folder.path),
+            ['[Gmail]/Sent Mail', '[Gmail]/Spam']
+        );
+    });
     it('Tools: getFolderTree with nested folders', () => {
         let folders: any = [
             { name: 'INBOX', path: 'INBOX', flags: new Set(['\\HasChildren']), parent: [] },
@@ -1447,6 +1466,11 @@ describe('tools', () => {
         let untagged = await parser('* 1 FETCH (X-GM-LABELS (\\Important NIL))');
         let r: any = await tools.formatMessageResponse(untagged, { path: 'INBOX' } as MailboxObject);
         assert.deepEqual([...r.labels], ['\\Important']); // NIL entry filtered out
+    });
+    it('Tools: formatMessageResponse keeps labels sent as literals', async () => {
+        let untagged = await parser('* 1 FETCH (X-GM-LABELS (\\Important {6}\r\n))', { literals: [Buffer.from('T\u00f6\u00f6d')] });
+        let r: any = await tools.formatMessageResponse(untagged, { path: 'INBOX' } as MailboxObject);
+        assert.deepEqual([...r.labels], ['\\Important', 'T\u00f6\u00f6d']);
     });
     it('Tools: formatMessageResponse does not lower highestModseq', async () => {
         let mailbox = { path: 'INBOX', highestModseq: 99999n };

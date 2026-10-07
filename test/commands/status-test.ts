@@ -333,6 +333,21 @@ describe('commands/status', () => {
             assert.equal(err.code, 'NotFound');
         }
     });
+    it('Commands: status returns false when the mailbox probe after a NO fails', async () => {
+        const connection = createMockConnection({
+            state: 2,
+            run: async () => {
+                throw new Error('Connection not available');
+            },
+            exec: async () => {
+                const err: any = new Error('Mailbox not found');
+                err.responseStatus = 'NO';
+                throw err;
+            }
+        });
+
+        assert.equal(await statusCommand(connection, 'INBOX', { messages: true }), false);
+    });
     it('Commands: status returns false on other errors', async () => {
         const connection = createMockConnection({
             state: 2,

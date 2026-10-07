@@ -523,6 +523,12 @@ export class ImapFlow extends EventEmitter {
     requestQueue: QueuedRequest[];
     /** @internal */
     currentRequest: QueuedRequest | false;
+    /**
+     * Releases the reader loop parked in settleRequest() behind a tagged OK/BYE, while the command
+     * handler has not yet called `next()` on its response
+     * @internal
+     */
+    parkedRelease: (() => void) | null;
 
     // Count of tagged responses whose tag was never issued by this connection. Tolerated
     // (non-conforming servers do this) but tracked, so the compatibility decision in
@@ -669,6 +675,10 @@ export class ImapFlow extends EventEmitter {
     skipListAuxArgs: boolean;
     /** @internal */
     skipLsub: boolean;
+    // Set once the server refused IDLE with a tagged NO or BAD although it advertises the
+    // capability. Auto-IDLE then polls instead of retrying a refused IDLE around every cycle
+    /** @internal */
+    skipIdle: boolean;
 
     // Set when the IMAP4rev2 advertisement is not to be acted on: the caller opted
     // out (disableIMAP4rev2), or the server rejected ENABLE IMAP4REV2 while also
@@ -846,6 +856,7 @@ export class ImapFlow extends EventEmitter {
         this.requestTagMap = new Map();
         this.requestQueue = [];
         this.currentRequest = false;
+        this.parkedRelease = null;
 
         this._unknownTagCount = 0;
         this._nextUnknownTagWarn = 1;
@@ -906,6 +917,7 @@ export class ImapFlow extends EventEmitter {
         this.skipListStatusArgs = false;
         this.skipListAuxArgs = false;
         this.skipLsub = false;
+        this.skipIdle = false;
         this.skipRev2 = !!this.options.disableIMAP4rev2;
 
         // Named error handler for proper cleanup. Certain error codes represent
@@ -1607,7 +1619,16 @@ export class ImapFlow extends EventEmitter {
             case 'BYE':
                 // hasTrailingData is forwarded so STARTTLS can detect a plaintext
                 // injection (data buffered after the tagged OK, before the handshake).
-                await new Promise<void>(resolve => request.resolve({ response: parsed, next: resolve, hasTrailingData }));
+                await new Promise<void>(resolve => {
+                    let release = (): void => {
+                        if (this.parkedRelease === release) {
+                            this.parkedRelease = null;
+                        }
+                        resolve();
+                    };
+                    this.parkedRelease = release;
+                    request.resolve({ response: parsed, next: release, hasTrailingData });
+                });
                 break;
 
             case 'NO':
@@ -4129,7 +4150,34 @@ export class ImapFlow extends EventEmitter {
         }
 
         let handler = this.commands.get(command) as CommandHandler;
-        return await handler(this, ...args);
+        try {
+            return await handler(this, ...args);
+        } finally {
+            this.releaseOrphanedResponse(command);
+        }
+    }
+
+    /**
+     * Safety net for the `next()` contract of settleRequest(): a command handler that throws or
+     * returns between the resolution of its exec() and the `next()` call would leave the reader
+     * loop parked, stalling every later command until the socket timeout. Checked one macrotask
+     * after the handler settled, so a concurrently running handler whose response has just been
+     * resolved gets to release it itself first.
+     *
+     * @param command Command name, for the log entry.
+     * @internal
+     */
+    releaseOrphanedResponse(command: string): void {
+        let release = this.parkedRelease;
+        if (!release) {
+            return;
+        }
+        setImmediate(() => {
+            if (this.parkedRelease === release) {
+                this.log.warn({ msg: 'Command handler did not release its response', command, cid: this.id });
+                release();
+            }
+        });
     }
 
     // Mailbox lock queue processor. Implements a mutex pattern: only one lock

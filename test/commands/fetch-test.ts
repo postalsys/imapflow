@@ -511,6 +511,46 @@ describe('commands/fetch', () => {
             assert.equal(err.message, 'Callback error');
         }
     });
+    it('Commands: fetch fails the command on a consumer error even though the connection swallows handler errors', async () => {
+        let delivered: any[] = [];
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                for (let seq of ['1', '2']) {
+                    // the real connection only logs errors thrown by untagged handlers
+                    await opts.untagged
+                        .FETCH({
+                            command: seq,
+                            attributes: [
+                                { value: 'FETCH' },
+                                [
+                                    { type: 'ATOM', value: 'UID' },
+                                    { type: 'ATOM', value: '10' + seq }
+                                ]
+                            ]
+                        })
+                        .catch(() => {});
+                }
+                return { next: () => {} };
+            }
+        });
+
+        await assert.rejects(
+            fetchCommand(
+                connection,
+                '1:2',
+                { uid: true },
+                {
+                    onUntaggedFetch: (msg, done) => {
+                        delivered.push(msg.uid);
+                        done(new Error('Consumer failed'));
+                    }
+                }
+            ),
+            { message: 'Consumer failed' }
+        );
+        assert.deepEqual(delivered, [101]);
+    });
     it('Commands: fetch handles error', async () => {
         const connection = createMockConnection({
             state: 3,

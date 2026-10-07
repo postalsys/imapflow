@@ -392,10 +392,17 @@ describe('search-compiler', () => {
         }
     });
     it('Search Compiler: an empty EMAILID or THREADID is no criterion, with or without capability', () => {
-        let connection = createMockConnection();
-        let compiled = searchCompiler(connection, { emailId: '', threadId: undefined, seen: true } as any);
-
-        assert.deepEqual(compiled, [{ type: 'ATOM', value: 'SEEN' }]);
+        for (let capabilities of [[], [['OBJECTID', true]], [['X-GM-EXT-1', true]]]) {
+            let connection = createMockConnection({ capabilities });
+            for (let query of [
+                { emailId: '', threadId: undefined, seen: true },
+                // used to compile into NOT EMAILID "false" (every message) or throw a TypeError
+                { emailId: false, threadId: null, seen: true }
+            ]) {
+                let compiled = searchCompiler(connection, query as any);
+                assert.deepEqual(compiled, [{ type: 'ATOM', value: 'SEEN' }], JSON.stringify({ capabilities, query }));
+            }
+        }
     });
     it('Search Compiler: THREADID with OBJECTID', () => {
         let connection = createMockConnection({
@@ -592,6 +599,20 @@ describe('search-compiler', () => {
 
         assert.ok(hasAttr(compiled, 'OLDER'));
     });
+    it('Search Compiler: a future date with WITHIN uses the date search instead of a zero interval', () => {
+        let connection = createMockConnection({
+            capabilities: [['WITHIN', true]]
+        });
+        let future = new Date(Date.now() + 86400 * 1000);
+        for (let [key, term] of [
+            ['before', 'BEFORE'],
+            ['since', 'SINCE']
+        ]) {
+            let compiled = searchCompiler(connection, { [key]: future });
+            assert.ok(hasAttr(compiled, term), key);
+            assert.ok(!hasAttr(compiled, 'OLDER') && !hasAttr(compiled, 'YOUNGER'), key);
+        }
+    });
     it('Search Compiler: Date with invalid value ignored', () => {
         let connection = createMockConnection();
         let compiled = searchCompiler(connection, { since: 'invalid-date' });
@@ -671,11 +692,11 @@ describe('search-compiler', () => {
             { type: 'ATOM', value: 'SEEN' }
         ]);
     });
-    it('Search Compiler: KEYWORD with a flag that can not be searched is skipped', () => {
+    it('Search Compiler: KEYWORD with a flag that can not be searched throws instead of widening the search', () => {
         let connection = createMockConnection();
-        let compiled = searchCompiler(connection, { keyword: '\\Recent', seen: true });
-
-        assert.deepEqual(compiled, [{ type: 'ATOM', value: 'SEEN' }]);
+        for (let query of [{ keyword: '\\Recent', seen: true }, { unkeyword: '\\recent' }, { keyword: 5 }, { keyword: null }]) {
+            assert.throws(() => searchCompiler(connection, query as any), { code: 'InvalidSearchQuery' }, JSON.stringify(query));
+        }
     });
     it('Search Compiler: NOT with an operand that compiles to nothing throws', () => {
         // Used to compile { not: { before: <invalid> }, seen: true } into NOT SEEN

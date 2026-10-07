@@ -308,11 +308,11 @@ const httpConnect = async ({ logger, proxyUrl, secureProxy, proxyHost, proxyPort
  * @returns An IPv4 address.
  */
 const resolveIPv4 = async (hostname: string, deadline: ConnectionDeadline): Promise<string> => {
-    let addresses = await deadline.race(dns.promises.resolve4(hostname));
-    if (!addresses || !addresses.length) {
-        throw proxyError(`Could not resolve an IPv4 address for ${hostname}`, 'EPROXY');
-    }
-    return addresses[0];
+    // lookup() goes through the system resolver (getaddrinfo), so hosts files and mDNS names
+    // resolve the same way they would for a direct connection. It rejects (ENOTFOUND) rather
+    // than returning nothing when the name has no IPv4 address
+    let { address } = await deadline.race(dns.promises.lookup(hostname, { family: 4 }));
+    return address;
 };
 
 interface SocksConnectParams {
@@ -380,8 +380,8 @@ const socksConnect = async ({ logger, proxyUrl, protocol, proxyHost, proxyPort, 
         };
 
         if (proxyUrl.username || proxyUrl.password) {
-            connectionOpts.proxy.userId = proxyUrl.username;
-            connectionOpts.proxy.password = proxyUrl.password;
+            connectionOpts.proxy.userId = decodeUserInfo(proxyUrl.username);
+            connectionOpts.proxy.password = decodeUserInfo(proxyUrl.password);
         }
 
         // The dependency treats a zero timeout as its own 30 second default, so only a strictly

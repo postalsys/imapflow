@@ -898,6 +898,7 @@ describe('commands-branches', () => {
             capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
             exec: async () => {
                 const err: any = new Error('auth failed');
+                err.responseStatus = 'NO';
                 err.response = { attributes: [] };
                 throw err;
             }
@@ -916,6 +917,7 @@ describe('commands-branches', () => {
             capabilities: new Map([['AUTH=PLAIN', true]]),
             exec: async () => {
                 const err: any = new Error('auth failed');
+                err.responseStatus = 'NO';
                 err.response = { attributes: [] };
                 throw err;
             }
@@ -934,6 +936,7 @@ describe('commands-branches', () => {
             capabilities: new Map([['AUTH=LOGIN', true]]), // no AUTH=PLAIN -> LOGIN chosen
             exec: async () => {
                 const err: any = new Error('auth failed');
+                err.responseStatus = 'NO';
                 err.response = { attributes: [] };
                 throw err;
             }

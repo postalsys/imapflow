@@ -64,6 +64,11 @@ export default async function fetch(
             list: []
         };
 
+        // The first error the onUntaggedFetch consumer reported through next(err). Errors thrown
+        // by untagged handlers are only logged by the connection, so it is kept here and fails
+        // the command once the FETCH completes; later messages are no longer handed to the consumer.
+        let consumerError: Error | null = null;
+
         let response: ExecResponse;
         try {
             /* c8 ignore next */ // range is guaranteed truthy by the early-return guard above, so the '*' fallback is unreachable
@@ -230,17 +235,24 @@ export default async function fetch(
                     // (useful for large result sets). Otherwise, collect all into messages.list.
                     FETCH: async (untagged: ImapResponse) => {
                         messages.count++;
+                        if (consumerError) {
+                            return;
+                        }
                         let formatted = await formatMessageResponse(untagged, mailbox, connection.idHashAlgorithm);
                         if (typeof options.onUntaggedFetch === 'function') {
-                            await new Promise<void>((resolve, reject) => {
-                                (options.onUntaggedFetch as NonNullable<FetchCommandOptions['onUntaggedFetch']>)(formatted, err => {
-                                    if (err) {
-                                        reject(err);
-                                    } else {
-                                        resolve();
-                                    }
+                            try {
+                                await new Promise<void>((resolve, reject) => {
+                                    (options.onUntaggedFetch as NonNullable<FetchCommandOptions['onUntaggedFetch']>)(formatted, err => {
+                                        if (err) {
+                                            reject(err);
+                                        } else {
+                                            resolve();
+                                        }
+                                    });
                                 });
-                            });
+                            } catch (err) {
+                                consumerError = err as Error;
+                            }
                         } else {
                             messages.list.push(formatted);
                         }
@@ -249,6 +261,9 @@ export default async function fetch(
             });
 
             response.next();
+            if (consumerError) {
+                throw consumerError;
+            }
             return messages;
         } catch (err: any) {
             // The last throttled attempt falls through and throws, so running out of retries

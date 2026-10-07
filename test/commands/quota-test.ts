@@ -27,6 +27,20 @@ describe('commands/quota', () => {
         const result = await quotaCommand(connection, 'INBOX');
         assert.equal(result, false);
     });
+    it('Commands: quota runs on an RFC 9208 server that only advertises QUOTA=RES-*', async () => {
+        let sent: string[] = [];
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map([['QUOTA=RES-STORAGE', true]]),
+            exec: async (cmd: any) => {
+                sent.push(cmd);
+                return { next: () => {} };
+            }
+        });
+
+        assert.deepEqual(await quotaCommand(connection, 'INBOX'), { path: 'INBOX' });
+        assert.deepEqual(sent, ['GETQUOTAROOT']);
+    });
     it('Commands: quota with storage quota', async () => {
         const connection = createMockConnection({
             state: 2,

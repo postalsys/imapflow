@@ -262,6 +262,17 @@ export function logConnectionError(connection: ImapFlow, msg: string, err: ImapF
 }
 
 /**
+ * Whether a command failed because the server answered it with a tagged NO or BAD, as opposed
+ * to a lost connection, a timeout or a local failure that says nothing about the server's answer.
+ *
+ * @param err - The error the command failed with
+ * @returns True for a tagged NO or BAD
+ */
+export function isServerRefusal(err: ImapFlowError | null | undefined): boolean {
+    return !!err && (err.responseStatus === 'NO' || err.responseStatus === 'BAD');
+}
+
+/**
  * Checks whether IMAP4rev2 semantics are active for the connection: either the
  * client enabled IMAP4rev2 explicitly, or the server is rev2-only (advertises
  * IMAP4rev2 without IMAP4rev1), in which case rev2 is the base protocol without
@@ -621,7 +632,13 @@ export function getFolderTree(folders: ListResponse[]): ListTreeResponse {
         return node;
     };
 
-    for (let folder of folders) {
+    // Parents are inserted before their children, as getTreeNode() can only descend into nodes
+    // that already exist. LIST gives no ordering guarantee, and the LIST command sorts special-use
+    // mailboxes first, which put a child such as "[Gmail]/Sent Mail" ahead of "[Gmail]" and left
+    // it at the root. The sort is stable, so siblings keep their listing order
+    let byDepth = [...folders].sort((a, b) => (a.parent ? a.parent.length : 0) - (b.parent ? b.parent.length : 0));
+
+    for (let folder of byDepth) {
         let parent = getTreeNode(folder.parent);
         // see if entry already exists
         let existing = parent.folders && parent.folders.find(existing => existing.name === folder.name);
@@ -1557,7 +1574,8 @@ export function isUnsafeKey(key: unknown): boolean {
 /**
  * Reads a parsed attribute list of atoms or strings (a flag list, a capability list) into
  * an array of strings. Any element can be a parsed NIL, and the list itself can be NIL,
- * so both levels are guarded here rather than at each call site.
+ * so both levels are guarded here rather than at each call site. A literal (a Gmail label
+ * the server could not send quoted) arrives as a Buffer and is decoded as UTF-8.
  *
  * @param list - Parsed attribute list from a response.
  * @returns The string values, in order, with unusable entries dropped.
@@ -1566,7 +1584,17 @@ export function getStringList(list: unknown): string[] {
     if (!Array.isArray(list)) {
         return [];
     }
-    return list.map(entry => (entry && typeof entry.value === 'string' ? entry.value : false)).filter(entry => entry);
+    let strings: string[] = [];
+    for (let entry of list) {
+        let value = entry && entry.value;
+        if (Buffer.isBuffer(value)) {
+            value = value.toString();
+        }
+        if (value && typeof value === 'string') {
+            strings.push(value);
+        }
+    }
+    return strings;
 }
 
 /**

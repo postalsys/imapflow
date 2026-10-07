@@ -1,4 +1,13 @@
-import { encodePath, normalizePath, buildStatusQueryAttributes, isRev2Active, isAuthenticatedState, emitSafe, getSelectedMailbox } from '../tools.js';
+import {
+    encodePath,
+    normalizePath,
+    buildStatusQueryAttributes,
+    isRev2Active,
+    isAuthenticatedState,
+    emitSafe,
+    getSelectedMailbox,
+    logConnectionError
+} from '../tools.js';
 import { parseStatusList } from './status-fields.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
@@ -103,7 +112,12 @@ export default async function status(connection: ImapFlow, path: string | string
         // Not a deadlock, and only reachable when the server rejects the STATUS, but a polled
         // STATUS of a missing folder ends the poll early.
         if (err.responseStatus === 'NO') {
-            let folders = await connection.run('LIST', '', path, { listOnly: true });
+            // A failing probe (lost connection, throttling) answers nothing about the mailbox,
+            // so STATUS then fails the same way as any other failed STATUS
+            let folders = await connection.run('LIST', '', path, { listOnly: true }).catch((listErr: ImapFlowError) => {
+                logConnectionError(connection, 'Failed to check if the mailbox exists', listErr);
+                return false;
+            });
             if (folders && !folders.length) {
                 let error: ImapFlowError = new Error(`Mailbox doesn't exist: ${path}`);
                 error.code = 'NotFound';

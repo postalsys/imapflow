@@ -68,6 +68,13 @@ describe('search', () => {
         const result = parseEsearchResponse(attrs);
         assert.deepEqual(result.partial, { range: '1:100', messages: '1001,1003:1010,1015' });
     });
+    it('ESEARCH: parseEsearchResponse PARTIAL with NIL results (RFC 9394 past the end)', () => {
+        // the token parser emits null for NIL, as in "UID PARTIAL (24000:24500 NIL)"
+        const attrs = [{ type: 'ATOM', value: 'PARTIAL' }, [{ type: 'ATOM', value: '24000:24500' }, null]] as any;
+        const result = parseEsearchResponse(attrs);
+        assert.deepEqual(result.partial, { range: '24000:24500', messages: '' });
+        assert.deepEqual(parseEsearchResponse([{ type: 'ATOM', value: 'PARTIAL' }, [null, null]] as any), {});
+    });
     it('ESEARCH: parseEsearchResponse COUNT + PARTIAL combined', () => {
         const attrs = [
             { type: 'ATOM', value: 'COUNT' },

@@ -140,10 +140,18 @@ describe('special-use', () => {
         assert.equal(byName('Корзина'), '\\Trash');
     });
 
-    // Surrounding whitespace and the LTR mark injected by some clients are stripped.
-    it('Special Use: strips whitespace and LTR marks before matching', () => {
+    // Surrounding whitespace and the LTR/RTL marks injected by some clients are stripped.
+    it('Special Use: strips whitespace and LTR/RTL marks before matching', () => {
         assert.equal(byName('  Архив  '), '\\Archive');
         assert.equal(byName('\u200eНежелательная почта'), '\\Junk');
+        assert.equal(byName('\u200fArchive'), '\\Archive');
+    });
+
+    it('Special Use: SPECIAL-USE flags match case-insensitively', () => {
+        assert.deepEqual(specialUse.specialUse(true, { flags: new Set(['\\HasNoChildren', '\\SENT']), name: 'Outbox folder' }), {
+            flag: '\\Sent',
+            source: 'extension'
+        });
     });
 
     // Exchange and Outlook use a two word naming style ("Sent Items") that differs from

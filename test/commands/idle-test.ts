@@ -476,4 +476,35 @@ describe('commands/idle', () => {
         assert.equal(await idleCommand(connection), false);
         assert.equal(await waiter, 'resolved', 'the waiting command runs instead of failing with the IDLE error');
     });
+    it('Commands: idle polls instead of retrying once the server refused IDLE', async () => {
+        let commands: string[] = [];
+        const connection = createMockConnection({
+            state: 3,
+            capabilities: new Map([['IDLE', true]]),
+            currentSelectCommand: { command: 'SELECT', arguments: [{ value: 'INBOX' }] },
+            exec: async (cmd: any) => {
+                commands.push(cmd);
+                if (cmd === 'IDLE') {
+                    const err: any = new Error('Command failed');
+                    err.responseStatus = 'NO';
+                    throw err;
+                }
+                if (connection.preCheck) {
+                    await (connection as any).preCheck();
+                }
+                return { next: () => {} };
+            }
+        });
+
+        assert.equal(await idleCommand(connection), false);
+        assert.equal(connection.skipIdle, true);
+
+        const polling = idleCommand(connection, 5);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        if ((connection as any).preCheck) {
+            await (connection as any).preCheck();
+        }
+        await polling;
+        assert.deepEqual([...new Set(commands)], ['IDLE', 'NOOP']);
+    });
 });

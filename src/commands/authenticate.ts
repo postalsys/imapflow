@@ -1,4 +1,4 @@
-import { getStatusCode, getErrorText } from '../tools.js';
+import { getStatusCode, getErrorText, isServerRefusal } from '../tools.js';
 import type { ImapFlow } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapResponse } from '../handler/types.js';
@@ -24,7 +24,10 @@ async function handleAuthError(err: ImapFlowError, errorResponse?: any): Promise
     if (errorCode) {
         err.serverResponseCode = errorCode;
     }
-    err.authenticationFailed = true;
+    // Only a tagged NO/BAD is the server refusing the credentials, see login.ts
+    if (isServerRefusal(err)) {
+        err.authenticationFailed = true;
+    }
     err.response = await getErrorText(err.response);
     if (errorResponse) {
         err.oauthError = errorResponse;
@@ -129,26 +132,33 @@ async function authLogin(connection: ImapFlow, username: string, password: strin
     try {
         // SASL LOGIN is a challenge-response mechanism: the server sends base64-encoded
         // prompts ("Username:" and "Password:") and the client responds with base64-encoded values.
+        let usernameSent = false;
         let response = await connection.exec('AUTHENTICATE', [{ type: 'ATOM', value: 'LOGIN' }], {
             onPlusTag: async (resp: ImapResponse) => {
-                if (resp.attributes && resp.attributes[0] && resp.attributes[0].type === 'TEXT') {
-                    // Decode the server's base64 challenge to determine what it's asking for.
-                    // Strip trailing colons and null bytes (\x00) that some servers append to the prompt.
-                    let question = Buffer.from(resp.attributes[0].value as string, 'base64')
-                        .toString()
-                        .toLowerCase()
-                        .replace(/[:\x00]*$/, '');
+                // Decode the server's base64 challenge to determine what it's asking for.
+                // Strip trailing colons and null bytes (\x00) that some servers append to the prompt.
+                let question =
+                    resp.attributes && resp.attributes[0] && resp.attributes[0].type === 'TEXT'
+                        ? Buffer.from(resp.attributes[0].value as string, 'base64')
+                              .toString()
+                              .toLowerCase()
+                              .replace(/[:\x00]*$/, '')
+                        : '';
 
-                    if (question === 'username' || question === 'user name') {
-                        let encodedUsername = Buffer.from(username).toString('base64');
-                        connection.log.debug({ src: 'c', msg: encodedUsername, comment: `Encoded username for AUTH=LOGIN`, cid: connection.id });
-                        connection.write(encodedUsername);
-                    } else if (question === 'password') {
-                        connection.log.debug({ src: 'c', msg: '(* value hidden *)', comment: `Encoded password for AUTH=LOGIN`, cid: connection.id });
-                        connection.write(Buffer.from(password).toString('base64'));
-                    } else {
-                        throw new Error(`Unknown LOGIN question "${question}"`);
-                    }
+                // Some servers send an empty first challenge, which by SASL LOGIN convention asks for the username
+                if (question === 'username' || question === 'user name' || (!question && !usernameSent)) {
+                    let encodedUsername = Buffer.from(username).toString('base64');
+                    connection.log.debug({ src: 'c', msg: encodedUsername, comment: `Encoded username for AUTH=LOGIN`, cid: connection.id });
+                    connection.write(encodedUsername);
+                    usernameSent = true;
+                } else if (question === 'password') {
+                    connection.log.debug({ src: 'c', msg: '(* value hidden *)', comment: `Encoded password for AUTH=LOGIN`, cid: connection.id });
+                    connection.write(Buffer.from(password).toString('base64'));
+                } else {
+                    // Cancel the exchange (RFC 9051 section 6.2.2), so the server fails the command
+                    // with a tagged BAD instead of waiting for an answer that never comes
+                    connection.log.warn({ msg: 'Unknown AUTH=LOGIN challenge, cancelling', question, cid: connection.id });
+                    connection.write('*');
                 }
             }
         });

@@ -34,6 +34,7 @@ describe('commands/login', () => {
             state: 1,
             exec: async () => {
                 const err: any = new Error('Auth failed');
+                err.responseStatus = 'NO';
                 err.response = { attributes: [] };
                 throw err;
             }
@@ -51,6 +52,7 @@ describe('commands/login', () => {
             state: 1,
             exec: async () => {
                 const err: any = new Error('Auth failed');
+                err.responseStatus = 'NO';
                 err.response = {
                     tag: 'A1',
                     command: 'NO',
@@ -73,5 +75,17 @@ describe('commands/login', () => {
             assert.equal(err.authenticationFailed, true);
             assert.equal(err.serverResponseCode as any, 'AUTHENTICATIONFAILED');
         }
+    });
+    it('Commands: login does not flag a connection failure as an authentication failure', async () => {
+        const connection = createMockConnection({
+            state: 1,
+            exec: async () => {
+                const err: any = new Error('Connection not available');
+                err.code = 'NoConnection';
+                throw err;
+            }
+        });
+
+        await assert.rejects(loginCommand(connection, 'testuser', 'pass'), (err: any) => err.code === 'NoConnection' && err.authenticationFailed === undefined);
     });
 });

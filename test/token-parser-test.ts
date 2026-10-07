@@ -469,6 +469,28 @@ describe('token-parser', () => {
         }
     });
 
+    it('Token Parser: a star-led sequence set may end the line', async () => {
+        for (let seq of ['*:4', '*:*', '*:4,7']) {
+            let parsed: any = await parser(`* ESEARCH (TAG "A") ALL ${seq}`);
+            assert.deepEqual(parsed.attributes[2], { type: 'SEQUENCE', value: seq }, seq);
+        }
+        // a bare star is still an atom, an incomplete set is still refused
+        assert.deepEqual((await parser('TAG1 CMD *')).attributes, [{ type: 'ATOM', value: '*' }]);
+        for (let input of ['TAG1 CMD *:', 'TAG1 CMD *:4,']) {
+            await assert.rejects(parser(input), { code: 'ParserError9' }, input);
+        }
+    });
+
+    it('Token Parser: response code leniency does not depend on the case of the status', async () => {
+        for (let status of ['OK', 'ok', 'No', 'bad']) {
+            let parsed: any = await parser(`A1 ${status} [X a(b] t`);
+            assert.deepEqual(parsed.attributes[0].section, [
+                { type: 'ATOM', value: 'X' },
+                { type: 'ATOM', value: 'a(b' }
+            ]);
+        }
+    });
+
     it('Token Parser: REFERRAL response code keeps the whole IMAP URL', async () => {
         let parsed = await parser('* OK [REFERRAL imap://user@host/INBOX] go there');
         assert.deepEqual(parsed.attributes, [

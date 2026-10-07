@@ -415,6 +415,24 @@ describe('rev2-live', () => {
             await client.logout();
         }
     });
+    it('Live rev2: renaming the selected mailbox does not expunge \\Deleted messages', async () => {
+        const logs: any[] = [];
+        const client = await connectClient({}, logs);
+        try {
+            await client.mailboxCreate('Keep');
+            await client.append('Keep', Buffer.from('Subject: one\r\n\r\nbody\r\n'));
+            await client.append('Keep', Buffer.from('Subject: two\r\n\r\nbody\r\n'), ['\\Deleted']);
+
+            await client.mailboxOpen('Keep');
+            await client.mailboxRename('Keep', 'Kept');
+
+            assert.ok(clientSent(logs, 'UNSELECT'), 'the mailbox is deselected with UNSELECT');
+            const status: any = await client.status('Kept', { messages: true });
+            assert.equal(status.messages, 2, 'the \\Deleted message is still there');
+        } finally {
+            await client.logout();
+        }
+    });
     it('Live rev2: a flag set that reduces to nothing leaves the message alone', async () => {
         const client = await (connectClient as any)();
         try {

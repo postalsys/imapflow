@@ -65,10 +65,25 @@ const createConnectStub =
         return socket;
     };
 
-type DnsStub = { resolve4: (hostname: string) => Promise<string[]>; resolve: (hostname: string) => Promise<string[]> };
+type DnsStub = {
+    lookup: (hostname: string, options: { family?: number }) => Promise<{ address: string; family: number }>;
+    resolve4: (hostname: string) => Promise<string[]>;
+    resolve: (hostname: string) => Promise<string[]>;
+};
 
 // dns stub that fails loudly: no proxy mode may resolve an endpoint through ImapFlow itself.
 const createDnsStub = (resolve4Result?: string[], onCall?: ((method: string, hostname: string) => void) | null): DnsStub => ({
+    lookup: async (hostname, options) => {
+        if (onCall) {
+            onCall(`lookup family ${options && options.family}`, hostname);
+        }
+        if (!resolve4Result || !resolve4Result.length) {
+            let err: any = new Error(`getaddrinfo ENOTFOUND ${hostname}`);
+            err.code = 'ENOTFOUND';
+            throw err;
+        }
+        return { address: resolve4Result[0], family: 4 };
+    },
     resolve4: async hostname => {
         if (onCall) {
             onCall('resolve4', hostname);
@@ -114,6 +129,7 @@ const stubTransports = (t: TestContext, { netConnect, tlsConnect, socksCreateCon
     t.mock.method(tls, 'connect', (tlsConnect || (() => createFakeSocket())) as any);
     t.mock.method(SocksClient, 'createConnection', (socksCreateConnection || (async () => ({ socket: createFakeSocket() }))) as any);
     const dnsImpl = dnsStub || createDnsStub();
+    t.mock.method(dns.promises, 'lookup', dnsImpl.lookup as any);
     t.mock.method(dns.promises, 'resolve4', dnsImpl.resolve4 as any);
     t.mock.method(dns.promises, 'resolve', dnsImpl.resolve as any);
     return { proxyConnection, detachEarlyErrorHandler };
@@ -484,7 +500,7 @@ describe('proxy-connection', () => {
 
         assert.equal(options[0].proxy.type, 4);
         assert.equal(options[0].destination.host, '93.184.216.34', 'SOCKS4 gets a resolved IPv4 address, not a hostname');
-        assert.deepEqual(dnsCalls, [['resolve4', 'mail.example.com']], 'the lookup is explicitly IPv4 only');
+        assert.deepEqual(dnsCalls, [['lookup family 4', 'mail.example.com']], 'the system resolver is asked for IPv4 only');
     });
 
     it('Proxy Connection: SOCKS4 reports an unresolvable destination', async t => {
@@ -494,8 +510,8 @@ describe('proxy-connection', () => {
             resolve4Result: []
         });
 
-        assert.ok(result.err, 'an empty IPv4 lookup fails the connection');
-        assert.equal(result.err.code, 'EPROXY');
+        assert.ok(result.err, 'a failed IPv4 lookup fails the connection');
+        assert.equal(result.err.code, 'ENOTFOUND');
     });
 
     it('Proxy Connection: SOCKS4 and SOCKS4a reject IPv6 destinations clearly', async t => {
@@ -523,6 +539,12 @@ describe('proxy-connection', () => {
         assert.equal(options[0].proxy.password, 'testpass');
         assert.ok(!logger._logs.info[0].proxyUrl.includes('testpass'));
         assert.ok(logger._logs.info[0].proxyUrl.includes('(hidden)'));
+    });
+
+    it('Proxy Connection: SOCKS credentials are percent-decoded', async t => {
+        const { options } = await socksCase(t, { proxyUrl: 'socks5://us%3Aer:p%40ss@proxy.example.com:1080', host: 'mail.example.com' });
+        assert.equal(options[0].proxy.userId, 'us:er');
+        assert.equal(options[0].proxy.password, 'p@ss');
     });
 
     it('Proxy Connection: SOCKS with username only', async t => {
@@ -607,7 +629,7 @@ describe('proxy-connection', () => {
 
         const { proxyConnection } = stubTransports(t, {
             socksCreateConnection: async () => ({ socket: createFakeSocket() }),
-            dnsStub: { resolve4: () => new Promise(() => {}), resolve: () => new Promise(() => {}) }
+            dnsStub: { lookup: () => new Promise(() => {}), resolve4: () => new Promise(() => {}), resolve: () => new Promise(() => {}) }
         });
 
         let err: any = await proxyConnection(logger as any, 'socks4://proxy.example.com:1080', 'mail.example.com', 993, { connectionTimeout: 60 })

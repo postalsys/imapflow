@@ -17,7 +17,9 @@ export default async function quota(connection: ImapFlow, path: string | string[
         return;
     }
 
-    if (!connection.capabilities.has('QUOTA')) {
+    // An RFC 9208 server advertises its QUOTA=RES-* resource types and does not have to list
+    // the bare RFC 2087 QUOTA token as well
+    if (!connection.capabilities.has('QUOTA') && ![...connection.capabilities.keys()].some(capability => capability.startsWith('QUOTA=RES-'))) {
         return false;
     }
 

@@ -67,9 +67,14 @@ export function parseEsearchResponse(attrs: ImapAttributeList): ESearchResult {
                 const listToken = attrs[++i];
                 const items = Array.isArray(listToken) ? listToken : null;
                 if (!items || items.length < 2) break;
+                const range = (items[0] as ImapAttributeNode | null)?.value;
+                if (typeof range !== 'string') break;
+                // RFC 9394 partial-results is a sequence-set or NIL, the latter when the requested
+                // range lies past the end of the results. NIL is reported as an empty set.
+                const messages = (items[1] as ImapAttributeNode | null)?.value;
                 result.partial = {
-                    range: (items[0] as ImapAttributeNode).value as string,
-                    messages: (items[1] as ImapAttributeNode).value as string
+                    range,
+                    messages: typeof messages === 'string' ? messages : ''
                 };
                 break;
             }

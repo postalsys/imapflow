@@ -11,7 +11,8 @@ import {
     getSelectedMailbox,
     emitSafe,
     isAuthenticatedState,
-    reportCommandError
+    reportCommandError,
+    logConnectionError
 } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
@@ -211,10 +212,16 @@ export default async function append(
 
         // If we have a sequence number but no UID (server doesn't support UIDPLUS),
         // look up the UID via SEARCH to provide a consistent result to the caller.
+        // The message is already stored, so a failed lookup only leaves the UID out:
+        // rejecting here would make a retrying caller append it twice.
         if (map.seq && !map.uid) {
-            let list = await connection.search({ seq: map.seq }, { uid: true });
-            if (Array.isArray(list) && list.length) {
-                map.uid = list[0];
+            try {
+                let list = await connection.search({ seq: map.seq }, { uid: true });
+                if (Array.isArray(list) && list.length) {
+                    map.uid = list[0];
+                }
+            } catch (err) {
+                logConnectionError(connection, 'Failed to look up the UID of the appended message', err as ImapFlowError);
             }
         }
 

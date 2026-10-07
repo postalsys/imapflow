@@ -55,7 +55,8 @@ export default async function namespace(connection: ImapFlow): Promise<Namespace
 
     let response: ExecResponse;
     try {
-        let map = {} as NamespacesObject;
+        // NIL personal namespaces and a missing NAMESPACE response leave the defaults in place
+        let map: NamespacesObject = { personal: [], other: false, shared: false };
         response = await connection.exec('NAMESPACE', false, {
             untagged: {
                 // The NAMESPACE response (RFC 2342) contains exactly three sections:
@@ -67,12 +68,17 @@ export default async function namespace(connection: ImapFlow): Promise<Namespace
                     if (!untagged.attributes || !untagged.attributes.length) {
                         return;
                     }
-                    map.personal = getNamsepaceInfo(untagged.attributes[0]) as NamespaceObject[];
+                    // NIL personal namespaces are legal (RFC 2342 section 5, e.g. after an anonymous login)
+                    map.personal = getNamsepaceInfo(untagged.attributes[0]) || [];
                     map.other = getNamsepaceInfo(untagged.attributes[1]);
                     map.shared = getNamsepaceInfo(untagged.attributes[2]);
                 }
             }
         });
+        // Release the response before touching the parsed data, so nothing below can leave the
+        // reader parked behind this command
+        response.next();
+
         connection.namespaces = map;
 
         // make sure that we have the first personal namespace always set
@@ -80,7 +86,6 @@ export default async function namespace(connection: ImapFlow): Promise<Namespace
             connection.namespaces.personal[0] = { prefix: '', delimiter: '.' };
         }
         connection.namespaces.personal[0].prefix = connection.namespaces.personal[0].prefix || '';
-        response.next();
 
         connection.namespace = connection.namespaces.personal[0];
 

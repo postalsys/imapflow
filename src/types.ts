@@ -845,7 +845,7 @@ export interface ESearchResult {
         | {
               /** The requested range, e.g. "1:100" */
               range: string;
-              /** Matching UIDs in that range as compact sequence-set */
+              /** Matching UIDs in that range as compact sequence-set, an empty string when the range lies past the end of the results */
               messages: string;
           }
         | undefined;

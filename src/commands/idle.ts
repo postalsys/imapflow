@@ -1,4 +1,13 @@
-import { guardedPromise, hasCapability, logConnectionError, restampConnectionError, unrefTimer, clearTimer, getSelectedMailbox } from '../tools.js';
+import {
+    guardedPromise,
+    hasCapability,
+    isServerRefusal,
+    logConnectionError,
+    restampConnectionError,
+    unrefTimer,
+    clearTimer,
+    getSelectedMailbox
+} from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { SelectCommand } from '../handler/types.js';
@@ -160,7 +169,10 @@ async function runIdle(connection: ImapFlow): Promise<void | false> {
         // A tagged NO or BAD only means the server refused IDLE; the connection is still usable,
         // so the waiters are released by the finally block below and their own commands run.
         // Anything else (close, lost socket, parser failure) fails the waiters too.
-        let refusedByServer = ['NO', 'BAD'].includes((err as ImapFlowError).responseStatus as string);
+        let refusedByServer = isServerRefusal(err as ImapFlowError);
+        if (refusedByServer) {
+            connection.skipIdle = true;
+        }
         if (preCheckWaitQueue.length && !refusedByServer) {
             // One error for the whole queue: every waiter failed at the same site, for the same
             // reason. Built inside the guard so a teardown with nothing queued - the common case -
@@ -360,7 +372,7 @@ export default async function idle(connection: ImapFlow, maxIdleTime?: number | 
     // If server supports IDLE (RFC 2177, folded into base IMAP4rev2), use it for
     // real-time push notifications. Otherwise, fall back to periodic polling with
     // NOOP/STATUS/SELECT.
-    if (hasCapability(connection, 'IDLE')) {
+    if (hasCapability(connection, 'IDLE') && !connection.skipIdle) {
         let idleTimer: NodeJS.Timeout | undefined;
         let stillIdling = false;
         // IDLE loop: runs IDLE, and if maxIdleTime is reached, breaks and restarts to keep the
@@ -391,7 +403,7 @@ export default async function idle(connection: ImapFlow, maxIdleTime?: number | 
         }
     }
 
-    // Fallback for servers without IDLE support: poll at regular intervals using
+    // Fallback for servers without IDLE support, or that refused it: poll at regular intervals using
     // NOOP (default), STATUS, or SELECT depending on missingIdleCommand config.
     return runPollingFallback(connection, maxIdleTime);
 }

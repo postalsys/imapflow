@@ -23,7 +23,6 @@ import type {
     FetchMessageObject,
     FetchOptions,
     FetchQueryObject,
-    MessageStructureObject,
     SequenceString
 } from './types.js';
 
@@ -81,7 +80,8 @@ export async function downloadMessage(
             downloadOptions.uid = true;
         }
 
-        if (!(response.bodyStructure as MessageStructureObject).childNodes) {
+        // bodyStructure is unset when the server sent BODYSTRUCTURE NIL
+        if (!response.bodyStructure?.childNodes) {
             // single text message
             part = 'TEXT';
         }

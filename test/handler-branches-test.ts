@@ -251,14 +251,10 @@ describe('handler-branches', () => {
     // and pushes a leading NOT atom. (A `null` value also enters this branch, but setOpt
     // then crashes on `value.toString()` at line 56, so `false` is the only value that
     // drives this branch to completion through the public API.)
-    it('search-compiler: threadid false triggers setOpt NOT branch', () => {
+    it('search-compiler: threadid false is no criterion', () => {
         let connection = createMockConnection({ capabilities: [['OBJECTID', true]] });
         let attrs = searchCompiler(connection, { threadid: false } as any);
-        assert.deepEqual(attrs, [
-            { type: 'ATOM', value: 'NOT' },
-            { type: 'ATOM', value: 'THREADID' },
-            { type: 'ATOM', value: 'false' }
-        ]);
+        assert.deepEqual(attrs, []);
     });
 
     // KEYWORD search where the flag is NOT usable via canUseFlag but IS already present in

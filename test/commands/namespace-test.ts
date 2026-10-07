@@ -42,6 +42,27 @@ describe('commands/namespace', () => {
         assert.equal((connection as any).namespaces.other[0].prefix, 'Users.');
         assert.equal((connection as any).namespaces.shared[0].prefix, 'Shared.');
     });
+    it('Commands: namespace survives NIL personal namespaces and a missing NAMESPACE response', async () => {
+        for (let untaggedResponse of [{ attributes: [null, null, null] }, null]) {
+            let released = 0;
+            const connection = createMockConnection({
+                state: 2,
+                capabilities: new Map([['NAMESPACE', true]]),
+                exec: async (cmd: any, args: any, opts: any) => {
+                    // RFC 2342 allows "* NAMESPACE NIL NIL NIL", and a broken server may send nothing
+                    if (untaggedResponse) {
+                        await opts.untagged.NAMESPACE(untaggedResponse);
+                    }
+                    return { next: () => released++ };
+                }
+            });
+
+            const result: any = await namespaceCommand(connection);
+            assert.deepEqual(result, { prefix: '', delimiter: '.' });
+            assert.deepEqual((connection as any).namespaces, { personal: [{ prefix: '', delimiter: '.' }], other: false, shared: false });
+            assert.equal(released, 1, 'the response is released, so the reader loop is not left parked');
+        }
+    });
     it('Commands: namespace uses the real command on rev2-only servers without the token', async () => {
         const connection = createMockConnection({
             state: 2,

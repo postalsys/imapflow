@@ -560,6 +560,51 @@ describe('imap-flow-internals', () => {
         assert.equal(err.code, 'NoConnection');
     });
 
+    it('Internals: a response its command handler never released is released once the handler settles', async () => {
+        let client = makeClient();
+        client.socket = { destroyed: false };
+        let warnings: any[] = [];
+        client.log.warn = (entry: any) => warnings.push(entry);
+        let settled: any;
+        client.commands.set('LEAKY', async () => {
+            await new Promise(resolve => {
+                settled = client.settleRequest({ resolve, reject: () => {} }, { tag: 'A1', command: 'OK', attributes: [] }, false);
+            });
+            // throws between the resolution of its command and next()
+            throw new Error('handler failed');
+        });
+
+        await assert.rejects(client.runInternal('LEAKY'), { message: 'handler failed' });
+        // the reader loop would stay parked here without the safety net
+        await settled;
+        assert.equal(client.parkedRelease, null);
+        assert.deepEqual(
+            warnings.map(entry => [entry.msg, entry.command]),
+            [['Command handler did not release its response', 'LEAKY']]
+        );
+    });
+    it('Internals: the orphaned response check leaves a response its own handler releases alone', async () => {
+        let client = makeClient();
+        client.socket = { destroyed: false };
+        let warnings: any[] = [];
+        client.log.warn = (entry: any) => warnings.push(entry);
+        let response: any;
+        let settled = client.settleRequest(
+            { resolve: (value: any) => (response = value), reject: () => {} },
+            { tag: 'A1', command: 'OK', attributes: [] },
+            false
+        );
+        client.commands.set('QUICK', async () => true);
+
+        // another command settles while this response is still waiting for its own handler
+        let quick = client.runInternal('QUICK');
+        response.next();
+        assert.equal(await quick, true);
+        await settled;
+        await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(warnings, []);
+    });
+
     // ============================================================================
     // send() onSend error containment
     // ============================================================================

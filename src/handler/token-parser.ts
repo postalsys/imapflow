@@ -610,7 +610,7 @@ export class TokenParser {
                         chr.charCodeAt(0) < 0x80 && // allow 8bit (presumably unicode) bytes
                         chr !== ']' &&
                         !(chr === '*' && this.currentNode.value === '\\') &&
-                        (!this.parent || !this.parent.command || !['NO', 'BAD', 'OK'].includes(this.parent.command))
+                        (!this.parent || !this.parent.command || !['NO', 'BAD', 'OK'].includes(this.parent.command.toUpperCase()))
                     ) {
                         let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E16: ${JSON.stringify(chr)}]`);
                         error.code = 'ParserError16';
@@ -923,6 +923,14 @@ export class TokenParser {
         // the same applies to a digit-led token that ends the input on a dangling separator ("10:")
         if (this.state === STATE_SEQUENCE && (tokenLast === ':' || tokenLast === ',') && !tokenHasStar) {
             this.currentNode.type = 'ATOM';
+        }
+
+        // A star-led sequence set ("*:4") is only closed by a space or a closing delimiter, so one
+        // that ends the input is closed here, under the same rules a space applies to it. A bare "*"
+        // is left to getAttributes(), which reads it as an atom
+        if (this.state === STATE_SEQUENCE && !this.currentNode.isClosed && (RE_SINGLE_DIGIT.test(tokenLast) || (tokenLast === '*' && tokenPrev === ':'))) {
+            this.currentNode.isClosed = true;
+            this.currentNode.endPos = this.pos + this.str.length - 1;
         }
     }
 }

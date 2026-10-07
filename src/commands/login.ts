@@ -1,4 +1,4 @@
-import { getStatusCode, getErrorText } from '../tools.js';
+import { getStatusCode, getErrorText, isServerRefusal } from '../tools.js';
 import type { ImapFlow } from '../imap-flow.js';
 
 /**
@@ -34,7 +34,11 @@ export default async function login(connection: ImapFlow, username: string, pass
         if (errorCode) {
             err.serverResponseCode = errorCode;
         }
-        err.authenticationFailed = true;
+        // Only a tagged NO/BAD is the server refusing the credentials; a lost connection or a
+        // timeout during LOGIN says nothing about them, and a caller may retry it
+        if (isServerRefusal(err)) {
+            err.authenticationFailed = true;
+        }
         err.response = await getErrorText(err.response);
         throw err;
     }

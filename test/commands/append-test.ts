@@ -246,6 +246,30 @@ describe('commands/append', () => {
         assert.equal(searchCalled, true);
         assert.equal(result.uid, 100);
     });
+    it('Commands: append resolves without a UID when the UID lookup fails', async () => {
+        const connection = createMockConnection({
+            state: 3,
+            mailbox: { path: 'INBOX', exists: 10 },
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                if (opts && opts.untagged && opts.untagged.EXISTS) {
+                    await opts.untagged.EXISTS({ command: '11' });
+                }
+                return {
+                    next: () => {},
+                    response: { attributes: [] }
+                };
+            },
+            emit: () => {},
+            search: async () => {
+                throw new Error('Connection not available');
+            }
+        });
+
+        // the message is stored, so the append must not reject and invite a duplicating retry
+        const result: any = await appendCommand(connection, 'INBOX', 'content');
+        assert.equal(result.seq, 11);
+        assert.equal(result.uid, undefined);
+    });
     it('Commands: append with BINARY and NULL bytes', async () => {
         let literalAttr: any = null;
         const connection = createMockConnection({

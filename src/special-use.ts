@@ -78,6 +78,7 @@ const TOKEN_SPLIT = /[\s\-_/.,()[\]]+/;
 // we fall back to matching folder names against these lists of known
 // translations in various languages (including non-Latin scripts).
 export const flags: string[] = ['\\All', '\\Archive', '\\Drafts', '\\Flagged', '\\Junk', '\\Sent', '\\Trash'];
+const LOWERCASE_FLAGS = flags.map(flag => flag.toLowerCase());
 
 export const names: { [flag: string]: string[] } = {
     '\\Sent': [
@@ -868,9 +869,10 @@ for (let flag of Object.keys(names)) {
 }
 
 // Fold a folder name into the form the name tables are stored in.
-// Remove U+200E (LEFT-TO-RIGHT MARK) which some mail clients (especially for
-// RTL languages like Arabic, Hebrew) insert into folder names for display purposes.
-// These invisible marks would otherwise prevent exact string matching.
+// Remove U+200E and U+200F (LEFT-TO-RIGHT and RIGHT-TO-LEFT MARK) which some mail clients
+// (especially for RTL languages like Arabic, Hebrew) insert into folder names for display
+// purposes. These invisible marks would otherwise prevent exact string matching. U+200B
+// (ZERO WIDTH SPACE) is kept, Khmer names in the tables use it as their word separator.
 // Normalize with NFKC last: the same folder name can arrive in different but
 // equivalent forms depending on the client that created it, and matching is exact.
 // NFKC rather than NFC because the compatibility folding is what maps halfwidth
@@ -879,7 +881,7 @@ for (let flag of Object.keys(names)) {
 function normalizeName(name: string): string {
     return name
         .toLowerCase()
-        .replace(/\u200e/g, '')
+        .replace(/[\u200e\u200f]/g, '')
         .trim()
         .normalize('NFKC');
 }
@@ -909,7 +911,10 @@ export const specialUse = (hasSpecialUseExtension: boolean, folder: SpecialUseFo
     // Extension-provided flags take precedence over name-based detection because they
     // are authoritative - the server explicitly marks the folder's role.
     if (hasSpecialUseExtension) {
-        const flag = flags.find(flag => folder.flags.has(flag));
+        // Flags are atoms and compare case-insensitively (RFC 9051 section 9)
+        const listed = new Set<string>();
+        folder.flags.forEach(flag => listed.add(flag.toLowerCase()));
+        const flag = flags.find((flag, i) => listed.has(LOWERCASE_FLAGS[i]));
         if (flag) {
             return { flag, source: 'extension' };
         }

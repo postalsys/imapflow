@@ -132,6 +132,7 @@ describe('commands/authenticate', () => {
                     });
                 }
                 const err: any = new Error('Authentication failed');
+                err.responseStatus = 'NO';
                 err.response = { attributes: [] };
                 throw err;
             },
@@ -167,6 +168,7 @@ describe('commands/authenticate', () => {
                     });
                 }
                 const err: any = new Error('Authentication failed');
+                err.responseStatus = 'NO';
                 err.response = { attributes: [] };
                 throw err;
             },
@@ -200,6 +202,7 @@ describe('commands/authenticate', () => {
                     await opts.onPlusTag({});
                 }
                 const err: any = new Error('Authentication failed');
+                err.responseStatus = 'NO';
                 err.response = {
                     tag: 'A1',
                     command: 'NO',
@@ -392,7 +395,8 @@ describe('commands/authenticate', () => {
         assert.equal(writtenValues[0], 'testuser');
         assert.equal(writtenValues[1], 'testpass');
     });
-    it('Commands: authenticate with LOGIN throws on unknown question', async () => {
+    it('Commands: authenticate with LOGIN cancels the exchange on an unknown question', async () => {
+        let written: any[] = [];
         const connection = createMockConnection({
             state: 1,
             capabilities: new Map([['AUTH=LOGIN', true]]),
@@ -403,9 +407,12 @@ describe('commands/authenticate', () => {
                         attributes: [{ type: 'TEXT', value: Buffer.from('Unknown Question:').toString('base64') }]
                     });
                 }
-                return { next: () => {} };
+                // the server answers the "*" cancellation with a tagged BAD
+                let err: any = new Error('Command failed');
+                err.responseStatus = 'BAD';
+                throw err;
             },
-            write: () => {},
+            write: (data: any) => written.push(data),
             log: {
                 debug: () => {},
                 warn: () => {},
@@ -413,12 +420,35 @@ describe('commands/authenticate', () => {
             }
         });
 
-        try {
-            await authenticateCommand(connection, 'user', { password: 'pass' });
-            assert.ok(false, 'Should have thrown');
-        } catch (err: any) {
-            assert.ok(err.message.includes('Unknown LOGIN question'));
-        }
+        await assert.rejects(authenticateCommand(connection, 'user', { password: 'pass' }), (err: any) => err.authenticationFailed === true);
+        assert.deepEqual(written, ['*']);
+    });
+    it('Commands: authenticate with LOGIN answers an empty first challenge with the username', async () => {
+        let writtenValues: any[] = [];
+        const connection = createMockConnection({
+            state: 1,
+            capabilities: new Map([['AUTH=LOGIN', true]]),
+            authCapabilities: new Map(),
+            exec: async (cmd: any, args: any, opts: any) => {
+                if (opts && opts.onPlusTag) {
+                    // bare "+" with no text, then a password prompt
+                    await opts.onPlusTag({ attributes: [] });
+                    await opts.onPlusTag({
+                        attributes: [{ type: 'TEXT', value: Buffer.from('Password:').toString('base64') }]
+                    });
+                }
+                return { next: () => {} };
+            },
+            write: (data: any) => writtenValues.push(Buffer.from(data, 'base64').toString()),
+            log: {
+                debug: () => {},
+                warn: () => {},
+                trace: () => {}
+            }
+        });
+
+        await authenticateCommand(connection, 'testuser', { password: 'testpass' });
+        assert.deepEqual(writtenValues, ['testuser', 'testpass']);
     });
     it('Commands: authenticate with LOGIN forced via loginMethod', async () => {
         let execArgs: any = null;
@@ -462,6 +492,7 @@ describe('commands/authenticate', () => {
                     await opts.onPlusTag({});
                 }
                 const err: any = new Error('Authentication failed');
+                err.responseStatus = 'NO';
                 err.response = {
                     tag: 'A1',
                     command: 'NO',
@@ -498,6 +529,7 @@ describe('commands/authenticate', () => {
             authCapabilities: new Map(),
             exec: async () => {
                 const err: any = new Error('Login failed');
+                err.responseStatus = 'NO';
                 err.response = {
                     tag: 'A1',
                     command: 'NO',

@@ -49,6 +49,29 @@ export const transcripts: QuirkTranscript[] = [
         }
     },
     {
+        name: 'NIL personal namespaces (RFC 2342 example 5.2, e.g. an anonymous login) do not stall the session',
+        origin: 'src/commands/namespace.ts, response released before the parsed data is applied',
+        transcript: `
+            S: * OK [CAPABILITY IMAP4rev1 ID IDLE NAMESPACE AUTH=PLAIN] ready
+            C: ID (
+            S: * ID ("name" "example" "vendor" "example")
+            S: TAG OK ID completed
+            C: AUTHENTICATE PLAIN
+            S: TAG OK [CAPABILITY IMAP4rev1 ID IDLE NAMESPACE] Logged in
+            C: NAMESPACE
+            S: * NAMESPACE NIL NIL (("Public/" "/"))
+            S: TAG OK Namespace completed
+            C: NOOP
+            S: TAG OK NOOP completed
+        `,
+        async run(client) {
+            assert.deepEqual(client.namespace, { prefix: '', delimiter: '.' });
+            // used to throw after NAMESPACE completed without releasing its response, which
+            // parked the reader loop: this NOOP then waited for the socket timeout
+            assert.equal(await client.noop(), undefined);
+        }
+    },
+    {
         name: 'home.pl writes two LIST flags without the space between them',
         origin: 'src/handler/token-parser.ts, flag split in STATE_ATOM',
         transcript: `

@@ -19,6 +19,26 @@ describe('commands/close', () => {
         assert.equal(result, true);
         assert.equal(execCalled, true);
     });
+    it('Commands: close with unselect uses UNSELECT only when the server supports it', async () => {
+        for (let [capabilities, expected] of [
+            [new Map([['UNSELECT', true]]), 'UNSELECT'],
+            [new Map(), 'CLOSE']
+        ] as const) {
+            let sent: string[] = [];
+            const connection = createMockConnection({
+                state: 3,
+                capabilities,
+                exec: async (cmd: any) => {
+                    sent.push(cmd);
+                    return { next: () => {} };
+                }
+            });
+
+            assert.equal(await closeCommand(connection, { unselect: true }), true);
+            assert.deepEqual(sent, [expected]);
+            assert.equal(connection.state, 2);
+        }
+    });
     it('Commands: close skips when not selected', async () => {
         const connection = createMockConnection({
             state: 2 // AUTHENTICATED, not SELECTED

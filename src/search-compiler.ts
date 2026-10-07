@@ -66,18 +66,12 @@ let toSearchValue = (value: string): ImapAttributeNode =>
 
 /**
  * Adds a search option with its value(s) to the attributes array.
- * Handles NOT operations and array values.
  *
  * @param attributes - Array to append the attribute to
  * @param term - The search term (e.g., 'FROM', 'SUBJECT')
- * @param value - The value for the search term (string, array, or falsy for NOT)
+ * @param value - The value for the search term (string or array)
  */
 let setOpt = (attributes: SearchAttribute[], term: string, value: any): void => {
-    // Handle NOT operations for false or null values
-    if (value === false || value === null) {
-        attributes.push({ type: 'ATOM', value: 'NOT' });
-    }
-
     attributes.push({ type: 'ATOM', value: term.toUpperCase() });
 
     // Handle array values (e.g. HEADER name/value pairs)
@@ -283,12 +277,17 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
 
                 // Email ID support (OBJECTID or Gmail extension)
                 case 'EMAILID':
+                    // A falsy value means no criterion, as for the text fields. It used to
+                    // compile into NOT EMAILID "false", which matched every message
+                    if (!params[term]) {
+                        break;
+                    }
                     if (connection.capabilities.has('OBJECTID')) {
                         setOpt(attributes, 'EMAILID', params[term]);
                     } else if (connection.capabilities.has('X-GM-EXT-1')) {
                         // Fallback to Gmail message ID
                         setOpt(attributes, 'X-GM-MSGID', params[term]);
-                    } else if (params[term]) {
+                    } else {
                         // Dropping the criterion would widen the search to every message
                         // matching the rest of the query, which a delete or move acts on
                         fail('MissingServerExtension', 'Server does not support OBJECTID or X-GM-EXT-1 extension required for EMAILID');
@@ -297,12 +296,17 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
 
                 // Thread ID support (OBJECTID or Gmail extension)
                 case 'THREADID':
+                    // A falsy value means no criterion, as for the text fields. It used to
+                    // compile into NOT THREADID "false", which matched every message
+                    if (!params[term]) {
+                        break;
+                    }
                     if (connection.capabilities.has('OBJECTID')) {
                         setOpt(attributes, 'THREADID', params[term]);
                     } else if (connection.capabilities.has('X-GM-EXT-1')) {
                         // Fallback to Gmail thread ID
                         setOpt(attributes, 'X-GM-THRID', params[term]);
-                    } else if (params[term]) {
+                    } else {
                         // Dropping the criterion would widen the search to every message
                         // matching the rest of the query, which a delete or move acts on
                         fail('MissingServerExtension', 'Server does not support OBJECTID or X-GM-EXT-1 extension required for THREADID');
@@ -373,11 +377,11 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                             break;
                         }
 
-                        // Use WITHIN extension for better timezone handling if available
-                        if (connection.capabilities.has('WITHIN')) {
-                            // Convert to seconds ago from now
-                            const now = Date.now();
-                            const withinSeconds = Math.round(Math.max(0, now - value.getTime()) / 1000);
+                        // Use WITHIN extension for better timezone handling if available.
+                        // The interval is an nz-number (RFC 5032), so a date that is not in the
+                        // past (OLDER 0 would be answered with BAD) takes the date path instead
+                        const withinSeconds = Math.round((Date.now() - value.getTime()) / 1000);
+                        if (connection.capabilities.has('WITHIN') && withinSeconds >= 1) {
                             const withinKeyword = term.toUpperCase() === 'BEFORE' ? 'OLDER' : 'YOUNGER';
                             setOpt(attributes, withinKeyword, withinSeconds.toString());
                             break;
@@ -400,7 +404,15 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                 case 'KEYWORD':
                 case 'UNKEYWORD':
                     {
+                        if (typeof params[term] !== 'string') {
+                            fail('InvalidSearchQuery', `Search value for ${term.toLowerCase()} must be a string`);
+                        }
                         let flag = formatFlag(params[term]);
+                        // formatFlag() refuses \Recent, which is not a keyword. Dropping the
+                        // criterion would widen the search, so the query is refused instead
+                        if (flag === false) {
+                            fail('InvalidSearchQuery', `${params[term]} can not be searched as a keyword, use the "recent" search key instead`);
+                        }
                         // Compiled even when the mailbox does not allow the keyword: the
                         // correct answer is then the empty set, which dropping the
                         // criterion would turn into every message matching the rest

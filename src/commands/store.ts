@@ -21,15 +21,19 @@ export interface StoreCommandOptions extends StoreOptions {
  * @param options - Store options
  * @returns True on success, false on failure or if nothing to do
  */
-export default async function store(connection: ImapFlow, range: string, flags: string | string[], options: StoreCommandOptions): Promise<boolean> {
+export default async function store(
+    connection: ImapFlow,
+    range: string,
+    flags: string | string[],
+    options?: StoreCommandOptions | undefined
+): Promise<boolean> {
+    options = options || {};
+
     let mailbox = getSelectedMailbox(connection);
     if (!mailbox || !range || (options.useLabels && !connection.capabilities.has('X-GM-EXT-1'))) {
         // nothing to do here
         return false;
     }
-
-    /* c8 ignore next */ // options.useLabels is dereferenced in the guard above, so options is always defined here
-    options = options || {};
 
     // Build the IMAP STORE operation name. The format is:
     //   [+|-]FLAGS[.SILENT] or [+|-]X-GM-LABELS

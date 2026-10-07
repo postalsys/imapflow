@@ -470,6 +470,15 @@ export default async function list(
         // Subscribed-only mailboxes that weren't in LIST are intentionally ignored
         // (they may be phantom entries from old subscriptions to deleted mailboxes).
         let runLsub = async () => {
+            // LIST has completed, so its entries are indexed once instead of searched per LSUB
+            // response, which was quadratic in the folder count. The first entry for a path wins,
+            // as with the linear search it replaces
+            let entriesByPath = new Map<string, ListEntry>();
+            for (let entry of entries) {
+                if (!entriesByPath.has(entry.path)) {
+                    entriesByPath.set(entry.path, entry);
+                }
+            }
             let response = await connection.exec('LSUB', [encodePath(connection, normalizedReference), encodePath(connection, normalizedMailbox)], {
                 untagged: {
                     LSUB: async (untagged: ImapResponse) => {
@@ -501,7 +510,7 @@ export default async function list(
                         entry.name = entry.parent.pop();
 
                         // Merge LSUB data into existing LIST entry if found
-                        let existing = entries.find(existing => existing.path === entry.path);
+                        let existing = entriesByPath.get(entry.path);
                         if (existing) {
                             existing.subscribed = true;
                             // Merge any additional flags from LSUB into the LIST entry

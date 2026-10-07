@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import logoutCommand from '../../src/commands/logout.js';
 import { createMockConnection } from '../fixtures/mock-connection.js';
+import { withFakeTimers } from '../fixtures/fake-timers.js';
 
 describe('commands/logout', () => {
     it('Commands: logout success', async () => {
@@ -17,6 +18,32 @@ describe('commands/logout', () => {
         const result = await logoutCommand(connection);
         assert.equal(result, true);
         assert.equal(execCalled, true);
+    });
+    it('Commands: logout closes the connection when the server never answers', async () => {
+        await withFakeTimers(async timers => {
+            let rejectLogout: any;
+            let closed = 0;
+            const connection = createMockConnection({
+                exec: () =>
+                    new Promise((resolve, reject) => {
+                        rejectLogout = reject;
+                    }),
+                close: () => {
+                    closed++;
+                    // close() rejects the pending command
+                    let err: any = new Error('Connection not available');
+                    err.code = 'NoConnection';
+                    rejectLogout(err);
+                }
+            });
+
+            const result = logoutCommand(connection);
+            assert.equal(timers.count(), 1);
+            await timers.fire();
+            assert.equal(await result, true);
+            assert.ok(closed >= 1);
+            assert.equal(timers.count(), 0);
+        });
     });
     it('Commands: logout handles error', async () => {
         const connection = createMockConnection({

@@ -26,7 +26,8 @@ export default async function rename(connection: ImapFlow, path: string | string
     // as IMAP servers will not rename an active mailbox.
     let selected = getSelectedMailbox(connection);
     if (selected && selected.path === path) {
-        await connection.run('CLOSE');
+        // UNSELECT where possible, CLOSE would expunge messages flagged \Deleted
+        await connection.run('CLOSE', { unselect: true });
     }
 
     let response: ExecResponse;
