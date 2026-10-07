@@ -180,7 +180,12 @@ describe('commands/store', () => {
         });
 
         await storeCommand(connection, '1', ['\\Seen'], { unchangedSince: 12345 });
-        assert.ok(execArgs.attrs.some((a: any) => Array.isArray(a) && a.some(x => x.value === 'UNCHANGEDSINCE')));
+        // RFC 7162 section 3.1.3: STORE set [store-modifiers] store-att-flags
+        assert.deepEqual(execArgs.attrs[1], [
+            { type: 'ATOM', value: 'UNCHANGEDSINCE' },
+            { type: 'ATOM', value: '12345' }
+        ]);
+        assert.equal(execArgs.attrs[2].value, '+FLAGS');
     });
     it('Commands: store handles error', async () => {
         const connection = createMockConnection({

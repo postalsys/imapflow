@@ -587,7 +587,7 @@ describe('commands/fetch', () => {
         assert.equal(attempts, 3);
     });
     it('Commands: fetch with all/fast/full query', async () => {
-        let queryAttrs = null;
+        let queryAttrs: any = null;
         const connection = createMockConnection({
             state: 3,
             exec: async (cmd: any, attrs: any) => {
@@ -596,13 +596,23 @@ describe('commands/fetch', () => {
             }
         });
 
-        await fetchCommand(connection, '1', { all: true, fast: true, full: true, internalDate: true });
-        assert.ok(queryAttrs);
-        const queryStr = JSON.stringify(queryAttrs);
-        assert.ok(queryStr.includes('ALL'));
-        assert.ok(queryStr.includes('FAST'));
-        assert.ok(queryStr.includes('FULL'));
-        assert.ok(queryStr.includes('INTERNALDATE'));
+        // the macros may not share a list with UID (RFC 3501 section 9), so they are expanded
+        const items = async (query: any) => {
+            await fetchCommand(connection, '1', Object.assign({ uid: true }, query));
+            return (queryAttrs as any)[1].map((entry: any) => entry.value);
+        };
+        assert.deepEqual(await items({ fast: true }), ['UID', 'FLAGS', 'INTERNALDATE', 'RFC822.SIZE']);
+        assert.deepEqual(await items({ all: true }), ['UID', 'FLAGS', 'ENVELOPE', 'INTERNALDATE', 'RFC822.SIZE']);
+        assert.deepEqual(await items({ full: true }), ['UID', 'FLAGS', 'BODYSTRUCTURE', 'ENVELOPE', 'INTERNALDATE', 'RFC822.SIZE']);
+        // a macro overlapping explicit items sends every item once
+        assert.deepEqual(await items({ all: true, fast: true, full: true, internalDate: true, flags: true }), [
+            'UID',
+            'FLAGS',
+            'BODYSTRUCTURE',
+            'ENVELOPE',
+            'INTERNALDATE',
+            'RFC822.SIZE'
+        ]);
     });
     it('Commands: fetch stops retrying a throttled request once the client closes', async () => {
         // The retry used to wait on a bare setTimeout that close() could not abort: a short-lived

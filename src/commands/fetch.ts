@@ -104,14 +104,32 @@ export default async function fetch(
                 queryStructure.push(bodyPeek);
             };
 
-            // IMAP fetch macros (ALL, FAST, FULL) and standard data items map directly to IMAP atoms
-            (['all', 'fast', 'full', 'uid', 'flags', 'bodyStructure', 'envelope', 'internalDate'] as const).forEach(key => {
-                if (query[key]) {
+            // The ALL, FAST and FULL macros may only be sent on their own, never in a list with other
+            // items (RFC 3501 section 9), and UID is always in the list, so they are expanded into
+            // the items they stand for. FULL is expanded to BODYSTRUCTURE rather than the
+            // non-extensible BODY, as documented for the full option.
+            let full = !!query.full;
+            let all = !!query.all || full;
+            let fast = !!query.fast || all;
+            let items = {
+                flags: query.flags || fast,
+                internalDate: query.internalDate || fast,
+                size: query.size || fast,
+                envelope: query.envelope || all,
+                bodyStructure: query.bodyStructure || full
+            };
+
+            // standard data items map directly to IMAP atoms
+            if (query.uid) {
+                queryStructure.push({ type: 'ATOM', value: 'UID' });
+            }
+            (['flags', 'bodyStructure', 'envelope', 'internalDate'] as const).forEach(key => {
+                if (items[key]) {
                     queryStructure.push({ type: 'ATOM', value: key.toUpperCase() });
                 }
             });
 
-            if (query.size) {
+            if (items.size) {
                 queryStructure.push({ type: 'ATOM', value: 'RFC822.SIZE' });
             }
 
@@ -244,7 +262,7 @@ export default async function fetch(
                         if (consumerError) {
                             return;
                         }
-                        let formatted = await formatMessageResponse(untagged, mailbox, connection.idHashAlgorithm);
+                        let formatted = await formatMessageResponse(untagged, mailbox, connection.idHashAlgorithm, connection);
                         if (typeof options.onUntaggedFetch === 'function') {
                             /* c8 ignore next */ // a UID FETCH row without its UID is a non-compliant server, so the seq fallback is not exercised
                             let key = options.uid ? formatted.uid || formatted.seq : formatted.seq;

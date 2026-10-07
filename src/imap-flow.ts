@@ -594,8 +594,8 @@ export class ImapFlow extends EventEmitter {
     usable: boolean;
 
     /**
-     * Currently authenticated user or `false` if mailbox is not open
-     * or `true` if connection was authenticated by PREAUTH
+     * `true` once the connection is authenticated (by LOGIN, AUTHENTICATE or a PREAUTH greeting),
+     * `false` before that. The user name is in `options.auth.user`
      */
     authenticated: string | boolean;
 
@@ -2260,9 +2260,9 @@ export class ImapFlow extends EventEmitter {
                     // of the IP - accepting any "localhost" certificate for any IP-hosted
                     // server, and rejecting legitimate IP-SAN certificates.
                     host: this.host,
-                    servername: this.servername,
                     port: this.port
                 },
+                this.tlsServername(),
                 this.options.tls || {}
             );
             this.clearSocketHandlers();
@@ -2710,13 +2710,20 @@ export class ImapFlow extends EventEmitter {
         }
 
         let uidList = expandRange(uids);
+        let earlier = tags.includes('EARLIER');
+
+        // RFC 7162 section 3.2.10: unlike VANISHED (EARLIER), a plain VANISHED reports messages the
+        // client knows about and decrements the message count like the same number of EXPUNGEs would
+        if (!earlier) {
+            mailbox.exists = Math.max(0, mailbox.exists - uidList.length);
+        }
 
         for (let uid of uidList) {
             let payload: ExpungeEvent = {
                 path: mailbox.path,
                 uid,
                 vanished: true,
-                earlier: tags.includes('EARLIER')
+                earlier
             };
 
             await this.notifyExpunge(payload);
@@ -2731,7 +2738,7 @@ export class ImapFlow extends EventEmitter {
             return;
         }
 
-        let message = await formatMessageResponse(untagged, mailbox, this.idHashAlgorithm);
+        let message = await formatMessageResponse(untagged, mailbox, this.idHashAlgorithm, this);
         if (message.flags) {
             let updateEvent: Partial<FlagsEvent> = {
                 path: mailbox.path,
@@ -2767,6 +2774,13 @@ export class ImapFlow extends EventEmitter {
         }
 
         return true;
+    }
+
+    // servername for tls.connect(), left out for an IP literal host (this.servername is false then):
+    // Node treats a false value like a missing one, but Bun throws a TypeError for it
+    /** @internal */
+    tlsServername(): { servername?: string } {
+        return this.servername ? { servername: this.servername } : {};
     }
 
     // Normalizes a message range from various input formats into an IMAP-compatible
@@ -2812,6 +2826,12 @@ export class ImapFlow extends EventEmitter {
         }
 
         if (!value) {
+            return false;
+        }
+
+        // An empty mailbox has no message numbers: every sequence set, "1:*" included, would get a
+        // BAD (RFC 9051 section 9, seq-number). UID sets may point past the end, so they are sent.
+        if (!options.uid && this.mailbox && !this.mailbox.exists) {
             return false;
         }
 
@@ -2896,9 +2916,9 @@ export class ImapFlow extends EventEmitter {
         let opts: tls.ConnectionOptions & net.NetConnectOpts = Object.assign(
             {
                 host: this.host,
-                servername: this.servername,
                 port: this.port
             },
+            this.tlsServername(),
             this.options.tls || {}
         );
 

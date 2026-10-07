@@ -408,10 +408,16 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                             fail('InvalidSearchQuery', `Search value for ${term.toLowerCase()} must be a string`);
                         }
                         let flag = formatFlag(params[term]);
-                        // formatFlag() refuses \Recent, which is not a keyword. Dropping the
-                        // criterion would widen the search, so the query is refused instead
+                        // formatFlag() refuses \Recent, which is not a keyword, and values that are
+                        // not atoms. Dropping the criterion would widen the search, so the query is
+                        // refused instead
                         if (flag === false) {
-                            fail('InvalidSearchQuery', `${params[term]} can not be searched as a keyword, use the "recent" search key instead`);
+                            fail(
+                                'InvalidSearchQuery',
+                                /^\\recent$/i.test(params[term])
+                                    ? `${params[term]} can not be searched as a keyword, use the "recent" search key instead`
+                                    : `${params[term]} is not a valid keyword`
+                            );
                         }
                         // Compiled even when the mailbox does not allow the keyword: the
                         // correct answer is then the empty set, which dropping the

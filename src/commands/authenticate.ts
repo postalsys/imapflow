@@ -1,7 +1,7 @@
 import { getStatusCode, getErrorText, isServerRefusal } from '../tools.js';
 import type { ImapFlow } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
-import type { ImapResponse } from '../handler/types.js';
+import type { ImapCompileNode, ImapResponse } from '../handler/types.js';
 import type { AuthOptions } from '../types.js';
 
 /**
@@ -78,36 +78,45 @@ async function authOauth(connection: ImapFlow, username: string, accessToken: st
         breaker = '';
     }
 
+    let encoded = Buffer.from(oauthbearer as string).toString('base64');
+    // Without SASL-IR the payload may not ride on the command line (RFC 4959 section 3): it is
+    // sent as the answer to the first, empty continuation request instead
+    let payloadPending = !connection.capabilities.has('SASL-IR');
+
     let errorResponse: any = false;
     try {
-        let response = await connection.exec(
-            'AUTHENTICATE',
-            [
-                { type: 'ATOM', value: command },
-                { type: 'ATOM', value: Buffer.from(oauthbearer as string).toString('base64'), sensitive: true }
-            ],
-            {
-                // Server sends a "+" continuation if auth fails, with a base64 JSON error payload.
-                // We decode it for diagnostics, then send the breaker to terminate the exchange.
-                onPlusTag: async (resp: ImapResponse) => {
-                    if (resp.attributes && resp.attributes[0] && resp.attributes[0].type === 'TEXT') {
-                        try {
-                            errorResponse = JSON.parse(Buffer.from(resp.attributes[0].value as string, 'base64').toString());
-                        } catch (err) {
-                            connection.log.debug({
-                                msg: 'Failed to parse OAuth error response',
-                                errorResponse: resp.attributes[0].value,
-                                err,
-                                cid: connection.id
-                            });
-                        }
-                    }
-
-                    connection.log.debug({ src: 'c', msg: breaker, comment: `Error response for ${command}`, cid: connection.id });
-                    connection.write(breaker as string);
+        let attributes: ImapCompileNode[] = [{ type: 'ATOM', value: command }];
+        if (!payloadPending) {
+            attributes.push({ type: 'ATOM', value: encoded, sensitive: true });
+        }
+        let response = await connection.exec('AUTHENTICATE', attributes, {
+            // Server sends a "+" continuation if auth fails, with a base64 JSON error payload.
+            // We decode it for diagnostics, then send the breaker to terminate the exchange.
+            onPlusTag: async (resp: ImapResponse) => {
+                if (payloadPending) {
+                    payloadPending = false;
+                    connection.log.debug({ src: 'c', msg: '(* value hidden *)', comment: `Encoded response for AUTH=${command}`, cid: connection.id });
+                    connection.write(encoded);
+                    return;
                 }
+
+                if (resp.attributes && resp.attributes[0] && resp.attributes[0].type === 'TEXT') {
+                    try {
+                        errorResponse = JSON.parse(Buffer.from(resp.attributes[0].value as string, 'base64').toString());
+                    } catch (err) {
+                        connection.log.debug({
+                            msg: 'Failed to parse OAuth error response',
+                            errorResponse: resp.attributes[0].value,
+                            err,
+                            cid: connection.id
+                        });
+                    }
+                }
+
+                connection.log.debug({ src: 'c', msg: breaker, comment: `Error response for ${command}`, cid: connection.id });
+                connection.write(breaker as string);
             }
-        );
+        });
         response.next();
 
         connection.authCapabilities.set(`AUTH=${command}`, true);

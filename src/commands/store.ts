@@ -1,4 +1,4 @@
-import { formatFlag, canUseFlag, reportCommandError, getSelectedMailbox } from '../tools.js';
+import { formatFlag, canUseFlag, encodePath, reportCommandError, getSelectedMailbox } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapCompileNode } from '../handler/types.js';
@@ -83,7 +83,10 @@ export default async function store(
     const dropped: string[] = [];
     flags = (Array.isArray(flags) ? flags : ([] as string[]).concat(flags || []))
         .map(flag => {
-            let formatted = formatFlag(flag);
+            // Gmail labels other than the \-prefixed system labels are mailbox names: astrings in
+            // the form mailbox names take on the session (modified UTF-7 unless UTF-8 is enabled),
+            // not atoms like IMAP keywords
+            let formatted = options.useLabels && flag && flag.charAt(0) !== '\\' ? encodePath(connection, flag) : formatFlag(flag);
 
             if (!formatted || (!canUseFlag(flagSource, formatted) && operationName !== 'remove')) {
                 dropped.push(flag);
@@ -110,14 +113,11 @@ export default async function store(
         return false;
     }
 
-    let attributes: ImapCompileNode[] = [
-        { type: 'SEQUENCE', value: range },
-        { type: 'ATOM', value: operation },
-        flags.map(flag => ({ type: 'ATOM', value: flag }))
-    ];
+    let attributes: ImapCompileNode[] = [{ type: 'SEQUENCE', value: range }];
 
     // CONDSTORE (RFC 7162): UNCHANGEDSINCE modifier prevents updating messages whose
     // mod-sequence is higher than the specified value, avoiding overwriting concurrent changes.
+    // The store-modifiers list goes between the sequence set and the item name (section 3.1.3).
     if (options.unchangedSince && connection.enabled.has('CONDSTORE') && !mailbox.noModseq) {
         attributes.push([
             {
@@ -130,6 +130,11 @@ export default async function store(
             }
         ]);
     }
+
+    attributes.push(
+        { type: 'ATOM', value: operation },
+        flags.map(flag => ({ type: 'ATOM', value: flag }))
+    );
 
     let response: ExecResponse;
     try {

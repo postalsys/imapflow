@@ -1268,6 +1268,16 @@ describe('connection-edge-cases', () => {
         let result = await client.resolveRange('*', options);
         assert.equal(result, false);
     });
+    it('Connection Edge: resolveRange sends no sequence set to an empty mailbox', async () => {
+        let client: any = makeClient();
+        client.mailbox = { exists: 0 };
+        assert.equal(await client.resolveRange('1:*', {}), false);
+        assert.equal(await client.resolveRange({ all: true }, {}), false);
+        assert.equal(await client.resolveRange([1, 2], {}), false);
+        // UID sets may point past the end of the mailbox (RFC 9051 section 9)
+        assert.equal(await client.resolveRange('1:*', { uid: true }), '1:*');
+        assert.equal(await client.resolveRange({ uid: '5:*' }, {}), '5:*');
+    });
     it('Connection Edge: resolveRange with {all: true}', async () => {
         let client: any = new ImapFlow({
             host: 'imap.example.com',

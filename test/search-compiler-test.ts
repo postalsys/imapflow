@@ -679,6 +679,14 @@ describe('search-compiler', () => {
 
         assert.ok(hasAttr(compiled, 'UNKEYWORD'));
     });
+    it('Search Compiler: KEYWORD values that are not atoms are refused', () => {
+        let connection = createMockConnection();
+        // flag-keyword is an atom (RFC 9051 section 9); dropping the criterion would widen the search
+        for (const keyword of ['with space', 'paren(', 'a]b', 'quote"d', '\u00e4']) {
+            assert.throws(() => searchCompiler(connection, { keyword }), /is not a valid keyword/);
+        }
+        assert.throws(() => searchCompiler(connection, { keyword: '\\Recent' }), /use the "recent" search key/);
+    });
     it('Search Compiler: KEYWORD is compiled even when the mailbox does not allow the keyword', () => {
         // The right answer is the empty set; dropping the key used to match every message
         let connection = createMockConnection({

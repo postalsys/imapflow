@@ -3,6 +3,7 @@
 import libmime from 'libmime';
 import { resolveCharset } from './charsets.js';
 import { compiler } from './handler/imap-handler.js';
+import imapFormalSyntax from './handler/imap-formal-syntax.js';
 import { createHash } from 'node:crypto';
 import { JPDecoder } from './jp-decoder.js';
 import iconv from 'iconv-lite';
@@ -760,9 +761,15 @@ export function getColorFlags(color: string | null | undefined): { add: string[]
  * @param untagged - Parsed untagged IMAP response
  * @param mailbox - Current mailbox state object
  * @param idHashAlgorithm - Hash for the fallback message id, `md5` unless the client was told otherwise
+ * @param connection - Connection the response arrived on, decodes Gmail labels like mailbox names
  * @returns Formatted message object with properties like seq, uid, flags, envelope, etc.
  */
-export async function formatMessageResponse(untagged: ImapResponse, mailbox: MailboxObject, idHashAlgorithm?: string): Promise<FetchMessageObject> {
+export async function formatMessageResponse(
+    untagged: ImapResponse,
+    mailbox: MailboxObject,
+    idHashAlgorithm?: string,
+    connection?: ImapFlow
+): Promise<FetchMessageObject> {
     let map: MessageMap = {};
 
     // The sequence number indexes into mailbox state, so an unusable one is dropped rather
@@ -900,7 +907,8 @@ export async function formatMessageResponse(untagged: ImapResponse, mailbox: Mai
                 break;
 
             case 'x-gm-labels':
-                map.labels = new Set(getArray(attribute));
+                // labels are mailbox names, modified UTF-7 unless UTF-8 is enabled
+                map.labels = new Set(getArray(attribute).map(label => (connection ? decodePath(connection, label) : label)));
                 break;
 
             case 'rfc822.size':
@@ -1518,14 +1526,23 @@ export function formatDateTime(value: unknown): string | undefined {
     return `${dateStr} ${timeStr} +0000`;
 }
 
+// the memoized ATOM-CHAR set of RFC 9051 section 9
+const atomChars = imapFormalSyntax['ATOM-CHAR'];
+
 /**
- * Normalizes a flag string. Returns false for non-settable flags (e.g. \Recent),
- * and capitalizes system flags properly.
+ * Normalizes a flag string. Returns false for non-settable flags (e.g. \Recent) and for
+ * values that are not valid flags (keywords must be atoms), and capitalizes system flags properly.
  *
  * @param flag - Flag string to normalize
  * @returns Normalized flag string, or false if the flag cannot be set
  */
 export function formatFlag(flag: string): string | false {
+    // RFC 9051 section 9: flag-keyword is an atom and flag-extension is "\\" atom, the same check
+    // the compiler uses to decide what it can send unquoted
+    let atom = flag.charAt(0) === '\\' ? flag.slice(1) : flag;
+    if (!atom || imapFormalSyntax.verify(atom, atomChars()) >= 0) {
+        return false;
+    }
     switch (flag.toLowerCase()) {
         case '\\recent':
             // can not set or remove

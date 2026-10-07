@@ -19,7 +19,10 @@ describe('commands/authenticate', () => {
         let execArgs: any = null;
         const connection = createMockConnection({
             state: 1, // NOT_AUTHENTICATED
-            capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+            capabilities: new Map([
+                ['AUTH=OAUTHBEARER', true],
+                ['SASL-IR', true]
+            ]),
             servername: 'imap.example.com',
             authCapabilities: new Map(),
             exec: async (cmd: any, args: any) => {
@@ -41,7 +44,10 @@ describe('commands/authenticate', () => {
         let execArgs = null;
         const connection = createMockConnection({
             state: 1,
-            capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+            capabilities: new Map([
+                ['AUTH=OAUTHBEARER', true],
+                ['SASL-IR', true]
+            ]),
             servername: 'imap.example.com',
             port: 143,
             authCapabilities: new Map(),
@@ -63,7 +69,10 @@ describe('commands/authenticate', () => {
         let execArgs = null;
         const connection = createMockConnection({
             state: 1,
-            capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+            capabilities: new Map([
+                ['AUTH=OAUTHBEARER', true],
+                ['SASL-IR', true]
+            ]),
             servername: false,
             host: '198.51.100.7',
             authCapabilities: new Map(),
@@ -117,10 +126,50 @@ describe('commands/authenticate', () => {
         assert.equal(result, 'user@example.com');
         assert.equal(execArgs.args[0].value, 'XOAUTH2');
     });
+    it('Commands: OAuth without SASL-IR sends the payload after the continuation request', async () => {
+        for (const [capability, mechanism] of [
+            ['AUTH=OAUTHBEARER', 'OAUTHBEARER'],
+            ['AUTH=XOAUTH2', 'XOAUTH2']
+        ]) {
+            let execArgs: any = null;
+            const written: string[] = [];
+            const connection = createMockConnection({
+                state: 1,
+                capabilities: new Map([[capability, true]]),
+                servername: 'imap.example.com',
+                authCapabilities: new Map(),
+                exec: async (cmd: any, args: any, opts: any) => {
+                    execArgs = { cmd, args };
+                    // the empty continuation request, then the error challenge
+                    await opts.onPlusTag({ attributes: [] });
+                    const errorJson = Buffer.from(JSON.stringify({ status: 'invalid_token' })).toString('base64');
+                    await opts.onPlusTag({ attributes: [{ type: 'TEXT', value: errorJson }] });
+                    const err: any = new Error('Authentication failed');
+                    err.responseStatus = 'NO';
+                    err.response = { attributes: [] };
+                    throw err;
+                },
+                write: (data: string) => written.push(data)
+            });
+
+            await assert.rejects(authenticateCommand(connection, 'user@example.com', { accessToken: 'token123' }), (err: any) => {
+                assert.equal(err.oauthError.status, 'invalid_token');
+                return true;
+            });
+            // RFC 4959 section 3: no initial response on the command line without SASL-IR
+            assert.deepEqual(execArgs.args, [{ type: 'ATOM', value: mechanism }]);
+            assert.equal(written.length, 2);
+            assert.match(Buffer.from(written[0], 'base64').toString(), /auth=Bearer token123/);
+            assert.equal(written[1], mechanism === 'OAUTHBEARER' ? 'AQ==' : '');
+        }
+    });
     it('Commands: authenticate OAuth handles error response', async () => {
         const connection = createMockConnection({
             state: 1,
-            capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+            capabilities: new Map([
+                ['AUTH=OAUTHBEARER', true],
+                ['SASL-IR', true]
+            ]),
             servername: 'imap.example.com',
             authCapabilities: new Map(),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -157,7 +206,10 @@ describe('commands/authenticate', () => {
         let debugLogged = false;
         const connection = createMockConnection({
             state: 1,
-            capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+            capabilities: new Map([
+                ['AUTH=OAUTHBEARER', true],
+                ['SASL-IR', true]
+            ]),
             servername: 'imap.example.com',
             authCapabilities: new Map(),
             exec: async (cmd: any, args: any, opts: any) => {
@@ -194,7 +246,10 @@ describe('commands/authenticate', () => {
     it('Commands: authenticate OAuth error with serverResponseCode', async () => {
         const connection = createMockConnection({
             state: 1,
-            capabilities: new Map([['AUTH=OAUTHBEARER', true]]),
+            capabilities: new Map([
+                ['AUTH=OAUTHBEARER', true],
+                ['SASL-IR', true]
+            ]),
             servername: 'imap.example.com',
             authCapabilities: new Map(),
             exec: async (cmd: any, args: any, opts: any) => {

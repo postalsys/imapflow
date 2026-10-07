@@ -445,6 +445,15 @@ describe('tools', () => {
         assert.equal(tools.formatFlag('\\Recent'), false);
         assert.equal(tools.formatFlag('\\recent'), false);
     });
+    it('Tools: formatFlag refuses values that are not atoms', () => {
+        // RFC 9051 section 9: flag-keyword = atom, flag-extension = "\\" atom
+        for (const flag of ['', 'with space', 'paren(', 'brace{', 'a]b', 'quote"d', 'back\\slash', 'pct%', 'star*', '\\', '\\*', '\u00e4', 'tab\t']) {
+            assert.equal(tools.formatFlag(flag), false, JSON.stringify(flag));
+        }
+        for (const flag of ['$Label1', '2024:taxes', '1:x', 'a[b', '\\Important', '$MDNSent']) {
+            assert.equal(tools.formatFlag(flag), flag);
+        }
+    });
     it('Tools: formatFlag with custom flags', () => {
         assert.equal(tools.formatFlag('$CustomFlag'), '$CustomFlag');
         assert.equal(tools.formatFlag('MyFlag'), 'MyFlag');

@@ -561,6 +561,18 @@ describe('imap-flow-methods', () => {
         assert.equal(events[0].uid, 5);
         assert.equal(events[0].earlier, true);
     });
+    it('Methods: untaggedVanished decrements exists unless EARLIER', async () => {
+        let client = makeClient();
+        client.mailbox = { path: 'INBOX', exists: 5 } as any;
+        await client.untaggedVanished({ attributes: [{ value: '1:3' }] } as any);
+        assert.equal((client.mailbox as any).exists, 2);
+        // VANISHED (EARLIER) reports UIDs that are already gone from the count (RFC 7162 section 3.2.10)
+        await client.untaggedVanished({ attributes: [[{ value: 'EARLIER' }], { value: '10:20' }] } as any);
+        assert.equal((client.mailbox as any).exists, 2);
+        // a server reporting more UIDs than the client knows about can not push the count below zero
+        await client.untaggedVanished({ attributes: [{ value: '4:9' }] } as any);
+        assert.equal((client.mailbox as any).exists, 0);
+    });
     it('Methods: untaggedVanished routes through expungeHandler', async () => {
         let payloads: any = [];
         let client = makeClient({ expungeHandler: async (p: any) => payloads.push(p) });
