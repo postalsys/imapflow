@@ -51,7 +51,8 @@
         "lint": "npm run typecheck && eslint .",
         "lint:fix": "eslint . --fix",
         "prepare": "npm run build",
-        "update": "rm -rf node_modules package-lock.json && ncu -u && npm install"
+        "update": "rm -rf node_modules package-lock.json && ncu -u && npm install",
+        "test:james": "bash test/integration/run-james-tests.sh"
     },
     "repository": {
         "type": "git",

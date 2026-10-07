@@ -91,3 +91,20 @@ jobs:
             - run: npm run test:rev2
               env:
                   IMAPFLOW_DOVECOT_PLATFORM: linux/amd64
+
+    test-james:
+        # Live integration tests against Apache James in Docker (the base of hosted
+        # services such as Twake Mail). The image is only published for linux/amd64,
+        # so this native run is the reference one.
+        name: Live Apache James tests (linux/amd64)
+        timeout-minutes: 15
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - name: Use Node.js 24.x
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24.x
+                  cache: npm
+            - run: npm install
+            - run: npm run test:james

@@ -52,6 +52,7 @@ npm run format        # Format with Prettier (js, cjs, ts, json, md, yml, yaml)
 npm run format:check  # Prettier check
 npm run update        # Refresh deps: remove node_modules + lockfile, ncu -u, npm install
 npm run test:rev2     # Live IMAP4rev2 tests against Dovecot in Docker (see test/integration/)
+npm run test:james    # Live tests against Apache James in Docker (see test/integration/)
 npm run test:bun      # Build, then run the same suite under Bun (needs bun on PATH)
 npm run test:workers  # Build, then run test/cloudflare/ on a local Cloudflare Workers runtime through wrangler
 npm run test:mutation # Mutation testing of the parser, stream, compiler and search compiler (slow, not in CI)
@@ -79,7 +80,7 @@ Single file: `node --import tsx --test test/search-compiler-test.ts`.
 
 ## Testing
 
-- Tests live in `test/` and are named `*-test.ts`; `npm test` runs every such file except `test/integration/**` (needs Docker, `npm run test:rev2`) and `test/cloudflare/**` (needs workerd, `npm run test:workers`).
+- Tests live in `test/` and are named `*-test.ts`; `npm test` runs every such file except `test/integration/**` (needs Docker, `npm run test:rev2` and `npm run test:james`) and `test/cloudflare/**` (needs workerd, `npm run test:workers`).
 - `npm test` builds first (`pretest`), because `test/package/` loads the built `dist/` output through the `exports` map the way an installed copy is loaded. Keep the suite green and lint-clean before committing.
 - Tests use `describe`/`it` from `node:test` and `assert` from `node:assert/strict`. A test that completes inside a callback takes the `done` parameter (`it('...', (t, done) => { ... })`); an async test returns a promise. Module methods are stubbed with `t.mock.method()` on the imported module object, never by replacing the module.
 - The suite runs serially (`--test-concurrency=1`): several suites swap `globalThis.setTimeout` through `test/fixtures/fake-timers.ts`.
@@ -90,6 +91,7 @@ Single file: `node --import tsx --test test/search-compiler-test.ts`.
 - `test/fixtures/scripted-server.ts` is the shared scriptable mock server for end-to-end client tests (defaults for a full session, `handlers` override single commands).
 - `npm run test:mutation` (`scripts/mutation-test.js`) applies one-operator mutants to the parser, stream, compiler and search compiler in private copies of the repository and lists the mutants no test catches. Not part of CI; run it after larger changes to those files and either add a test for a surviving mutant or confirm it is equivalent. `--file <path>` limits it to one file, `--survivors <json>` re-runs the survivors of an earlier run.
 - `npm run test:rev2` starts a Dovecot 2.4 container (real IMAP4rev2 server) and runs `test/integration/rev2-live-test.ts` against it - use it to verify rev2-facing changes end to end, mocks alone are not enough.
+- `npm run test:james` starts Apache James (`apache/james:memory-*`, the base of hosted services such as Twake Mail) and runs `test/integration/james-live-test.ts` against it, with a fresh user per test created through the WebAdmin API. James deviates from Dovecot in ways mocks do not show (it drops the second section asked for one MIME part in a FETCH, advertises QRESYNC without CONDSTORE), so changes to fetch, download, search, flags or sync get a run here too. A newly found James quirk gets a live test there and a transcript in `test/fixtures/transcripts.ts`.
 
 ## Other runtimes
 
