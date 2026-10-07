@@ -804,6 +804,37 @@ describe('imap-flow-fetch-download', () => {
         assert.equal(res['2'].meta.delSp, true);
         assert.equal(res['2'].meta.filename, 'x.txt');
     });
+    it('DownloadMany: maxBytes is asked as a partial fetch and enforced on the answer', async () => {
+        let client = makeClient();
+        let queries: any[] = [];
+        client.fetchOne = async (range: any, query: any) => {
+            queries.push(query);
+            let bodyParts = new Map();
+            bodyParts.set('2.mime', Buffer.from('Content-Type: text/plain\r\n\r\n'));
+            bodyParts.set('3.mime', Buffer.from('Content-Type: text/plain\r\nContent-Transfer-Encoding: base64\r\n\r\n'));
+            // A server that ignores the partial specifier answers with the whole part
+            bodyParts.set('2', Buffer.from('0123456789'));
+            bodyParts.set('3', Buffer.from(Buffer.from('0123456789').toString('base64')));
+            return { uid: 1, bodyParts };
+        };
+
+        let res = await client.downloadMany('1', ['2', '3'], { maxBytes: 4 });
+        assert.deepEqual(queries[0].bodyParts, ['2.mime', { key: '2', start: 0, maxLength: 4 }, '3.mime', { key: '3', start: 0, maxLength: 4 }]);
+        assert.equal(res['2'].content.toString(), '0123');
+        // The cap bounds what is buffered, so it applies before decoding
+        assert.equal(res['3'].content.toString(), '012');
+
+        // Without the option the parts are requested whole and kept whole
+        res = await client.downloadMany('1', ['2', '3']);
+        assert.deepEqual(queries[1].bodyParts, ['2.mime', '2', '3.mime', '3']);
+        assert.equal(res['2'].content.toString(), '0123456789');
+        assert.equal(res['3'].content.toString(), '0123456789');
+
+        // A cap beyond the 32-bit partial length is not asked from the server, only applied
+        res = await client.downloadMany('1', ['2'], { maxBytes: 2 ** 32 });
+        assert.deepEqual(queries[2].bodyParts, ['2.mime', '2']);
+        assert.equal(res['2'].content.toString(), '0123456789');
+    });
     it('DownloadMany: tolerates decodeWords failures for disposition/filename', async () => {
         let originalDecodeWords = libmime.decodeWords;
         libmime.decodeWords = () => {

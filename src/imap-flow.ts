@@ -1116,16 +1116,17 @@ export class ImapFlow extends EventEmitter {
         });
         this.commandParts = compiled;
 
-        // Compile again for logging with isLogging=true: masks sensitive values
-        // like passwords while producing a human-readable command string
-        let logCompiled = await compiler(data, {
-            isLogging: true
-        });
-
         /* c8 ignore next */ // send() is always invoked with a request object carrying options, so the {} fallback is unreachable
         let options = data.options || {};
 
-        this.log.debug({ src: 'c', msg: logCompiled.toString(), cid: this.id, comment: options.comment });
+        // Compile again for logging with isLogging=true: masks sensitive values
+        // like passwords while producing a human-readable command string
+        if (this.isLogLevelEnabled('debug')) {
+            let logCompiled = await compiler(data, {
+                isLogging: true
+            });
+            this.log.debug({ src: 'c', msg: logCompiled.toString(), cid: this.id, comment: options.comment });
+        }
 
         // Send the first part (command text). If there are literal parts,
         // the server will respond with "+" continuations and reader() will
@@ -1469,15 +1470,15 @@ export class ImapFlow extends EventEmitter {
             }
         }
 
-        let logCompiled = await compiler(parsed, {
-            isLogging: true
-        });
-
-        if (/^\d+$/.test(parsed.command || '') && parsed.attributes && parsed.attributes[0] && parsed.attributes[0].value === 'FETCH') {
-            // too many FETCH responses, might want to filter these out
-            this.log.trace({ src: 's', msg: logCompiled.toString(), cid: this.id, nullBytesRemoved: parsed.nullBytesRemoved });
-        } else {
-            this.log.debug({ src: 's', msg: logCompiled.toString(), cid: this.id, nullBytesRemoved: parsed.nullBytesRemoved });
+        // FETCH responses are the bulk of a session, so they log at trace. The serialization is
+        // skipped when the level is off.
+        let logLevel: LogLevel =
+            /^\d+$/.test(parsed.command || '') && parsed.attributes && parsed.attributes[0] && parsed.attributes[0].value === 'FETCH' ? 'trace' : 'debug';
+        if (this.isLogLevelEnabled(logLevel)) {
+            let logCompiled = await compiler(parsed, {
+                isLogging: true
+            });
+            this.log[logLevel]({ src: 's', msg: logCompiled.toString(), cid: this.id, nullBytesRemoved: parsed.nullBytesRemoved });
         }
 
         // IMAP "+" (continuation request) handling. The server sends "+" in two cases:
@@ -2096,8 +2097,15 @@ export class ImapFlow extends EventEmitter {
             throw err;
         }
 
-        // Opportunistic STARTTLS. But it's not possible right now.
-        // Attention: Could be a downgrade attack.
+        // Opportunistic STARTTLS not offered. The capability list arrived in cleartext, so this
+        // may be a downgrade attack: say so rather than fall back silently (see the doSTARTTLS
+        // option for the policy).
+        this.log.warn({
+            msg: 'Server does not support STARTTLS, continuing over an unencrypted connection',
+            host: this.host,
+            port: this.port,
+            cid: this.id
+        });
         return false;
     }
 
@@ -4441,33 +4449,36 @@ export class ImapFlow extends EventEmitter {
             mainLogger = createConnectionLogger({ cid: this.id, logRaw: this.options.logRaw });
         }
 
+        // Whether the configured logger takes entries at this level: a disabled logger takes
+        // none, a plain object of level methods the levels it has methods for, plus error and
+        // fatal, which fall back to the console. The level methods and isLevelEnabled() below
+        // share this one rule.
+        const reachesLogger = (level: LogLevel): boolean =>
+            this.options.logger !== false && (typeof mainLogger[level] === 'function' || level === 'error' || level === 'fatal');
+
         let synteticLogger = {} as InternalLogger;
         let levels: LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
         for (let level of levels) {
             synteticLogger[level] = (...args: any[]) => {
-                // using {logger:false} disables logging
-                if (this.options.logger !== false) {
+                if (reachesLogger(level)) {
                     const logMethod = mainLogger[level];
-                    if (typeof logMethod !== 'function') {
-                        // we are checking to make sure the level is supported.
-                        // if it isn't supported but the level is error or fatal, log to console anyway.
-                        if (level === 'fatal' || level === 'error') {
-                            let entry = args[0];
-                            try {
-                                if (entry && typeof entry === 'object' && entry.err) {
-                                    entry = Object.assign({}, entry, { err: flattenLoggedError(entry.err) });
-                                }
-                                console.error(JSON.stringify(entry));
-                            } catch {
-                                // Serializing failed (a circular structure, a BigInt, a throwing
-                                // getter). This fallback exists so an error is never lost, so hand
-                                // the entry to console.error itself - it inspects rather than
-                                // serializes, and handles all three - instead of dropping it.
-                                console.error(entry);
-                            }
-                        }
-                    } else {
+                    if (typeof logMethod === 'function') {
                         (logMethod as (...args: any[]) => void).apply(mainLogger, args);
+                    } else {
+                        // error or fatal without a method of its own: the console, so it is never lost
+                        let entry = args[0];
+                        try {
+                            if (entry && typeof entry === 'object' && entry.err) {
+                                entry = Object.assign({}, entry, { err: flattenLoggedError(entry.err) });
+                            }
+                            console.error(JSON.stringify(entry));
+                        } catch {
+                            // Serializing failed (a circular structure, a BigInt, a throwing
+                            // getter). This fallback exists so an error is never lost, so hand
+                            // the entry to console.error itself - it inspects rather than
+                            // serializes, and handles all three - instead of dropping it.
+                            console.error(entry);
+                        }
                     }
                 }
 
@@ -4491,7 +4502,25 @@ export class ImapFlow extends EventEmitter {
             };
         }
 
+        // Whether an entry at this level reaches anyone, so the caller can skip building an
+        // expensive one (a response serialized for the log) that nobody would see. 'log' events
+        // carry every entry whatever the logger does with it, and a pino-like logger knows its
+        // own threshold.
+        synteticLogger.isLevelEnabled = (level: LogLevel): boolean =>
+            this.emitLogs || (typeof mainLogger.isLevelEnabled === 'function' ? !!mainLogger.isLevelEnabled(level) : reachesLogger(level));
+
         return synteticLogger;
+    }
+
+    /**
+     * Whether a log entry at this level reaches anyone, so the caller can skip building an
+     * expensive one. A logger assigned to `log` from outside may lack the method, and then
+     * every level counts as enabled.
+     *
+     * @internal
+     */
+    isLogLevelEnabled(level: LogLevel): boolean {
+        return typeof this.log.isLevelEnabled === 'function' ? this.log.isLevelEnabled(level) : true;
     }
 
     /**

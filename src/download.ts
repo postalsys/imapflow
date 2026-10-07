@@ -553,19 +553,19 @@ export async function downloadMessageParts(
         return {};
     }
 
-    let downloadOptions: DownloadManyOptions & FetchOptions = Object.assign(
-        {
-            chunkSize: 64 * 1024,
-            maxBytes: Infinity
-        },
-        options || {}
-    );
+    let downloadOptions: DownloadManyOptions & FetchOptions = options || {};
 
-    let query: FetchQueryObject & { bodyParts: string[] } = { bodyParts: [] };
+    // Asked as a partial fetch so at most maxBytes of each part crosses the wire, and enforced
+    // again on the answer for servers that ignore the partial specifier
+    let maxBytes = normalizeByteLimit(downloadOptions.maxBytes);
+
+    let query: FetchQueryObject & { bodyParts: NonNullable<FetchQueryObject['bodyParts']> } = { bodyParts: [] };
 
     for (let part of parts) {
         query.bodyParts.push(part + '.mime');
-        query.bodyParts.push(part);
+        // The partial specifier carries a 32-bit length (RFC 9051 "number"), so a cap beyond
+        // that is applied on the answer alone
+        query.bodyParts.push(maxBytes > 0xffffffff ? part : { key: part, start: 0, maxLength: maxBytes });
     }
 
     let response = await client.fetchOne(range, query, downloadOptions);
@@ -587,6 +587,18 @@ export async function downloadMessageParts(
         if (keyParts.length === 1) {
             // content
             let key = keyParts[0];
+            if (content.length > maxBytes) {
+                // The server ignored the partial specifier and sent the whole part, the quirk
+                // download() tolerates the same way: keep what was asked for
+                client.log.warn({
+                    msg: 'Server returned more than the requested window, truncating the part',
+                    part: key,
+                    maxBytes,
+                    received: content.length,
+                    cid: client.id
+                });
+                content = content.subarray(0, maxBytes);
+            }
             if (!data[key]) {
                 data[key] = { content };
             } else {

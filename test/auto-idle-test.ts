@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeClient, makeIdleReadyClient, chunkedFetchOne } from './fixtures/test-client.js';
+import { makeClient, makeLoggingClient, makeIdleReadyClient, chunkedFetchOne } from './fixtures/test-client.js';
 import { withFakeTimers } from './fixtures/fake-timers.js';
 
 // Auto-IDLE policy: how the `autoIdleDelay` option is normalized, when the timer is allowed to
@@ -19,17 +19,6 @@ const DEFAULT_DELAY = 15 * 1000;
 const DEFAULT_SOCKET_TIMEOUT = 5 * 60 * 1000;
 const SOCKET_MARGIN = 1000;
 const TIMEOUT_MAX = 2 ** 31 - 1;
-
-// Captures warn entries, so the "silently ignored configuration" cases can be asserted as
-// reported rather than guessed at.
-const makeLoggingClient: any = (overrides = {}) => {
-    let warnings: any = [];
-    let client = makeClient({
-        ...overrides,
-        logger: { trace() {}, debug() {}, info() {}, warn: (entry: any) => warnings.push(entry), error() {}, fatal() {} }
-    });
-    return { client, warnings };
-};
 
 // ============================================================================
 // the socket inactivity watchdog

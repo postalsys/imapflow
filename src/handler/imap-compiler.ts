@@ -26,6 +26,11 @@ const safeNumber = (value: unknown): number => {
     return Number.isSafeInteger(num) && num >= 0 ? num : 0;
 };
 
+// Log output stands in a placeholder for any value longer than this, so a log entry never
+// carries a copy of a large token (a message body, a long unquoted server token)
+const LOG_VALUE_LIMIT = 100;
+const logPlaceholder = (length: number, kind: string): string => `"(* ${length}B ${kind} *)"`;
+
 // Characters that cannot appear in an IMAP quoted string: CR and LF terminate a
 // command line, and NUL is outside the CHAR production entirely. A value carrying
 // any of them has to be sent as a literal, so quoting it is never correct.
@@ -180,8 +185,8 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
         }
 
         if (typeof node === 'string' || Buffer.isBuffer(node)) {
-            if (isLogging && node.length > 100) {
-                resp.push(emitEntry('"(* ' + node.length + 'B string *)"')!);
+            if (isLogging && node.length > LOG_VALUE_LIMIT) {
+                resp.push(emitEntry(logPlaceholder(node.length, 'string'))!);
             } else {
                 resp.push(emitEntry(isLogging ? JSON.stringify(node.toString()) : quoteString(node.toString()))!);
             }
@@ -203,7 +208,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
         switch (node.type.toUpperCase()) {
             case 'LITERAL':
                 if (isLogging) {
-                    resp.push(emitEntry('"(* ' + (node.value as string | Buffer).length + 'B literal *)"')!);
+                    resp.push(emitEntry(logPlaceholder((node.value as string | Buffer).length, 'literal'))!);
                 } else {
                     // The literal size marker counts octets - string values are written as
                     // UTF-8, so their UTF-16 .length would undercount multi-byte characters
@@ -237,8 +242,8 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                 break;
 
             case 'STRING':
-                if (isLogging && (node.value as string | Buffer).length > 100) {
-                    resp.push(emitEntry('"(* ' + (node.value as string | Buffer).length + 'B string *)"')!);
+                if (isLogging && (node.value as string | Buffer).length > LOG_VALUE_LIMIT) {
+                    resp.push(emitEntry(logPlaceholder((node.value as string | Buffer).length, 'string'))!);
                 } else {
                     val = (node.value || '').toString();
                     resp.push(emitEntry(isLogging ? JSON.stringify(val) : quoteString(val))!);
@@ -299,11 +304,17 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                 val = (node.value || '').toString();
 
                 if (!node.section || val) {
-                    // Verify the value contains only valid ATOM-CHAR characters.
-                    // Strip a leading backslash before checking (system flags like \Seen start with '\').
-                    // If any character fails verification, fall back to an IMAP quoted string
-                    // (JSON.stringify is used only for log output, where values are display-escaped).
-                    if (node.value === '' || imapFormalSyntax.verify(val.charAt(0) === '\\' ? val.slice(1) : val, imapFormalSyntax['ATOM-CHAR']()) >= 0) {
+                    if (isLogging && val.length > LOG_VALUE_LIMIT) {
+                        // A server can put a line's worth of bytes in one unquoted token
+                        val = logPlaceholder(val.length, 'atom');
+                    } else if (
+                        node.value === '' ||
+                        imapFormalSyntax.verify(val.charAt(0) === '\\' ? val.slice(1) : val, imapFormalSyntax['ATOM-CHAR']()) >= 0
+                    ) {
+                        // An empty value, or one with a character outside ATOM-CHAR (checked
+                        // past a leading backslash, as system flags like \Seen carry one), goes
+                        // out as an IMAP quoted string. JSON.stringify is used only for log
+                        // output, where values are display-escaped.
                         val = isLogging ? JSON.stringify(val) : quoteString(val);
                     }
 

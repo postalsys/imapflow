@@ -1,4 +1,4 @@
-import { formatDateTime } from '../tools.js';
+import { formatDateTime, isUnsafeKey } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapAttribute, ImapAttributeNode, ImapResponse } from '../handler/types.js';
 import type { IdInfoObject } from '../types.js';
@@ -47,7 +47,14 @@ export default async function id(connection: ImapFlow, clientInfo?: IdInfoObject
                         if (i % 2 === 0) {
                             key = (val as ImapAttributeNode).value;
                         } else if (typeof key === 'string' && typeof (val as ImapAttributeNode).value === 'string') {
-                            map[key.toLowerCase().trim()] = (val as ImapAttributeNode).value;
+                            // The server picks the keys of this object, which the caller reads
+                            // back as serverInfo: a prototype-chain name is skipped as it is for
+                            // every other server-named key, so it can neither be shadowed nor
+                            // written through
+                            let name = key.toLowerCase().trim();
+                            if (!isUnsafeKey(name)) {
+                                map[name] = (val as ImapAttributeNode).value;
+                            }
                         }
                     });
                 }

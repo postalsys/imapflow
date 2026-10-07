@@ -32,6 +32,61 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
+    it('Server: protocol lines are logged when the logger takes them, and the cleartext fallback is warned about', async () => {
+        let server = createServer();
+        let port = await listen(server);
+
+        // A logger that captures every level, with a threshold of its own when given one
+        let captureLogger = (isLevelEnabled?: (level: string) => boolean) => {
+            let entries: any[] = [];
+            let logger: any = { isLevelEnabled };
+            for (let level of ['trace', 'debug', 'info', 'warn', 'error', 'fatal']) {
+                logger[level] = (entry: any) => entries.push({ level, ...entry });
+            }
+            return { logger, entries };
+        };
+        let runSession = async (overrides: any, onClient?: (client: any) => void) => {
+            let client = makeClient(port, overrides);
+            client.on('error', () => {});
+            onClient?.(client);
+            await client.connect();
+            await client.logout();
+            client.close();
+        };
+
+        // A logger that takes everything sees both directions of the session, and the warning
+        // that the session stayed in cleartext because the server offered no STARTTLS
+        let { logger, entries } = captureLogger();
+        await runSession({ logger });
+
+        assert.ok(
+            entries.some(entry => entry.level === 'debug' && entry.src === 'c' && /^\d+ LOGIN "test" "\(\* value hidden \*\)"$/.test(entry.msg)),
+            'client commands are logged, with the password masked'
+        );
+        assert.ok(
+            entries.some(entry => entry.level === 'debug' && entry.src === 's' && /^\* CAPABILITY /.test(entry.msg)),
+            'server responses are logged'
+        );
+        let warnings = entries.filter(entry => entry.level === 'warn');
+        assert.equal(warnings.length, 1);
+        assert.match(warnings[0].msg, /does not support STARTTLS/);
+
+        // A logger that reports debug disabled gets no protocol lines (and the client does
+        // not serialize them for it), but the warning still comes through
+        ({ logger, entries } = captureLogger(level => level === 'warn'));
+        await runSession({ logger });
+
+        assert.equal(entries.filter(entry => entry.src === 'c' || entry.src === 's').length, 0, 'no protocol lines');
+        assert.equal(entries.filter(entry => entry.level === 'warn').length, 1);
+
+        // Emitted log events are not subject to the logger's threshold
+        let events: any[] = [];
+        await runSession({ logger, emitLogs: true }, client => client.on('log', (entry: any) => events.push(entry)));
+
+        assert.ok(events.some(entry => entry.src === 's' && /^\* CAPABILITY /.test(entry.msg)));
+
+        server.close();
+    });
     it('Server: BYE greeting rejects connect even if the server keeps the socket open', async () => {
         let server = createServer({ greeting: '* BYE Server too busy\r\n' });
         let port = await listen(server);

@@ -4,6 +4,7 @@ import { ImapFlow } from '../src/imap-flow.js';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import type { MailboxObject } from '../src/types.js';
+import { makeClient, makeLoggingClient } from './fixtures/test-client.js';
 
 // Helper to create a mock client with compression enabled
 async function setupCompressedClient() {
@@ -964,6 +965,51 @@ describe('connection-edge-cases', () => {
         assert.ok(logEvents[0].err, 'Should have error object');
         assert.ok(logEvents[0].err.stack, 'Error should have stack');
         assert.equal(logEvents[0].err.code, 'TEST_CODE', 'Error should have code');
+    });
+    it('Connection Edge: getLogger reports which levels reach anyone', () => {
+        // Nothing reaches a disabled logger
+        let disabled = makeClient();
+        assert.equal(disabled.isLogLevelEnabled('debug'), false);
+        assert.equal(disabled.isLogLevelEnabled('error'), false);
+
+        // Unless the entries are emitted as events
+        let emitting = makeClient({ emitLogs: true });
+        assert.equal(emitting.isLogLevelEnabled('debug'), true);
+
+        // A pino-like logger knows its threshold
+        let pinoLike: any = { isLevelEnabled: (level: string) => level === 'info', info() {}, debug() {} };
+        let thresholded = makeClient({ logger: pinoLike });
+        assert.equal(thresholded.isLogLevelEnabled('debug'), false);
+        assert.equal(thresholded.isLogLevelEnabled('info'), true);
+
+        // A plain object takes the levels it has methods for; error and fatal fall back to the console
+        let plain: any = { info() {} };
+        let partial = makeClient({ logger: plain });
+        assert.equal(partial.isLogLevelEnabled('debug'), false);
+        assert.equal(partial.isLogLevelEnabled('info'), true);
+        assert.equal(partial.isLogLevelEnabled('error'), true);
+
+        // A logger object assigned from outside has no say, so everything counts as enabled
+        partial.log = plain;
+        assert.equal(partial.isLogLevelEnabled('debug'), true);
+    });
+    it('Connection Edge: opportunistic STARTTLS fallback to cleartext is logged as a warning', async () => {
+        // No STARTTLS in the (cleartext) capability list and no policy set: carries on, but says so
+        let { client, warnings } = makeLoggingClient({ port: 143 });
+        assert.equal(await client.upgradeToSTARTTLS(), false);
+        assert.equal(warnings.length, 1);
+        assert.match(warnings[0].msg, /does not support STARTTLS/);
+        assert.equal(warnings[0].port, 143);
+
+        // Cleartext by choice is not warned about
+        ({ client, warnings } = makeLoggingClient({ port: 143, doSTARTTLS: false }));
+        assert.equal(await client.upgradeToSTARTTLS(), false);
+        assert.equal(warnings.length, 0);
+
+        // Required STARTTLS fails instead
+        ({ client, warnings } = makeLoggingClient({ port: 143, doSTARTTLS: true }));
+        await assert.rejects(client.upgradeToSTARTTLS(), (err: any) => err.tlsFailed === true);
+        assert.equal(warnings.length, 0);
     });
     it('Connection Edge: unbind removes socket listeners and returns sockets', () => {
         let client: any = new ImapFlow({

@@ -1256,4 +1256,19 @@ describe('search-compiler', () => {
         assert.ok(!hasLiteral(attributes, 'caf\u00e9\0'));
         await assert.rejects(imapCompiler({ tag: 'A1', command: 'SEARCH', attributes }), { code: 'InvalidStringValue' });
     });
+    it('Search Compiler: unknown key fails instead of widening the search', () => {
+        let connection = createMockConnection();
+
+        // A mistyped key used to be dropped, which turned this into a search for every message
+        assert.throws(() => searchCompiler(connection, { unsen: true } as any), { code: 'InvalidSearchQuery', message: /Unknown search key "unsen"/ });
+        // Even one with nothing to say
+        assert.throws(() => searchCompiler(connection, { seen: true, flagged2: undefined } as any), { code: 'InvalidSearchQuery' });
+
+        // Operands are compiled the same way
+        assert.throws(() => searchCompiler(connection, { or: [{ seen: true }, { unsen: true }] } as any), { code: 'InvalidSearchQuery' });
+        assert.throws(() => searchCompiler(connection, { not: { unsen: true } } as any), { code: 'InvalidSearchQuery' });
+
+        // Key matching stays case-insensitive
+        assert.ok(hasAttr(searchCompiler(connection, { UNSEEN: true } as any), 'UNSEEN'));
+    });
 });

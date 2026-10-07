@@ -78,6 +78,36 @@ describe('commands/id', () => {
         assert.equal((result as any)!.version, '2.0');
         assert.equal((result as any)!.vendor, 'ACME');
     });
+    it('Commands: id skips prototype-chain keys in the server response', async () => {
+        const connection = createMockConnection({
+            capabilities: new Map([['ID', true]]),
+            exec: async (cmd: any, args: any, opts: any) => {
+                await opts.untagged.ID({
+                    attributes: [
+                        [
+                            { value: '__proto__' },
+                            { value: 'polluted' },
+                            { value: 'constructor' },
+                            { value: 'shadowed' },
+                            { value: 'prototype' },
+                            { value: 'shadowed' },
+                            { value: 'name' },
+                            { value: 'TestServer' }
+                        ]
+                    ]
+                });
+                return { next: () => {} };
+            }
+        });
+
+        const result: any = await idCommand(connection, { name: 'TestClient' });
+        assert.equal(result.name, 'TestServer');
+        for (let key of ['__proto__', 'constructor', 'prototype']) {
+            assert.equal(Object.prototype.hasOwnProperty.call(result, key), false, `${key} is not an own key`);
+        }
+        assert.equal(result.constructor, Object, 'inherited members are not shadowed');
+        assert.equal(({} as any).polluted, undefined, 'Object.prototype is untouched');
+    });
     it('Commands: id updates serverInfo', async () => {
         const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),

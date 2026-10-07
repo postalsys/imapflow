@@ -38,6 +38,17 @@ const makeClient = (overrides: any = {}): any =>
         ...overrides
     });
 
+// A client whose warn entries are captured, so a "silently ignored configuration" or a
+// "carried on regardless" case can be asserted as reported rather than guessed at
+const makeLoggingClient = (overrides: any = {}): { client: any; warnings: any[] } => {
+    let warnings: any[] = [];
+    let client = makeClient({
+        ...overrides,
+        logger: { trace() {}, debug() {}, info() {}, warn: (entry: any) => warnings.push(entry), error() {}, fatal() {} }
+    });
+    return { client, warnings };
+};
+
 // A client parked in SELECTED with a stubbed socket and a no-op idle(), ready for autoidle(),
 // lock handling and watchdog behavior to be exercised directly
 const makeIdleReadyClient = (overrides: any = {}): any => {
@@ -102,4 +113,4 @@ const slowConsumer = (options: { delay?: number; onChunk?: (chunk: Buffer) => vo
     });
 };
 
-export { makeClient, makeIdleReadyClient, makeSocketStub, chunkedFetchOne, installRejectionDetector, slowConsumer };
+export { makeClient, makeLoggingClient, makeIdleReadyClient, makeSocketStub, chunkedFetchOne, installRejectionDetector, slowConsumer };

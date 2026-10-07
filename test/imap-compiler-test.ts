@@ -565,6 +565,29 @@ describe('imap-compiler', () => {
         ).toString();
         assert.ok(compiled.includes('200B literal'), 'should show byte count for literal');
     });
+    it('IMAP Compiler: long atom truncated in logging mode only', async () => {
+        // A server can put a whole line's worth of bytes in one unquoted token. The log got a
+        // second copy of it while strings and literals of the same size were already placeholders.
+        const longAtom = 'a'.repeat(150);
+        const logged = (
+            await compiler(
+                {
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [
+                        { type: 'ATOM', value: longAtom },
+                        { type: 'ATOM', value: 'short' }
+                    ]
+                },
+                { asArray: false, isLogging: true }
+            )
+        ).toString();
+        assert.equal(logged, '* CMD "(* 150B atom *)" short');
+
+        // The wire form is never touched
+        const wire = (await compiler({ tag: '*', command: 'CMD', attributes: [{ type: 'ATOM', value: longAtom }] }, { asArray: false })).toString();
+        assert.equal(wire, `* CMD ${longAtom}`);
+    });
     it('IMAP Compiler: partial range in SECTION', async () => {
         const compiled = (
             await compiler({

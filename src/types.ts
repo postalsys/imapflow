@@ -162,7 +162,15 @@ export interface ImapFlowOptions {
      * 30 minutes. Set to 0 or false to disable.
      */
     maxLockHoldTime?: number | false | undefined;
-    /** If true, uses TLS. If false, uses cleartext. If not set, upgrades to TLS if available */
+    /**
+     * STARTTLS policy for a connection that was not opened with `secure: true`. If true, the
+     * connection must upgrade to TLS, and connecting fails when the server does not offer
+     * STARTTLS. If false, the connection stays in cleartext. If not set, the connection upgrades
+     * when the server offers STARTTLS and otherwise continues in cleartext with a warning logged:
+     * the capability list that decides this was itself received in cleartext, so an attacker on
+     * the path can strip it. Set `doSTARTTLS: true` whenever the credentials must never cross the
+     * wire unencrypted.
+     */
     doSTARTTLS?: boolean | undefined;
     /** Custom instance ID string for logs */
     id?: string | undefined;
@@ -675,8 +683,8 @@ export interface DownloadOptions {
     chunkSize?: number | undefined;
 }
 
-/** Options for downloadMany(), the same shape as the download() options */
-export type DownloadManyOptions = DownloadOptions;
+/** Options for downloadMany(): the download() options without `chunkSize`, as the parts come in one FETCH */
+export type DownloadManyOptions = Pick<DownloadOptions, 'uid' | 'maxBytes'>;
 
 export interface DownloadManyPart {
     meta: DownloadMeta;
@@ -808,7 +816,14 @@ export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
  * The logger a connection uses internally: every level is always callable, whatever the
  * configured logger supports, and entries are mirrored as 'log' events when `emitLogs` is set
  */
-export type InternalLogger = { [level in LogLevel]: (obj: any) => void };
+export type InternalLogger = { [level in LogLevel]: (obj: any) => void } & {
+    /**
+     * Whether an entry logged at this level reaches anyone (the logger, or a 'log' event
+     * listener). Set on the logger the connection builds; a logger assigned from outside may
+     * lack it, and every level then counts as enabled
+     */
+    isLevelEnabled?: ((level: LogLevel) => boolean) | undefined;
+};
 
 export interface LogEvent {
     /** Log level */

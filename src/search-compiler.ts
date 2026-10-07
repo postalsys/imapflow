@@ -526,6 +526,11 @@ export const searchCompiler = (connection: ImapFlow, query: SearchObject): Searc
                         walkOrTree(genOrTree(params[term]));
                     }
                     break;
+
+                default:
+                    // An unknown key is refused: dropping it silently widened the search (a
+                    // query of only unknown keys matched every message)
+                    fail('InvalidSearchQuery', `Unknown search key "${term}"`);
             }
         });
     };
