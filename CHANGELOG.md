@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.10](https://github.com/postalsys/imapflow/compare/v2.2.9...v2.2.10) (2026-10-07)
+
+
+### Bug Fixes
+
+* log socket errors after a failed STARTTLS upgrade instead of throwing them on Bun ([74fad57](https://github.com/postalsys/imapflow/commit/74fad57386cde6a60211b9b1671228b72aa9f94a))
+* take the requested message in fetchOne() when a FETCH answer also carries unsolicited rows ([74fad57](https://github.com/postalsys/imapflow/commit/74fad57386cde6a60211b9b1671228b72aa9f94a)), closes [#426](https://github.com/postalsys/imapflow/issues/426)
+
 ## [2.2.9](https://github.com/postalsys/imapflow/compare/v2.2.8...v2.2.9) (2026-10-07)
 
 
