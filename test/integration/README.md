@@ -110,4 +110,6 @@ the `test-james` job.
   and over TLS, so it is James itself (seen under amd64 emulation on Apple
   Silicon). `download()` drops an answer whose UID or partial origin does not
   match the request and asks again, but a client can not repair the merged
-  response, so the download test of this suite fails now and then because of it.
+  response. Reproduced on native linux/amd64 in CI as well. The download test
+  of this suite uses the default chunk size, a few FETCHes per download instead
+  of hundreds, to keep this server bug from failing it.

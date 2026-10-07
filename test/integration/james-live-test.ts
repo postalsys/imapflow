@@ -130,19 +130,19 @@ describe('james-live', () => {
             const uid = String(appended.uid);
             await client.mailboxOpen('INBOX');
 
-            for (const chunkSize of [undefined, 1000]) {
-                const options = chunkSize ? { uid: true, chunkSize } : { uid: true };
+            // Default chunk size on purpose: James writes about one FETCH answer in a few hundred
+            // out of order (see README.md), so a download made of hundreds of small chunks would
+            // fail on that server bug rather than on the client. Small chunks are covered by the
+            // unit tests and the transcripts.
+            const attachment = await client.download(uid, '2', { uid: true });
+            assert.equal(attachment.meta?.filename, 'data.bin');
+            assert.equal(attachment.meta?.encoding, 'base64');
+            assert.ok((await collect(attachment.content!)).equals(ATTACHMENT), 'attachment content');
 
-                const attachment = await client.download(uid, '2', options);
-                assert.equal(attachment.meta?.filename, 'data.bin');
-                assert.equal(attachment.meta?.encoding, 'base64');
-                assert.ok((await collect(attachment.content!)).equals(ATTACHMENT), `attachment content (chunkSize ${chunkSize})`);
-
-                const text = await client.download(uid, '1', options);
-                assert.equal(text.meta?.contentType, 'text/plain');
-                assert.equal(text.meta?.charset, 'utf-8');
-                assert.equal((await collect(text.content!)).toString(), TEXT_BODY, `text content (chunkSize ${chunkSize})`);
-            }
+            const text = await client.download(uid, '1', { uid: true });
+            assert.equal(text.meta?.contentType, 'text/plain');
+            assert.equal(text.meta?.charset, 'utf-8');
+            assert.equal((await collect(text.content!)).toString(), TEXT_BODY, 'text content');
 
             const inner = await client.download(uid, '3', { uid: true });
             assert.equal(inner.meta?.contentType, 'message/rfc822');
@@ -153,7 +153,7 @@ describe('james-live', () => {
             assert.ok(parts['2']?.content?.equals(ATTACHMENT));
             assert.equal(parts['2']?.meta?.filename, 'data.bin');
 
-            const source = await client.download(uid, undefined, { uid: true, chunkSize: 4096 });
+            const source = await client.download(uid, undefined, { uid: true });
             assert.equal((await collect(source.content!)).toString(), MULTIPART);
         } finally {
             await client.logout();
