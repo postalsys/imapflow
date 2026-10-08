@@ -17,8 +17,8 @@ const MULTIPART =
 const STORAGE = { INBOX: { messages: [{ raw: MULTIPART }, { raw: rfc822('second') }] } };
 
 // A server with the messages above and the given script rules
-const start = (t: any, script: any, { plugins = PLUGINS, allowBad = false } = {}) =>
-    startImapKit(t, { allowBad, server: { plugins, storage: STORAGE, script } });
+const start = (t: any, script: any, { plugins = PLUGINS, allowBad = false, secureConnection = false } = {}) =>
+    startImapKit(t, { allowBad, server: { plugins, storage: STORAGE, script, secureConnection } });
 
 const read = async (content: any) => Buffer.concat(await content.toArray()).toString();
 
@@ -214,10 +214,15 @@ describe('imapkit faults: FETCH responses', () => {
 });
 
 describe('imapkit faults: connection loss', () => {
-    for (const close of [true, 'reset'] as const) {
-        it(`a connection ${close === 'reset' ? 'reset' : 'closed'} during IDLE emits close and settles idle()`, async t => {
-            const kit = await start(t, { on: 'continuation', description: 'IDLE', close });
+    for (const [close, secure] of [
+        [true, false],
+        ['reset', false],
+        ['reset', true]
+    ] as const) {
+        it(`a connection ${close === 'reset' ? 'reset' : 'closed'} during IDLE${secure ? ' on an implicit TLS session' : ''} emits close and settles idle()`, async t => {
+            const kit = await start(t, { on: 'continuation', description: 'IDLE', close }, { secureConnection: secure });
             const client = await kit.connect();
+            assert.equal(!!client.secureConnection, secure);
             await client.mailboxOpen('INBOX');
             const started = Date.now();
             const closing = closed(client);
@@ -242,17 +247,13 @@ describe('imapkit faults: connection loss', () => {
         });
     });
 
-    it(
-        'a connection reset right after the TLS upgrade is a lost connection, not a TLS failure',
-        { skip: 'close: reset throws on a TLS connection, postalsys/imapkit#84' },
-        async t => {
-            // the CAPABILITY the client sends over the new TLS layer, the first one went before STARTTLS
-            const kit = await start(t, { on: 'command', command: 'CAPABILITY', nth: 2, drop: true, close: 'reset' }, { plugins: [...PLUGINS, 'STARTTLS'] });
-            await assert.rejects(kit.connect(), (err: any) => {
-                assert.equal(err.tlsFailed, undefined);
-                assert.equal(err.code, 'ECONNRESET');
-                return true;
-            });
-        }
-    );
+    it('a connection reset right after the TLS upgrade is a lost connection, not a TLS failure', async t => {
+        // the CAPABILITY the client sends over the new TLS layer, the first one went before STARTTLS
+        const kit = await start(t, { on: 'command', command: 'CAPABILITY', nth: 2, drop: true, close: 'reset' }, { plugins: [...PLUGINS, 'STARTTLS'] });
+        await assert.rejects(kit.connect(), (err: any) => {
+            assert.equal(err.tlsFailed, undefined);
+            assert.equal(err.code, 'ECONNRESET');
+            return true;
+        });
+    });
 });
