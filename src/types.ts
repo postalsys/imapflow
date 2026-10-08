@@ -852,6 +852,16 @@ export interface LogEvent {
     [key: string]: any;
 }
 
+/** A message the server marked with the ALERT response code, to be shown to the user (RFC 9051 section 7.1) */
+export interface AlertEvent {
+    /** The alert text */
+    message: string;
+    /** The response that carried it */
+    response: 'OK' | 'NO' | 'BAD' | 'BYE' | 'PREAUTH';
+    /** Tag of the command it completed, missing for an untagged response */
+    tag?: string | undefined;
+}
+
 export interface ResponseEvent {
     /** Response type */
     response: string;
@@ -924,4 +934,6 @@ export interface ImapFlowEvents {
     log: [entry: LogEvent];
     /** Response event */
     response: [response: ResponseEvent];
+    /** The server sent an ALERT: text meant for the user, such as a planned shutdown or an account problem */
+    alert: [alert: AlertEvent];
 }

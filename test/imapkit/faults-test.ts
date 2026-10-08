@@ -73,6 +73,34 @@ describe('imapkit faults: greeting and session setup', () => {
     });
 });
 
+describe('imapkit faults: ALERT', () => {
+    it('an ALERT mid-session and one that refuses a login reach the alert event', async t => {
+        const kit = await start(t, [
+            { on: 'command', command: 'NOOP', send: '* OK [ALERT] System shutdown in 10 minutes\r\n', run: true },
+            { on: 'command', command: 'LOGIN', session: 2, send: '$TAG NO [ALERT] Your account is locked\r\n' }
+        ]);
+        const client = await kit.connect();
+        const alerts: any[] = [];
+        client.on('alert', (alert: any) => alerts.push(alert));
+        await client.noop();
+        assert.deepEqual(alerts, [{ message: 'System shutdown in 10 minutes', response: 'OK' }]);
+        await client.logout();
+
+        // the second connection is refused with an ALERT, which a caller only sees through the event
+        const refused: any[] = [];
+        await assert.rejects(
+            kit.connect({}, (client: any) => client.on('alert', (alert: any) => refused.push(alert))),
+            (err: any) => {
+                assert.equal(err.authenticationFailed, true);
+                return true;
+            }
+        );
+        assert.equal(refused.length, 1);
+        assert.equal(refused[0].message, 'Your account is locked');
+        assert.equal(refused[0].response, 'NO');
+    });
+});
+
 describe('imapkit faults: commands', () => {
     it('a SELECT refused once can be retried', async t => {
         const kit = await start(t, { on: 'command', command: 'SELECT', times: 1, send: '$TAG NO [UNAVAILABLE] Try again later\r\n' });

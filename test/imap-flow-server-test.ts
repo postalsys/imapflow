@@ -496,6 +496,72 @@ describe('imap-flow-server', () => {
         client.close();
         server.close();
     });
+    it('Server: ALERT texts are emitted from the greeting, untagged, tagged and BYE responses', async () => {
+        // RFC 9051 section 7.1: the text of an ALERT must be presented to the user
+        let server = createServer({
+            greeting: '* OK [ALERT] Planned maintenance at 22:00 UTC\r\n',
+            handlers: {
+                NOOP(ctx: any) {
+                    ctx.write('* OK [ALERT] System shutdown in 10 minutes\r\n');
+                    ctx.ok('NOOP completed');
+                },
+                EXAMINE(ctx: any) {
+                    ctx.write(`${ctx.tag} NO [ALERT] Mailbox is being migrated\r\n`);
+                },
+                LOGOUT(ctx: any) {
+                    ctx.write('* BYE [alert] Account suspended\r\n');
+                    ctx.ok('LOGOUT completed');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port);
+        client.on('error', () => {});
+        let alerts: any[] = [];
+        client.on('alert', alert => alerts.push(alert));
+        // a throwing listener does not disturb the session
+        client.on('alert', () => {
+            throw new Error('listener failure');
+        });
+
+        await client.connect();
+        await client.noop();
+        await assert.rejects(client.mailboxOpen('INBOX', { readOnly: true }));
+        await client.logout();
+
+        assert.equal(alerts.length, 4);
+        assert.deepEqual(alerts[0], { message: 'Planned maintenance at 22:00 UTC', response: 'OK' });
+        assert.deepEqual(alerts[1], { message: 'System shutdown in 10 minutes', response: 'OK' });
+        assert.equal(alerts[2].message, 'Mailbox is being migrated');
+        assert.equal(alerts[2].response, 'NO');
+        assert.match(alerts[2].tag, /^\S+$/);
+        assert.deepEqual(alerts[3], { message: 'Account suspended', response: 'BYE' });
+
+        client.close();
+        server.close();
+    });
+    it('Server: other response codes are not alerts', async () => {
+        let server = createServer({
+            handlers: {
+                NOOP(ctx: any) {
+                    ctx.write('* OK [UNSEEN 1] First unseen\r\n');
+                    ctx.write('* OK ALERT without the brackets\r\n');
+                    ctx.ok('[ALERTX] not an alert either');
+                }
+            }
+        });
+        let port = await listen(server);
+        let client = makeClient(port);
+        client.on('error', () => {});
+        let alerts: any[] = [];
+        client.on('alert', alert => alerts.push(alert));
+        await client.connect();
+        await client.noop();
+        await client.logout();
+        assert.deepEqual(alerts, []);
+        client.close();
+        server.close();
+    });
     it('Server: APPEND with synchronizing literal', async () => {
         let server = createServer({
             capabilities: 'IMAP4rev1 ID ENABLE NAMESPACE UIDPLUS',

@@ -45,6 +45,7 @@ import {
 } from './tools.js';
 
 import type {
+    AlertEvent,
     AppendResponseObject,
     CopyResponseObject,
     DownloadManyOptions,
@@ -96,6 +97,8 @@ export { AuthenticationFailure, ImapFlowErrorCode } from './errors.js';
 export type { ImapAttribute, ImapAttributeList, ImapAttributeNode, ImapResponse } from './handler/types.js';
 
 const GREETING_TIMEOUT = 16 * 1000;
+// Status responses that can carry an ALERT response code
+const ALERT_RESPONSES = new Set(['OK', 'NO', 'BAD', 'BYE', 'PREAUTH']);
 const UPGRADE_TIMEOUT = 10 * 1000;
 
 const SOCKET_TIMEOUT = 5 * 60 * 1000;
@@ -1467,6 +1470,28 @@ export class ImapFlow extends EventEmitter {
         this.trySend().catch(sendErr => logConnectionError(this, 'Failed to dispatch command', sendErr));
     }
 
+    // RFC 9051 section 7.1: the text of an ALERT must be presented to the user. It can come
+    // with any status response, tagged or untagged, the greeting and BYE included. Called for
+    // responses that carry the ALERT code.
+    /** @internal */
+    reportAlert(parsed: ImapResponse): void {
+        let response = (parsed.command || '').toUpperCase();
+        if (!ALERT_RESPONSES.has(response)) {
+            return;
+        }
+        let alert: AlertEvent = {
+            message: getTextValues(parsed.attributes)
+                .map(value => value.trim())
+                .join(' '),
+            response: response as AlertEvent['response']
+        };
+        if (parsed.tag && parsed.tag !== '*') {
+            alert.tag = parsed.tag;
+        }
+        this.log.info({ msg: 'Server alert', alert: alert.message, response: alert.response, cid: this.id });
+        emitSafe(this, 'alert', alert);
+    }
+
     /**
      * Handles a single parsed server response: telemetry, continuation requests, response-code
      * section handlers, untagged handlers and tagged command completion.
@@ -1567,6 +1592,9 @@ export class ImapFlow extends EventEmitter {
         // dereference must be guarded or one such line tears down the whole connection
         if (section && section.length && section[0] && section[0].type === 'ATOM' && typeof section[0].value === 'string') {
             let sectionKey = section[0].value.toUpperCase().trim();
+            if (sectionKey === 'ALERT') {
+                this.reportAlert(parsed);
+            }
             let sectionHandler = this.getSectionHandler(sectionKey);
             if (sectionHandler) {
                 try {

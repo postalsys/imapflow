@@ -78,6 +78,7 @@ client.on('exists', data => data.count);
 client.on('expunge', data => data.vanished);
 client.on('flags', data => data.flags.has('\\\\Seen'));
 client.on('mailboxOpen', mailbox => mailbox.path);
+client.on('alert', alert => alert.message.toUpperCase() + alert.response + (alert.tag ?? ''));
 client.on('mailboxClose', mailbox => mailbox.path);
 client.on('log', entry => entry.level);
 client.on('response', response => response.code);

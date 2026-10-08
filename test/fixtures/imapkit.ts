@@ -93,8 +93,8 @@ interface WireEntry {
 export interface ImapKit {
     // Scripted faults of the server, `add()` takes ImapKit script rules at runtime
     script: Server['script'];
-    // A connected client
-    connect(options?: Record<string, any>): Promise<any>;
+    // A connected client, `setup` gets it before it connects (listeners for events of the session setup)
+    connect(options?: Record<string, any>, setup?: (client: any) => void): Promise<any>;
     // Lines the client sent, or the server sent, for quick assertions
     sent(needle: string | RegExp): boolean;
     received(needle: string | RegExp): boolean;
@@ -118,7 +118,7 @@ export const startImapKit = async (t: any, options: { server?: Record<string, an
     // untilSent() callers, checked against each new line the client sends
     const waiters = new Set<(msg: string) => void>();
 
-    const connect = async (clientOptions: Record<string, any> = {}) => {
+    const connect = async (clientOptions: Record<string, any> = {}, setup?: (client: any) => void) => {
         const client: any = new ImapFlow(
             Object.assign(
                 {
@@ -148,6 +148,7 @@ export const startImapKit = async (t: any, options: { server?: Record<string, an
         // a session the server closes must not crash the test process
         client.on('error', () => {});
         clients.add(client);
+        setup?.(client);
         await client.connect();
         return client;
     };
