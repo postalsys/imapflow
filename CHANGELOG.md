@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.3.0](https://github.com/postalsys/imapflow/compare/v2.2.11...v2.3.0) (2026-10-08)
+
+
+### Features
+
+* emit an alert event for ALERT response codes ([dcc0e42](https://github.com/postalsys/imapflow/commit/dcc0e42cef3c5c51226b29fd3a6bddd844728357))
+
+
+### Bug Fixes
+
+* a throttled login is not a rejected credential ([83fdbce](https://github.com/postalsys/imapflow/commit/83fdbce9968651c3d833b1e74bc20151c26fc769))
+* ask the first chunk of a download again when the answer comes back empty ([83fdbce](https://github.com/postalsys/imapflow/commit/83fdbce9968651c3d833b1e74bc20151c26fc769))
+
 ## [2.2.11](https://github.com/postalsys/imapflow/compare/v2.2.10...v2.2.11) (2026-10-08)
 
 
