@@ -8,6 +8,7 @@
 // server on a random port. startImapKit() registers the cleanup on the test context.
 
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import imapkit from 'imapkit';
 
 import { ImapFlow } from '../../src/imap-flow.js';
@@ -93,15 +94,16 @@ interface WireEntry {
 export interface ImapKit {
     // Scripted faults of the server, `add()` takes ImapKit script rules at runtime
     script: Server['script'];
+    // The control API: server side changes (messages, flags, UIDVALIDITY ...) that reach the
+    // connected sessions like a change by another session, and inspection of the server state
+    control: Server['control'];
+    // Resolves with the first server event (`session`, `command`, ...) that `match` accepts
+    serverEvent(event: string, match?: (data: any) => boolean, ms?: number): Promise<any>;
     // A connected client, `setup` gets it before it connects (listeners for events of the session setup)
     connect(options?: Record<string, any>, setup?: (client: any) => void): Promise<any>;
     // Lines the client sent, or the server sent, for quick assertions
     sent(needle: string | RegExp): boolean;
     received(needle: string | RegExp): boolean;
-    // Resolves once a client has sent a matching line, rejects after `ms`
-    untilSent(needle: string | RegExp, ms?: number): Promise<void>;
-    // Delivers a message from outside the IMAP sessions, like an MTA would
-    deliver(path: string, raw: string, flags?: string[]): any;
 }
 
 const matches = (msg: string, needle: string | RegExp) => (typeof needle === 'string' ? msg.includes(needle) : needle.test(msg));
@@ -115,9 +117,6 @@ export const startImapKit = async (t: any, options: { server?: Record<string, an
     const clients = new Set<any>();
     // Wire lines of every client of this server, in order
     const wire: WireEntry[] = [];
-    // untilSent() callers, checked against each new line the client sends
-    const waiters = new Set<(msg: string) => void>();
-
     const connect = async (clientOptions: Record<string, any> = {}, setup?: (client: any) => void) => {
         const client: any = new ImapFlow(
             Object.assign(
@@ -138,11 +137,6 @@ export const startImapKit = async (t: any, options: { server?: Record<string, an
         client.on('log', (entry: any) => {
             if (entry && (entry.src === 'c' || entry.src === 's') && typeof entry.msg === 'string') {
                 wire.push({ src: entry.src, msg: entry.msg });
-                if (entry.src === 'c') {
-                    for (const waiter of waiters) {
-                        waiter(entry.msg);
-                    }
-                }
             }
         });
         // a session the server closes must not crash the test process
@@ -155,20 +149,21 @@ export const startImapKit = async (t: any, options: { server?: Record<string, an
 
     const sent = (needle: string | RegExp) => wire.some(entry => entry.src === 'c' && matches(entry.msg, needle));
 
-    const untilSent = (needle: string | RegExp, ms = 3000) =>
-        new Promise<void>((resolve, reject) => {
-            if (sent(needle)) {
-                return resolve();
-            }
+    const serverEvent = (event: string, match: (data: any) => boolean = () => true, ms = 3000) =>
+        new Promise<any>((resolve, reject) => {
             let timer: ReturnType<typeof setTimeout>;
-            const waiter = (msg: string) => matches(msg, needle) && done();
-            function done(err?: Error) {
-                clearTimeout(timer);
-                waiters.delete(waiter);
-                return err ? reject(err) : resolve();
-            }
-            timer = setTimeout(() => done(new Error(`${needle} not sent within ${ms}ms`)), ms);
-            waiters.add(waiter);
+            const listener = (data: any) => {
+                if (match(data)) {
+                    clearTimeout(timer);
+                    server.off(event, listener);
+                    resolve(data);
+                }
+            };
+            timer = setTimeout(() => {
+                server.off(event, listener);
+                reject(new Error(`no matching ${event} event within ${ms}ms`));
+            }, ms);
+            server.on(event, listener);
         });
 
     t.after(async () => {
@@ -188,13 +183,23 @@ export const startImapKit = async (t: any, options: { server?: Record<string, an
 
     return {
         script: server.script,
+        control: server.control,
+        serverEvent,
         connect,
         sent,
-        received: needle => wire.some(entry => entry.src === 's' && matches(entry.msg, needle)),
-        untilSent,
-        deliver: (path, raw, flags = []) => server.appendMessage(path, flags, undefined, raw)
+        received: needle => wire.some(entry => entry.src === 's' && matches(entry.msg, needle))
     };
 };
+
+// The whole content of a download() stream
+export const readContent = async (content: any): Promise<Buffer> => Buffer.concat(await content.toArray());
+
+// once() that fails the test instead of hanging when the event never comes
+export const within = (emitter: any, event: string) => once(emitter, event, { signal: AbortSignal.timeout(3000) });
+
+// Resolves when the client closed. once(client, 'close') would reject on the 'error' event that
+// comes before the close
+export const closed = (client: any) => new Promise(resolve => client.once('close', resolve));
 
 // Set without \Recent, which only IMAP4rev1 sessions report, sorted for comparing
 export const flagList = (flags: Set<string>) => [...flags].filter(flag => flag !== '\\Recent').sort();

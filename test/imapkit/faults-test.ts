@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { rfc822, startImapKit } from '../fixtures/imapkit.js';
+import { closed, readContent, rfc822, startImapKit } from '../fixtures/imapkit.js';
 
 // Servers that misbehave on purpose, through ImapKit script rules: canned or dropped responses,
 // output cut short, split or delayed, unsolicited responses in odd places and dropped connections.
@@ -19,11 +19,6 @@ const STORAGE = { INBOX: { messages: [{ raw: MULTIPART }, { raw: rfc822('second'
 // A server with the messages above and the given script rules
 const start = (t: any, script: any, { plugins = PLUGINS, allowBad = false, secureConnection = false } = {}) =>
     startImapKit(t, { allowBad, server: { plugins, storage: STORAGE, script, secureConnection } });
-
-const read = async (content: any) => Buffer.concat(await content.toArray()).toString();
-
-// once(client, 'close') would reject on the 'error' event that comes before the close
-const closed = (client: any) => new Promise(resolve => client.once('close', resolve));
 
 describe('imapkit faults: greeting and session setup', () => {
     it('a BYE greeting rejects connect()', async t => {
@@ -206,7 +201,7 @@ describe('imapkit faults: FETCH responses', () => {
         const client = await kit.connect();
         await client.mailboxOpen('INBOX');
         const { content } = await client.download('1', '2', { chunkSize: 1000 });
-        await assert.rejects(read(content));
+        await assert.rejects(readContent(content));
     });
 
     it('a flag change of another message inside the FETCH answer does not end a download (issue #426)', async t => {
@@ -220,7 +215,7 @@ describe('imapkit faults: FETCH responses', () => {
         const client = await kit.connect();
         await client.mailboxOpen('INBOX');
         const { content } = await client.download('1', '2', { chunkSize: 4000 });
-        assert.equal((await read(content)).trim(), LONG_TEXT);
+        assert.equal((await readContent(content)).toString().trim(), LONG_TEXT);
         assert.ok(kit.script.rules[0]!.hits > 1);
         await client.logout();
     });
@@ -234,7 +229,7 @@ describe('imapkit faults: FETCH responses', () => {
             const client = await kit.connect();
             await client.mailboxOpen('INBOX');
             const { content } = await client.download('1', '2', { chunkSize: 4000 });
-            assert.equal((await read(content)).trim(), LONG_TEXT);
+            assert.equal((await readContent(content)).toString().trim(), LONG_TEXT);
             assert.equal(kit.script.rules[0]!.hits, 1);
             await client.logout();
         });

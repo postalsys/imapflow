@@ -1,15 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
 
-import { rfc822, startImapKit } from '../fixtures/imapkit.js';
+import { rfc822, startImapKit, within } from '../fixtures/imapkit.js';
 
 // Several sessions on one mailbox tree, and changes made from outside any session (a message
 // delivered like an MTA would). ImapKit follows one consistent set of the RFC 2180 strategies, so
 // these cases are deterministic, unlike against a real server with its own timing.
-
-// A once() that fails the test instead of hanging when the event never comes
-const within = (emitter: any, event: string) => once(emitter, event, { signal: AbortSignal.timeout(3000) });
 
 // Another session expunges message `seq` of INBOX
 const expungeElsewhere = async (kit: any, seq: string) => {
@@ -26,10 +22,11 @@ describe('imapkit: IDLE and notifications', () => {
         const kit = await startImapKit(t, { server: { plugins: PLUGINS } });
         const client = await kit.connect();
         await client.mailboxOpen('INBOX');
+        const waiting = kit.serverEvent('session', event => event.type === 'waiting' && event.command === 'IDLE');
         const idling = client.idle();
-        await kit.untilSent(/^\S+ IDLE$/);
+        await waiting;
         const exists = within(client, 'exists');
-        kit.deliver('INBOX', rfc822('delivered'));
+        kit.control.addMessage('INBOX', { raw: rfc822('delivered') });
         const [event] = await exists;
         assert.deepEqual(event, { path: 'INBOX', count: 1, prevCount: 0 });
         assert.equal(client.mailbox.exists, 1);
@@ -43,9 +40,10 @@ describe('imapkit: IDLE and notifications', () => {
 
     it('auto-IDLE starts after autoIdleDelay and sees appends from another session', async t => {
         const kit = await startImapKit(t, { server: { plugins: PLUGINS } });
+        const waiting = kit.serverEvent('session', event => event.type === 'waiting' && event.command === 'IDLE');
         const client = await kit.connect({ disableAutoIdle: false, autoIdleDelay: 50 });
         await client.mailboxOpen('INBOX');
-        await kit.untilSent(/^\S+ IDLE$/);
+        await waiting;
         const other = await kit.connect();
         const exists = within(client, 'exists');
         await other.append('INBOX', rfc822('from other session'));
@@ -61,7 +59,7 @@ describe('imapkit: IDLE and notifications', () => {
         await client.mailboxOpen('INBOX');
         const idling = client.idle();
         const exists = within(client, 'exists');
-        kit.deliver('INBOX', rfc822('polled'));
+        kit.control.addMessage('INBOX', { raw: rfc822('polled') });
         const [event] = await exists;
         assert.equal(event.count, 1);
         assert.ok(kit.sent(/^\S+ NOOP$/));

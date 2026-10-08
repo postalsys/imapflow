@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { flagList, rfc822, startImapKit } from '../fixtures/imapkit.js';
+import { flagList, readContent, rfc822, startImapKit } from '../fixtures/imapkit.js';
 import { FUZZ_SEED, FUZZ_ITERATIONS, Rng } from '../fixtures/imap-fuzz.js';
 
 // One mailbox workflow run over output that the server writes in pieces of random size: every
@@ -15,17 +15,18 @@ const ITERATIONS = Math.max(1, Math.ceil(FUZZ_ITERATIONS / 100));
 // Piece sizes around the places that matter: single octets, a CRLF split in two, literal headers
 const CHUNKS = [1, 2, 3, 5, 8, 13, 64, 1024];
 
-// Each piece goes out 1 ms after the one before, without a gap the socket would merge them again.
-// A rule only takes outputs it splits into at most MAX_PIECES pieces, which keeps a run short, the
-// large FETCH answers go to the rules with larger pieces. `splits` counts the outputs really split.
-const MAX_PIECES = 24;
+// Each piece goes out on the next event loop turn after the one before was handed to the system
+// ('tick'), so the pieces leave as separate segments without a wall clock delay. A rule only takes
+// outputs it splits into at most MAX_PIECES pieces, the large FETCH answers go to the rules with
+// larger pieces. `splits` counts the outputs really split.
+const MAX_PIECES = 200;
 const splitRules = (seed: number, counter: { splits: number }) => {
     const rng = new Rng(seed);
     return CHUNKS.flatMap(chunk =>
         (['greeting', 'continuation', 'response'] as const).map(on => ({
             on,
             chunk,
-            chunkDelay: 1,
+            chunkDelay: 'tick' as const,
             // checked in order, so each rule takes a share of the output that is left
             when: (context: any) => {
                 let fits = context.data.length > chunk && context.data.length <= chunk * MAX_PIECES && rng.chance(1 / 3);
@@ -53,8 +54,6 @@ const PROFILES = [
     { name: 'IMAP4rev2 over STARTTLS', plugins: ['IMAP4rev2', 'STARTTLS', 'UTF8=ACCEPT', 'QRESYNC'], client: { qresync: true } }
 ];
 
-const read = async (content: any) => Buffer.concat(await content.toArray());
-
 // The workflow, returning everything it saw in a form that can be compared
 const workflow = async (client: any) => {
     const seen: any = {};
@@ -71,8 +70,8 @@ const workflow = async (client: any) => {
             source: message.source.toString('base64')
         })
     );
-    seen.text = (await read((await client.download('1', '1')).content)).toString();
-    seen.attachment = (await read((await client.download('1', '2', { chunkSize: 1000 })).content)).toString('base64');
+    seen.text = (await readContent((await client.download('1', '1')).content)).toString();
+    seen.attachment = (await readContent((await client.download('1', '2', { chunkSize: 1000 })).content)).toString('base64');
     seen.search = await client.search({ or: [{ seen: true }, { subject: 'third' }] }, { uid: true });
     await client.messageFlagsAdd('2', ['\\Flagged', '$Chaos']);
     seen.appended = (await client.append('INBOX', rfc822('appended', 'y'.repeat(2000)), ['\\Draft'])).uid;
