@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.11](https://github.com/postalsys/imapflow/compare/v2.2.10...v2.2.11) (2026-10-08)
+
+
+### Bug Fixes
+
+* ask a download chunk again when the answer comes back empty instead of failing the download ([0e6e46a](https://github.com/postalsys/imapflow/commit/0e6e46aa81a16a44ccb78df25382ab78a5708ce3))
+* read NAMESPACE prefixes, QUOTAROOT names and ID values that the server sends as literals ([9c77594](https://github.com/postalsys/imapflow/commit/9c7759468f7d64ad6ef857b1861d4a846a8c7c04))
+
 ## [2.2.10](https://github.com/postalsys/imapflow/compare/v2.2.9...v2.2.10) (2026-10-07)
 
 
