@@ -139,24 +139,20 @@ describe('imapkit faults: commands', () => {
 });
 
 describe('imapkit faults: FETCH responses', () => {
-    it(
-        'every string sent as a literal where the grammar allows one is parsed the same',
-        { skip: 'needs the literals option of script rules, postalsys/imapkit#79' },
-        async t => {
-            // valid IMAP a client must handle: Yahoo sends long or 8-bit values as literals
-            const kit = await start(t, { on: 'response', untagged: true, literals: true }, { plugins: [...PLUGINS, 'NAMESPACE'] });
-            const client = await kit.connect();
-            assert.equal(client.namespace.delimiter, '/');
-            const folders = await client.list();
-            assert.ok(folders.some((folder: any) => folder.path === 'INBOX' && folder.delimiter === '/'));
-            await client.mailboxOpen('INBOX');
-            const message = await client.fetchOne('1', { envelope: true, bodyStructure: true, flags: true });
-            assert.equal(message.envelope.subject, 'long');
-            assert.equal(message.envelope.from[0].address, 'a@example.com');
-            assert.equal(message.bodyStructure.childNodes.length, 2);
-            await client.logout();
-        }
-    );
+    it('every string sent as a literal where the grammar allows one is parsed the same', async t => {
+        // valid IMAP a client must handle: Yahoo sends long or 8-bit values as literals
+        const kit = await start(t, { on: 'response', untagged: true, literals: true }, { plugins: [...PLUGINS, 'NAMESPACE'] });
+        const client = await kit.connect();
+        assert.equal(client.namespace.delimiter, '/');
+        const folders = await client.list();
+        assert.ok(folders.some((folder: any) => folder.path === 'INBOX' && folder.delimiter === '/'));
+        await client.mailboxOpen('INBOX');
+        const message = await client.fetchOne('1', { envelope: true, bodyStructure: true, flags: true });
+        assert.equal(message.envelope.subject, 'long');
+        assert.equal(message.envelope.from[0].address, 'a@example.com');
+        assert.equal(message.bodyStructure.childNodes.length, 2);
+        await client.logout();
+    });
 
     it('a FETCH answer written one octet at a time is read', async t => {
         const kit = await start(t, { on: 'response', command: 'FETCH', untagged: true, chunk: 1, chunkDelay: 0 });
@@ -201,53 +197,62 @@ describe('imapkit faults: FETCH responses', () => {
         await client.logout();
     });
 
-    it(
-        'a FETCH answer written after the tagged OK never ends a download silently (Apache James)',
-        { skip: 'needs the defer action of script rules, postalsys/imapkit#78' },
-        async t => {
-            // James now and then writes a FETCH answer after the tagged OK, so it shows up within
-            // the answer to the next chunk. The download has to come out whole or fail, a quiet
-            // early end would pass a truncated part off as complete.
-            const kit = await start(t, { on: 'response', command: 'UID FETCH', untagged: true, match: /BODY\[2\]<4000>/, times: 1, defer: 'tagged' });
+    // James now and then writes a FETCH answer after the tagged OK, so it shows up with the
+    // answer to the next request. The chunk request first gets an empty answer, which is asked
+    // again, and the late answer comes with the repeated one.
+    for (const defer of ['tagged', 'next']) {
+        it(`a download survives a chunk answer that arrives late (Apache James, defer: ${defer})`, async t => {
+            const kit = await start(t, { on: 'response', command: 'UID FETCH', untagged: true, match: /BODY\[2\]<4000>/, times: 1, defer });
             const client = await kit.connect();
             await client.mailboxOpen('INBOX');
             const { content } = await client.download('1', '2', { chunkSize: 4000 });
-            const text = await read(content).catch((err: any) => {
-                assert.equal(err.code, 'DownloadIncomplete');
-                return false;
-            });
-            if (typeof text === 'string') {
-                assert.equal(text.trim(), LONG_TEXT);
-            }
+            assert.equal((await read(content)).trim(), LONG_TEXT);
+            assert.equal(kit.script.rules[0]!.hits, 1);
             await client.logout();
-        }
-    );
+        });
+    }
 });
 
 describe('imapkit faults: connection loss', () => {
     for (const close of [true, 'reset'] as const) {
-        it(
-            `a connection ${close === 'reset' ? 'reset' : 'closed'} during IDLE emits close and settles idle()`,
-            { skip: close === 'reset' ? 'the reset does not reach the client after a longer session, postalsys/imapkit#81' : false },
-            async t => {
-                const kit = await start(t, { on: 'continuation', description: 'IDLE', close });
-                const client = await kit.connect();
-                await client.mailboxOpen('INBOX');
-                const started = Date.now();
-                const closing = closed(client);
-                await client.idle().catch(() => false);
-                await closing;
-                assert.equal(client.usable, false);
-                assert.ok(Date.now() - started < 1000, 'noticed right away, not through keepalive');
-            }
-        );
+        it(`a connection ${close === 'reset' ? 'reset' : 'closed'} during IDLE emits close and settles idle()`, async t => {
+            const kit = await start(t, { on: 'continuation', description: 'IDLE', close });
+            const client = await kit.connect();
+            await client.mailboxOpen('INBOX');
+            const started = Date.now();
+            const closing = closed(client);
+            await client.idle().catch(() => false);
+            await closing;
+            assert.equal(client.usable, false);
+            assert.ok(Date.now() - started < 1000, 'noticed right away, not through keepalive');
+        });
     }
 
     it('a STARTTLS that the server acknowledges and then drops fails as a TLS failure', async t => {
-        const kit = await start(t, { on: 'response', command: 'STARTTLS', untagged: false, close: 'reset' }, { plugins: [...PLUGINS, 'STARTTLS'] });
+        // the rule answers STARTTLS instead of the command, so the server never starts TLS and the
+        // reset arrives in the middle of the handshake
+        const kit = await start(
+            t,
+            { on: 'command', command: 'STARTTLS', send: '$TAG OK Begin TLS\r\n', close: 'reset' },
+            { plugins: [...PLUGINS, 'STARTTLS'] }
+        );
         await assert.rejects(kit.connect(), (err: any) => {
             assert.equal(err.tlsFailed, true);
             return true;
         });
     });
+
+    it(
+        'a connection reset right after the TLS upgrade is a lost connection, not a TLS failure',
+        { skip: 'close: reset throws on a TLS connection, postalsys/imapkit#84' },
+        async t => {
+            // the CAPABILITY the client sends over the new TLS layer, the first one went before STARTTLS
+            const kit = await start(t, { on: 'command', command: 'CAPABILITY', nth: 2, drop: true, close: 'reset' }, { plugins: [...PLUGINS, 'STARTTLS'] });
+            await assert.rejects(kit.connect(), (err: any) => {
+                assert.equal(err.tlsFailed, undefined);
+                assert.equal(err.code, 'ECONNRESET');
+                return true;
+            });
+        }
+    );
 });

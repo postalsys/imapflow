@@ -533,7 +533,8 @@ describe('imap-flow-fetch-download', () => {
         };
         let { content } = await client.download('1', false as any, { chunkSize: 4 });
         await assert.rejects(collect(content), (err: any) => err.code === 'DownloadIncomplete');
-        assert.equal(calls, 2);
+        // the empty answer is asked twice more, a late answer (Apache James) would arrive with those
+        assert.equal(calls, 4);
     });
     it('Download: a consumer that destroys the stream mid-chunk gets no error', async () => {
         let client = makeClient();

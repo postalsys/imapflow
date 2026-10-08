@@ -61,8 +61,9 @@ const partialStarts = (requests: BodyPartRequest[]): Map<string, number> => {
     return starts;
 };
 
-// How many times a request is repeated after answers that belong to another request
-const MAX_FOREIGN_ANSWERS = 3;
+// Attempts per request when the answer belongs to another request or, for a message known to
+// exist, is empty
+const MAX_FETCH_ATTEMPTS = 3;
 
 /** What an answer must match to be taken as the answer to a request */
 interface ExpectedAnswer {
@@ -70,6 +71,9 @@ interface ExpectedAnswer {
     uid?: number | undefined;
     /** Start offset of every partial section asked, keyed like bodyParts ('' for the whole message) */
     origins: Map<string, number>;
+    /** True while an empty answer should be asked again: the message is known to exist (an
+     * earlier answer had it) and the data is still wanted */
+    retryEmpty?: (() => boolean) | undefined;
 }
 
 const requestedUid = (range: SequenceString | number, options: FetchOptions): number | undefined =>
@@ -96,7 +100,8 @@ const isForeignAnswer = (response: FetchMessageObject, expected: ExpectedAnswer)
  * within the answer to the next one. Taken at face value it would be the data of that next
  * request, and a download would end without an error but with misplaced bytes. An answer for
  * another UID, or with a partial section that starts at another offset than asked, is dropped
- * and the request repeated.
+ * and the request repeated. An empty answer is repeated too while `expected.retryEmpty()` says
+ * the message exists, as the data of a late answer arrives with the repeated request.
  */
 async function fetchExpected(
     client: ImapFlow,
@@ -107,6 +112,13 @@ async function fetchExpected(
 ): Promise<FetchMessageObject | false | undefined> {
     for (let attempt = 1; ; attempt++) {
         let response = await client.fetchOne(range, query, options);
+        if (response === false && expected.retryEmpty && expected.retryEmpty() && attempt < MAX_FETCH_ATTEMPTS) {
+            // The answer may come late instead (after the tagged OK, with the next answer), then
+            // it shows up in the answer to the repeated request. A message that is really gone
+            // answers empty every time, and the caller reports it.
+            client.log.warn({ msg: 'Server answered a request for an existing message with no data, asking again', attempt, cid: client.id });
+            continue;
+        }
         if (!response || !isForeignAnswer(response, expected)) {
             return response;
         }
@@ -117,7 +129,7 @@ async function fetchExpected(
             attempt,
             cid: client.id
         });
-        if (attempt >= MAX_FOREIGN_ANSWERS) {
+        if (attempt >= MAX_FETCH_ATTEMPTS) {
             let err: ImapFlowError = new Error('Server kept answering with data of another request');
             err.code = 'DownloadIncomplete';
             err.cid = client.id;
@@ -156,7 +168,8 @@ async function refetchDroppedSections(
     let uid = response.uid;
     let retry = await fetchExpected(client, uid || range, { uid: true, bodyParts: sections }, uid ? { ...options, uid: true } : options, {
         uid,
-        origins: partialStarts(sections)
+        origins: partialStarts(sections),
+        retryEmpty: () => true
     });
     if (!retry) {
         return;
@@ -236,6 +249,14 @@ export async function downloadMessage(
         }
     }
 
+    // The decoder pipeline, built once the head chunk told what the part is (see below)
+    let stream: Transform;
+    let output: Transform;
+    let fetchAborted = false;
+    // A consumer that gave up: its 'close' may still be a tick away from setting fetchAborted,
+    // so the stream's own flag is checked as well
+    let downloadAborted = () => fetchAborted || output.destroyed;
+
     interface PartResult {
         response?: FetchMessageObject | false | undefined;
         chunk?: Buffer | false | undefined;
@@ -281,7 +302,9 @@ export async function downloadMessage(
 
         let expected: ExpectedAnswer = {
             uid: uid || requestedUid(range, downloadOptions),
-            origins: new Map([[part || '', processed]])
+            origins: new Map([[part || '', processed]]),
+            // every chunk after the first is of a message that was there a moment ago
+            retryEmpty: processed > 0 ? () => !downloadAborted() : undefined
         };
         let response = await fetchExpected(client, range, query, downloadOptions, expected);
 
@@ -412,10 +435,6 @@ export async function downloadMessage(
             meta.filename = filename;
         }
     }
-
-    let stream: Transform;
-    let output: Transform;
-    let fetchAborted = false;
 
     // Build a decoder pipeline that progressively transforms the raw FETCH data:
     //   1. Transfer-encoding decoder (base64 or quoted-printable -> binary)
@@ -590,9 +609,8 @@ export async function downloadMessage(
             }
 
             let { response, chunk } = await getNextPart();
-            // A consumer that gave up while the chunk was in flight: its 'close' may still be a
-            // tick away from setting fetchAborted, so the stream's own flag is checked as well
-            if (fetchAborted || output.destroyed) {
+            // A consumer that gave up while the chunk was in flight
+            if (downloadAborted()) {
                 break;
             }
 
