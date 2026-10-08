@@ -41,6 +41,22 @@ describe('commands/quota', () => {
         assert.deepEqual(await quotaCommand(connection, 'INBOX'), { path: 'INBOX' });
         assert.deepEqual(sent, ['GETQUOTAROOT']);
     });
+    it('Commands: quota takes a quota root sent as a literal', async () => {
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map([['QUOTA', true]]),
+            exec: async (cmd: any, args: any, opts: any) => {
+                if (cmd === 'GETQUOTAROOT') {
+                    // quota-root-name is an astring (RFC 9208), so it may come as a literal
+                    await opts.untagged.QUOTAROOT({ attributes: [{ value: 'INBOX' }, { type: 'LITERAL', value: Buffer.from('user root') }] });
+                }
+                return { next: () => {} };
+            }
+        });
+
+        const result: any = await quotaCommand(connection, 'INBOX');
+        assert.equal(result.quotaRoot, 'user root');
+    });
     it('Commands: quota with storage quota', async () => {
         const connection = createMockConnection({
             state: 2,

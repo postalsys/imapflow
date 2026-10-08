@@ -1,4 +1,4 @@
-import { encodePath, normalizePath, parseUintValue, isUnsafeKey, isAuthenticatedState, reportCommandError } from '../tools.js';
+import { encodePath, normalizePath, parseUintValue, isUnsafeKey, isAuthenticatedState, reportCommandError, getStringValue } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapResponse } from '../handler/types.js';
@@ -96,10 +96,8 @@ export default async function quota(connection: ImapFlow, path: string | string[
                 // QUOTAROOT response tells us which quota root applies to this mailbox.
                 // A mailbox may have zero or one quota root.
                 QUOTAROOT: async (untagged: ImapResponse) => {
-                    let quotaRoot =
-                        untagged.attributes && untagged.attributes[1] && typeof untagged.attributes[1].value === 'string'
-                            ? untagged.attributes[1].value
-                            : false;
+                    // the root name is an astring, which may come as a literal
+                    let quotaRoot = getStringValue(untagged.attributes && untagged.attributes[1]);
                     if (quotaRoot) {
                         map.quotaRoot = quotaRoot;
                     }

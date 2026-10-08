@@ -1,6 +1,6 @@
-import { formatDateTime, isUnsafeKey } from '../tools.js';
+import { formatDateTime, isUnsafeKey, getStringValue } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
-import type { ImapAttribute, ImapAttributeNode, ImapResponse } from '../handler/types.js';
+import type { ImapAttribute, ImapResponse } from '../handler/types.js';
 import type { IdInfoObject } from '../types.js';
 
 /**
@@ -42,18 +42,20 @@ export default async function id(connection: ImapFlow, clientInfo?: IdInfoObject
                 // Even indices (i % 2 === 0) are keys, odd indices are the corresponding values.
                 ID: async (untagged: ImapResponse) => {
                     let params = untagged.attributes && untagged.attributes[0];
-                    let key: string | Buffer | number | null | undefined;
+                    let key: string | undefined;
                     (Array.isArray(params) ? params : ([] as ImapAttribute[]).concat(params || [])).forEach((val, i) => {
+                        // keys are strings and values nstrings, either may come as a literal
+                        let value = getStringValue(val);
                         if (i % 2 === 0) {
-                            key = (val as ImapAttributeNode).value;
-                        } else if (typeof key === 'string' && typeof (val as ImapAttributeNode).value === 'string') {
+                            key = value;
+                        } else if (key !== undefined && value !== undefined) {
                             // The server picks the keys of this object, which the caller reads
                             // back as serverInfo: a prototype-chain name is skipped as it is for
                             // every other server-named key, so it can neither be shadowed nor
                             // written through
                             let name = key.toLowerCase().trim();
                             if (!isUnsafeKey(name)) {
-                                map[name] = (val as ImapAttributeNode).value;
+                                map[name] = value;
                             }
                         }
                     });

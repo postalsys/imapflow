@@ -1655,15 +1655,27 @@ export function getStringList(list: unknown): string[] {
     }
     let strings: string[] = [];
     for (let entry of list) {
-        let value = entry && entry.value;
-        if (Buffer.isBuffer(value)) {
-            value = value.toString();
-        }
-        if (value && typeof value === 'string') {
+        let value = getStringValue(entry);
+        if (value) {
             strings.push(value);
         }
     }
     return strings;
+}
+
+/**
+ * Reads the text of a string value from a response. A server may send any string as a literal,
+ * which arrives as a Buffer and is decoded as UTF-8.
+ *
+ * @param attribute - Parsed attribute from a response
+ * @returns The string, or undefined when the attribute holds no string (NIL, a list)
+ */
+export function getStringValue(attribute: unknown): string | undefined {
+    let value = attribute && (attribute as ImapAttributeNode).value;
+    if (Buffer.isBuffer(value)) {
+        return value.toString();
+    }
+    return typeof value === 'string' ? value : undefined;
 }
 
 /**

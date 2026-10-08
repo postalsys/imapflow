@@ -1194,6 +1194,13 @@ describe('tools', () => {
     });
 
     // ============================================
+    it('Tools: getStringValue reads quoted strings and literals', () => {
+        assert.equal(tools.getStringValue({ type: 'STRING', value: 'INBOX' }), 'INBOX');
+        assert.equal(tools.getStringValue({ type: 'LITERAL', value: Buffer.from('\u00d5un') }), '\u00d5un');
+        assert.equal(tools.getStringValue(null), undefined);
+        assert.equal(tools.getStringValue([{ value: 'x' }]), undefined);
+        assert.equal(tools.getStringValue({ value: 5 }), undefined);
+    });
     it('Tools: mergeFetchRows combines the rows of one message', () => {
         const single: any = { seq: 1, uid: 7 };
         assert.equal(tools.mergeFetchRows([single]), single);

@@ -78,6 +78,23 @@ describe('commands/id', () => {
         assert.equal((result as any)!.version, '2.0');
         assert.equal((result as any)!.vendor, 'ACME');
     });
+    it('Commands: id takes keys and values sent as literals', async () => {
+        const connection = createMockConnection({
+            capabilities: new Map([['ID', true]]),
+            exec: async (cmd: any, args: any, opts: any) => {
+                // keys are strings and values nstrings (RFC 2971), either may come as a literal
+                await opts.untagged.ID({
+                    attributes: [
+                        [{ type: 'LITERAL', value: Buffer.from('name') }, { type: 'LITERAL', value: Buffer.from('Literal Server') }, { value: 'version' }, null]
+                    ]
+                });
+                return { next: () => {} };
+            }
+        });
+
+        const result: any = await idCommand(connection, { name: 'TestClient' });
+        assert.deepEqual(result, { name: 'Literal Server' });
+    });
     it('Commands: id skips prototype-chain keys in the server response', async () => {
         const connection = createMockConnection({
             capabilities: new Map([['ID', true]]),

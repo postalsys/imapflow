@@ -42,6 +42,30 @@ describe('commands/list', () => {
         assert.equal(execCalled, true);
         assert.ok(Array.isArray(result));
     });
+    it('Commands: list takes a literal mailbox name, and a literal delimiter stays a string', async () => {
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                if (cmd === 'LIST' && opts && opts.untagged && opts.untagged.LIST) {
+                    // the delimiter is quoted-only in the grammar, a literal one must not leak a Buffer
+                    await opts.untagged.LIST({
+                        attributes: [
+                            [{ value: '\\HasNoChildren' }],
+                            { type: 'LITERAL', value: Buffer.from('/') },
+                            { type: 'LITERAL', value: Buffer.from('Work/Projects') }
+                        ]
+                    });
+                }
+                return { next: () => {} };
+            }
+        });
+
+        const result: any = await listCommand(connection, '', '*');
+        const entry = result.find((folder: any) => folder.path === 'Work/Projects');
+        assert.ok(entry);
+        assert.equal(entry.delimiter, '/');
+        assert.equal(entry.parentPath, 'Work');
+    });
     it('Commands: list with XLIST capability', async () => {
         let usedListCommand = '';
         const connection = createMockConnection({

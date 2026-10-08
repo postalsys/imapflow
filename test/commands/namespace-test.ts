@@ -492,6 +492,49 @@ describe('commands/namespace', () => {
         const result: any = await namespaceCommand(connection);
         assert.equal((result as any).prefix, 'INBOX/');
     });
+    // A string may be sent as a literal, which the parser hands over as a Buffer. The NAMESPACE
+    // prefix (string) and the LIST mailbox name (astring) both can be, the delimiters are
+    // quoted-only in the grammar but a literal one must not break anything either.
+    it('Commands: namespace takes literal prefixes', async () => {
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map([['NAMESPACE', true]]),
+            exec: async (cmd: any, args: any, opts: any) => {
+                await opts.untagged.NAMESPACE({
+                    attributes: [
+                        [[{ type: 'LITERAL', value: Buffer.from('INBOX.') }, { value: '.' }]],
+                        [
+                            [
+                                { type: 'LITERAL', value: Buffer.from('Users.') },
+                                { type: 'LITERAL', value: Buffer.from('.') }
+                            ]
+                        ],
+                        null
+                    ]
+                });
+                return { next: () => {} };
+            }
+        });
+
+        const result: any = await namespaceCommand(connection);
+        assert.deepEqual(result, { prefix: 'INBOX.', delimiter: '.' });
+        assert.deepEqual((connection as any).namespaces.other, [{ prefix: 'Users.', delimiter: '.' }]);
+    });
+    it('Commands: namespace fallback takes a literal mailbox name and delimiter', async () => {
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map(),
+            exec: async (cmd: any, args: any, opts: any) => {
+                await opts.untagged.LIST({
+                    attributes: [[{ value: '\\Noselect' }], { type: 'LITERAL', value: Buffer.from('/') }, { type: 'LITERAL', value: Buffer.from('/INBOX') }]
+                });
+                return { next: () => {} };
+            }
+        });
+
+        const result: any = await namespaceCommand(connection);
+        assert.deepEqual(result, { prefix: 'INBOX/', delimiter: '/' });
+    });
     it('Commands: namespace ignores empty NAMESPACE response attributes', async () => {
         const connection = createMockConnection({
             state: 2,

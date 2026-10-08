@@ -1,6 +1,6 @@
-import { hasCapability, getStringList, isAuthenticatedState } from '../tools.js';
+import { hasCapability, getStringList, getStringValue, isAuthenticatedState } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
-import type { ImapAttribute, ImapAttributeList, ImapAttributeNode, ImapResponse } from '../handler/types.js';
+import type { ImapAttribute, ImapResponse } from '../handler/types.js';
 import type { NamespaceObject, NamespacesObject } from '../types.js';
 
 /**
@@ -120,8 +120,9 @@ async function getListPrefix(connection: ImapFlow): Promise<ListPrefixInfo> {
                     }
 
                     map.flags = new Set(getStringList(untagged.attributes[0]));
-                    map.delimiter = (untagged.attributes[1] && untagged.attributes[1].value) as string | null | undefined;
-                    map.prefix = ((untagged.attributes[2] && untagged.attributes[2].value) || '') as string;
+                    // the name may be a literal, which arrives as a Buffer
+                    map.delimiter = getStringValue(untagged.attributes[1]) || null;
+                    map.prefix = getStringValue(untagged.attributes[2]) || '';
                     if (map.delimiter && map.prefix.charAt(0) === map.delimiter) {
                         map.prefix = map.prefix.slice(1);
                     }
@@ -147,23 +148,26 @@ function getNamsepaceInfo(attribute: ImapAttribute | undefined): NamespaceObject
         return false;
     }
 
-    return attribute
-        .filter(entry => {
-            let pair = entry as ImapAttributeList;
-            // RFC 2342 section 5 allows the delimiter to be NIL when the namespace has
-            // no hierarchy. The token parser emits a literal `null` for NIL.
-            return pair.length >= 2 && pair[0] && typeof pair[0].value === 'string' && (pair[1] === null || (pair[1] && typeof pair[1].value === 'string'));
-        })
-        .map(entry => {
-            let pair = entry as ImapAttributeList;
-            let prefix = (pair[0] as ImapAttributeNode).value as string;
-            let delimiter = pair[1] === null ? null : ((pair[1] as ImapAttributeNode).value as string);
+    let entries: NamespaceObject[] = [];
+    for (let entry of attribute) {
+        if (!Array.isArray(entry)) {
+            continue;
+        }
+        let pair = entry;
+        let prefix = getStringValue(pair[0]);
+        // RFC 2342 section 5 allows the delimiter to be NIL when the namespace has no hierarchy.
+        // The token parser emits a literal `null` for NIL.
+        let delimiter = pair[1] === null ? null : getStringValue(pair[1]);
+        if (pair.length < 2 || prefix === undefined || delimiter === undefined) {
+            continue;
+        }
 
-            // Append the delimiter to the prefix if it doesn't already end with one,
-            // so callers can construct full paths by simply concatenating prefix + name.
-            if (delimiter && prefix && prefix.charAt(prefix.length - 1) !== delimiter) {
-                prefix += delimiter;
-            }
-            return { prefix, delimiter };
-        });
+        // Append the delimiter to the prefix if it doesn't already end with one,
+        // so callers can construct full paths by simply concatenating prefix + name.
+        if (delimiter && prefix && prefix.charAt(prefix.length - 1) !== delimiter) {
+            prefix += delimiter;
+        }
+        entries.push({ prefix, delimiter });
+    }
+    return entries;
 }

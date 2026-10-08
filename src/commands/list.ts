@@ -6,7 +6,8 @@ import {
     hasCapability,
     isRev2Active,
     buildStatusQueryAttributes,
-    getStringList
+    getStringList,
+    getStringValue
 } from '../tools.js';
 import { parseStatusList } from './status-fields.js';
 import { specialUse, type SpecialUseSource as SpecialUseFlagSource } from '../special-use.js';
@@ -225,7 +226,7 @@ export default async function list(
                             path: normalizePath(connection, decodePath(connection, rawPath)),
                             pathAsListed: rawPath,
                             flags: new Set(getStringList(untagged.attributes[0])),
-                            delimiter: (untagged.attributes[1] && untagged.attributes[1].value) as string | undefined,
+                            delimiter: getStringValue(untagged.attributes[1]),
                             listed: true
                         };
 
@@ -493,7 +494,7 @@ export default async function list(
                             path: normalizePath(connection, decodePath(connection, rawPath)),
                             pathAsListed: rawPath,
                             flags: new Set(getStringList(untagged.attributes[0])),
-                            delimiter: (untagged.attributes[1] && untagged.attributes[1].value) as string | undefined,
+                            delimiter: getStringValue(untagged.attributes[1]),
                             subscribed: true
                         };
 

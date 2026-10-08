@@ -13,6 +13,8 @@ import imapkit from 'imapkit';
 import { ImapFlow } from '../../src/imap-flow.js';
 import { listen } from './scripted-server.js';
 
+type Server = ReturnType<typeof imapkit>;
+
 // Every plugin that can be loaded together with the others. Left out: ACL (non-owner users lose
 // their rights), LITERALMINUS and SAVELIMIT (conflict with LITERALPLUS and MESSAGELIMIT),
 // LOGINDISABLED and UIDONLY (change how a session works, tested on their own), METADATA-SERVER (a
@@ -89,6 +91,8 @@ interface WireEntry {
 }
 
 export interface ImapKit {
+    // Scripted faults of the server, `add()` takes ImapKit script rules at runtime
+    script: Server['script'];
     // A connected client
     connect(options?: Record<string, any>): Promise<any>;
     // Lines the client sent, or the server sent, for quick assertions
@@ -102,8 +106,9 @@ export interface ImapKit {
 
 const matches = (msg: string, needle: string | RegExp) => (typeof needle === 'string' ? msg.includes(needle) : needle.test(msg));
 
-// `server` takes ImapKit server options (plugins, storage, users, ...). A BAD on the wire fails the test.
-export const startImapKit = async (t: any, options: { server?: Record<string, any> } = {}): Promise<ImapKit> => {
+// `server` takes ImapKit server options (plugins, storage, users, script, ...). A BAD on the wire
+// fails the test unless `allowBad` is set, for faults that send one on purpose.
+export const startImapKit = async (t: any, options: { server?: Record<string, any>; allowBad?: boolean } = {}): Promise<ImapKit> => {
     const server = imapkit(Object.assign({ plugins: ALL_PLUGINS, storage: DEFAULT_STORAGE }, options.server || {}));
     const port = await listen(server);
 
@@ -170,15 +175,18 @@ export const startImapKit = async (t: any, options: { server?: Record<string, an
             client.close();
         }
         await new Promise<void>(resolve => server.close(() => resolve()));
-        const bad = wire.filter(entry => entry.src === 's' && /^\S+ BAD( |$)/.test(entry.msg));
-        assert.deepEqual(
-            bad.map(entry => entry.msg),
-            [],
-            'ImapKit answered client input with BAD'
-        );
+        if (!options.allowBad) {
+            const bad = wire.filter(entry => entry.src === 's' && /^\S+ BAD( |$)/.test(entry.msg));
+            assert.deepEqual(
+                bad.map(entry => entry.msg),
+                [],
+                'ImapKit answered client input with BAD'
+            );
+        }
     });
 
     return {
+        script: server.script,
         connect,
         sent,
         received: needle => wire.some(entry => entry.src === 's' && matches(entry.msg, needle)),
