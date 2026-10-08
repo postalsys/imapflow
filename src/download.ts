@@ -229,7 +229,13 @@ export async function downloadMessage(
         // Special handling for part "1": in single-node emails (no childNodes),
         // the body is accessed via "TEXT" rather than "1", and headers via
         // "HEADER" instead of "1.MIME". Check bodyStructure to detect this.
-        let response = await client.fetchOne(range, { uid: true, bodyStructure: true }, downloadOptions);
+        let expectedUid = requestedUid(range, downloadOptions);
+        let response = await fetchExpected(client, range, { uid: true, bodyStructure: true }, downloadOptions, {
+            uid: expectedUid,
+            origins: new Map(),
+            // a message addressed by UID is taken to exist, see getNextPart() below
+            retryEmpty: expectedUid ? () => true : undefined
+        });
 
         if (!response) {
             return {};
@@ -255,7 +261,8 @@ export async function downloadMessage(
     let fetchAborted = false;
     // A consumer that gave up: its 'close' may still be a tick away from setting fetchAborted,
     // so the stream's own flag is checked as well
-    let downloadAborted = () => fetchAborted || output.destroyed;
+    // `output` is unset until the head chunk is in, and the head chunk's retry asks already
+    let downloadAborted = () => fetchAborted || !!output?.destroyed;
 
     interface PartResult {
         response?: FetchMessageObject | false | undefined;
@@ -300,11 +307,14 @@ export async function downloadMessage(
             query.bodyParts.push(contentRequest);
         }
 
+        let expectedUid = uid || requestedUid(range, downloadOptions);
         let expected: ExpectedAnswer = {
-            uid: uid || requestedUid(range, downloadOptions),
+            uid: expectedUid,
             origins: new Map([[part || '', processed]]),
-            // every chunk after the first is of a message that was there a moment ago
-            retryEmpty: processed > 0 ? () => !downloadAborted() : undefined
+            // Every chunk after the first is of a message that was there a moment ago, and a
+            // message the caller addresses by UID is taken to exist: an empty answer may be a
+            // late one (Apache James), a message that is really gone costs two more requests
+            retryEmpty: processed > 0 || expectedUid ? () => !downloadAborted() : undefined
         };
         let response = await fetchExpected(client, range, query, downloadOptions, expected);
 
@@ -731,9 +741,12 @@ export async function downloadMessageParts(
         query.bodyParts.push(contentRequest);
     }
 
+    let expectedUid = requestedUid(range, downloadOptions);
     let response = await fetchExpected(client, range, query, downloadOptions, {
-        uid: requestedUid(range, downloadOptions),
-        origins: partialStarts(query.bodyParts)
+        uid: expectedUid,
+        origins: partialStarts(query.bodyParts),
+        // a message addressed by UID is taken to exist, as for download()
+        retryEmpty: expectedUid ? () => true : undefined
     });
 
     if (!response || !response.bodyParts) {

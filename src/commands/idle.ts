@@ -169,14 +169,15 @@ async function runIdle(connection: ImapFlow): Promise<void | false> {
         return;
     } catch (err) {
         logConnectionError(connection, 'IDLE session failed', err as ImapFlowError);
-        // A tagged NO or BAD only means the server refused IDLE; the connection is still usable,
-        // so the waiters are released by the finally block below and their own commands run.
-        // Anything else (close, lost socket, parser failure) fails the waiters too.
-        let refusedByServer = isServerRefusal(err as ImapFlowError);
-        if (refusedByServer) {
+        // A tagged NO or BAD only means the server did not run IDLE; the connection is still
+        // usable, so the waiters are released by the finally block below and their own commands
+        // run. Anything else (close, lost socket, parser failure) fails the waiters too. Only a
+        // refusal turns IDLE off for the session, a throttled IDLE is tried again later.
+        let answeredByServer = (err as ImapFlowError).responseStatus === 'NO' || (err as ImapFlowError).responseStatus === 'BAD';
+        if (isServerRefusal(err as ImapFlowError)) {
             connection.skipIdle = true;
         }
-        if (preCheckWaitQueue.length && !refusedByServer) {
+        if (preCheckWaitQueue.length && !answeredByServer) {
             // One error for the whole queue: every waiter failed at the same site, for the same
             // reason. Built inside the guard so a teardown with nothing queued - the common case -
             // does not pay for an Error and its stack capture.

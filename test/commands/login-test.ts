@@ -29,6 +29,27 @@ describe('commands/login', () => {
         const result = await loginCommand(connection, 'testuser', 'testpass');
         assert.equal(result, undefined);
     });
+    it('Commands: a throttled login is not a rejected credential', async () => {
+        // Microsoft 365 answers a throttled LOGIN with BAD and a back-off hint, the credential
+        // was never judged, so a caller must not treat the account as needing new credentials
+        const connection = createMockConnection({
+            state: 1,
+            exec: async () => {
+                const err: any = new Error('Command failed');
+                err.responseStatus = 'BAD';
+                err.code = 'ETHROTTLE';
+                err.throttleReset = 1000;
+                err.response = { attributes: [{ type: 'TEXT', value: 'Request is throttled. Suggested Backoff Time: 1000 milliseconds' }] };
+                throw err;
+            }
+        });
+
+        await assert.rejects(loginCommand(connection, 'testuser', 'testpass'), (err: any) => {
+            assert.equal(err.code, 'ETHROTTLE');
+            assert.equal(err.authenticationFailed, undefined);
+            return true;
+        });
+    });
     it('Commands: login handles error', async () => {
         const connection = createMockConnection({
             state: 1,

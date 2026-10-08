@@ -265,12 +265,15 @@ export function logConnectionError(connection: ImapFlow, msg: string, err: ImapF
 /**
  * Whether a command failed because the server answered it with a tagged NO or BAD, as opposed
  * to a lost connection, a timeout or a local failure that says nothing about the server's answer.
+ * A throttled command (ETHROTTLE, Microsoft 365 answers it with BAD) was not refused: the server
+ * asks to try again later, so a throttled login is not a rejected credential and a throttled
+ * IDLE does not mean the server lacks IDLE.
  *
  * @param err - The error the command failed with
- * @returns True for a tagged NO or BAD
+ * @returns True for a tagged NO or BAD that is not throttling
  */
 export function isServerRefusal(err: ImapFlowError | null | undefined): boolean {
-    return !!err && (err.responseStatus === 'NO' || err.responseStatus === 'BAD');
+    return !!err && (err.responseStatus === 'NO' || err.responseStatus === 'BAD') && err.code !== ImapFlowErrorCode.ETHROTTLE;
 }
 
 /**

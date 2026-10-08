@@ -163,6 +163,26 @@ describe('commands/authenticate', () => {
             assert.equal(written[1], mechanism === 'OAUTHBEARER' ? 'AQ==' : '');
         }
     });
+    it('Commands: a throttled AUTHENTICATE is not a rejected credential', async () => {
+        const connection = createMockConnection({
+            state: 1,
+            capabilities: new Map([['AUTH=PLAIN', true]]),
+            authCapabilities: new Map(),
+            exec: async () => {
+                const err: any = new Error('Command failed');
+                err.responseStatus = 'BAD';
+                err.code = 'ETHROTTLE';
+                err.response = { attributes: [] };
+                throw err;
+            }
+        });
+
+        await assert.rejects(authenticateCommand(connection, 'user', { password: 'pass' }), (err: any) => {
+            assert.equal(err.code, 'ETHROTTLE');
+            assert.equal(err.authenticationFailed, undefined);
+            return true;
+        });
+    });
     it('Commands: authenticate OAuth handles error response', async () => {
         const connection = createMockConnection({
             state: 1,

@@ -528,6 +528,29 @@ describe('commands/idle', () => {
         assert.equal(await idleCommand(connection), false);
         assert.equal(await waiter, 'resolved', 'the waiting command runs instead of failing with the IDLE error');
     });
+    it('Commands: a throttled IDLE does not turn IDLE off and releases the queued waiters', async () => {
+        // Microsoft 365 answers a throttled command with BAD, which asks for a later try and says
+        // nothing about IDLE support
+        let waiter: any = null;
+        const connection = createMockConnection({
+            state: 3,
+            capabilities: new Map([['IDLE', true]]),
+            exec: async () => {
+                waiter = (connection as any).preCheck().then(
+                    () => 'resolved',
+                    () => 'rejected'
+                );
+                const err: any = new Error('Command failed');
+                err.responseStatus = 'BAD';
+                err.code = 'ETHROTTLE';
+                throw err;
+            }
+        });
+
+        assert.equal(await idleCommand(connection), false);
+        assert.ok(!connection.skipIdle, 'IDLE is tried again next time');
+        assert.equal(await waiter, 'resolved', 'the waiting command runs instead of failing with the throttled IDLE');
+    });
     it('Commands: idle polls instead of retrying once the server refused IDLE', async () => {
         let commands: string[] = [];
         const connection = createMockConnection({
