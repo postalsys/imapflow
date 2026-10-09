@@ -3,7 +3,7 @@
 import imapFormalSyntax from './imap-formal-syntax.js';
 import { TokenParser } from './token-parser.js';
 import { boundedInput } from './limits.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError } from '../errors.js';
 import type { ImapAttributeList, ParserOptions } from './types.js';
 
 /**
@@ -159,10 +159,7 @@ export class ParserInstance {
         let match: RegExpMatchArray | null, element: string, errPos: number;
 
         if (/^\s/.test(this.remainder)) {
-            let error: ImapFlowError = new Error(`Unexpected whitespace at position ${this.pos} [E1]`);
-            error.code = 'ParserError1';
-            error.parserContext = this.errorContext();
-            throw error;
+            throw createImapError(`Unexpected whitespace at position ${this.pos} [E1]`, 'ParserError1', { parserContext: this.errorContext() });
         }
 
         if ((match = this.remainder.match(/^\s*[^\s]+(?=\s|$)/))) {
@@ -173,29 +170,24 @@ export class ParserInstance {
                     // "Server Unavailable." instead of a proper IMAP tagged/untagged response.
                     // We detect this specific pattern and convert it into a synthetic BAD response
                     // so the rest of the parser can handle it gracefully.
-                    let error: ImapFlowError = new Error(`Server returned an error: ${this.input}`);
-                    error.code = 'ParserErrorExchange';
-                    error.parserContext = {
-                        ...this.errorContext(element),
-                        value: {
-                            tag: '*',
-                            command: 'BAD',
-                            attributes: [{ type: 'TEXT', value: this.input }]
+                    throw createImapError(`Server returned an error: ${this.input}`, 'ParserErrorExchange', {
+                        parserContext: {
+                            ...this.errorContext(element),
+                            value: {
+                                tag: '*',
+                                command: 'BAD',
+                                attributes: [{ type: 'TEXT', value: this.input }]
+                            }
                         }
-                    };
-                    throw error;
+                    });
                 }
 
-                let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + errPos} [E2: ${JSON.stringify(element.charAt(errPos))}]`);
-                error.code = 'ParserError2';
-                error.parserContext = this.errorContext(element);
-                throw error;
+                throw createImapError(`Unexpected char at position ${this.pos + errPos} [E2: ${JSON.stringify(element.charAt(errPos))}]`, 'ParserError2', {
+                    parserContext: this.errorContext(element)
+                });
             }
         } else {
-            let error: ImapFlowError = new Error(`Unexpected end of input at position ${this.pos} [E3]`);
-            error.code = 'ParserError3';
-            error.parserContext = this.errorContext();
-            throw error;
+            throw createImapError(`Unexpected end of input at position ${this.pos} [E3]`, 'ParserError3', { parserContext: this.errorContext() });
         }
 
         this.pos += match[0].length;
@@ -217,17 +209,13 @@ export class ParserInstance {
                 return;
             }
 
-            let error: ImapFlowError = new Error(`Unexpected end of input at position ${this.pos} [E4]`);
-            error.code = 'ParserError4';
-            error.parserContext = this.errorContext();
-            throw error;
+            throw createImapError(`Unexpected end of input at position ${this.pos} [E4]`, 'ParserError4', { parserContext: this.errorContext() });
         }
 
         if (imapFormalSyntax.verify(this.remainder.charAt(0), imapFormalSyntax.SP()) >= 0) {
-            let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos} [E5: ${JSON.stringify(this.remainder.charAt(0))}]`);
-            error.code = 'ParserError5';
-            error.parserContext = this.errorContext(this.remainder);
-            throw error;
+            throw createImapError(`Unexpected char at position ${this.pos} [E5: ${JSON.stringify(this.remainder.charAt(0))}]`, 'ParserError5', {
+                parserContext: this.errorContext(this.remainder)
+            });
         }
 
         this.pos++;
@@ -244,17 +232,13 @@ export class ParserInstance {
      */
     async getAttributes(): Promise<ImapAttributeList> {
         if (!this.remainder.length) {
-            let error: ImapFlowError = new Error(`Unexpected end of input at position ${this.pos} [E6]`);
-            error.code = 'ParserError6';
-            error.parserContext = this.errorContext();
-            throw error;
+            throw createImapError(`Unexpected end of input at position ${this.pos} [E6]`, 'ParserError6', { parserContext: this.errorContext() });
         }
 
         if (/^\s/.test(this.remainder)) {
-            let error: ImapFlowError = new Error(`Unexpected whitespace at position ${this.pos} [E7]`);
-            error.code = 'ParserError7';
-            error.parserContext = this.errorContext(this.remainder);
-            throw error;
+            throw createImapError(`Unexpected whitespace at position ${this.pos} [E7]`, 'ParserError7', {
+                parserContext: this.errorContext(this.remainder)
+            });
         }
 
         const tokenParser = new TokenParser(this, this.pos, this.remainder, this.options);

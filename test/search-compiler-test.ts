@@ -1262,7 +1262,7 @@ describe('search-compiler', () => {
 
         // CHAR8 (%x01-ff) excludes NUL, so the value can not be a literal either
         assert.ok(!hasLiteral(attributes, 'caf\u00e9\0'));
-        await assert.rejects(imapCompiler({ tag: 'A1', command: 'SEARCH', attributes }), { code: 'InvalidStringValue' });
+        assert.throws(() => imapCompiler({ tag: 'A1', command: 'SEARCH', attributes }), { code: 'InvalidStringValue' });
     });
     it('Search Compiler: unknown key fails instead of widening the search', () => {
         let connection = createMockConnection();

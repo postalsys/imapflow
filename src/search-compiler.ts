@@ -2,7 +2,7 @@
 
 import { formatDate, formatFlag, toValidDate, isRev2Active } from './tools.js';
 import type { ImapFlow } from './imap-flow.js';
-import type { ImapFlowError } from './errors.js';
+import { createImapError, type ImapFlowErrorCode } from './errors.js';
 import type { ImapAttributeNode } from './handler/types.js';
 import type { SearchObject } from './types.js';
 
@@ -121,10 +121,8 @@ let processDateField = (attributes: SearchAttribute[], term: string, value: unkn
  * @param code - Error code, one of the ImapFlowErrorCode values
  * @param message - Error message
  */
-let fail = (code: string, message: string): never => {
-    let error: ImapFlowError = new Error(message);
-    error.code = code;
-    throw error;
+let fail = (code: ImapFlowErrorCode, message: string): never => {
+    throw createImapError(message, code);
 };
 
 /**

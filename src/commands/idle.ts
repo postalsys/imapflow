@@ -9,7 +9,7 @@ import {
     getSelectedMailbox
 } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError, type ImapFlowError } from '../errors.js';
 import type { SelectCommand } from '../handler/types.js';
 
 const NOOP_INTERVAL = 2 * 60 * 1000;
@@ -236,9 +236,7 @@ async function pollOnce(connection: ImapFlow, session: PollingSession): Promise<
                 highestModseq: true
             });
             if (!status) {
-                let err: ImapFlowError = new Error('STATUS poll failed');
-                err.code = 'PollFailed';
-                throw err;
+                throw createImapError('STATUS poll failed', 'PollFailed');
             }
             break;
         }

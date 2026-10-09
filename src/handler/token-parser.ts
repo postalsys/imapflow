@@ -2,7 +2,7 @@
 
 import imapFormalSyntax from './imap-formal-syntax.js';
 import { MAX_LITERAL_SIZE, ERROR_CONTEXT_LENGTH, boundedInput, normalizeLimit, createLiteralTooLargeError } from './limits.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError, type ImapFlowError, type ParserErrorCode } from '../errors.js';
 import type { ImapAttributeList, ImapAttributeNode, ParserOptions } from './types.js';
 import type { ParserInstance } from './parser-instance.js';
 
@@ -101,6 +101,24 @@ export class TokenParser {
     }
 
     /**
+     * Builds a numbered parser error that carries a bounded copy of the input and the position
+     * (and character, when there is one) where parsing failed.
+     *
+     * @param message - The error message
+     * @param code - The numbered parser error code
+     * @param pos - Position of the failure in the original input
+     * @param chr - The offending character
+     * @returns The error to throw
+     */
+    parserError(message: string, code: ParserErrorCode, pos: number, chr?: string | undefined): ImapFlowError {
+        const parserContext: { [key: string]: unknown } = { ...boundedInput(this.str), pos };
+        if (chr !== undefined) {
+            parserContext.chr = chr;
+        }
+        return createImapError(message, code, { parserContext });
+    }
+
+    /**
      * Processes the input string and returns the parsed attributes as a flat array of typed objects.
      * Each attribute is an object with a `type` (e.g., "ATOM", "STRING", "LITERAL", "SEQUENCE")
      * and a `value` property. Lists are represented as nested arrays. Sections and partials are
@@ -127,10 +145,11 @@ export class TokenParser {
 
             // If the node was never closed, throw it
             if (!node.isClosed) {
-                let error: ImapFlowError = new Error(`Unexpected end of input at position ${this.pos + this.str.length - 1} [E9]`);
-                error.code = 'ParserError9';
-                error.parserContext = { ...boundedInput(this.str), pos: this.pos + this.str.length - 1 };
-                throw error;
+                throw this.parserError(
+                    `Unexpected end of input at position ${this.pos + this.str.length - 1} [E9]`,
+                    'ParserError9',
+                    this.pos + this.str.length - 1
+                );
             }
 
             let type = (node.type || '').toString().toUpperCase();
@@ -213,11 +232,8 @@ export class TokenParser {
         }
 
         if (node.depth > MAX_NODE_DEPTH) {
-            let error: ImapFlowError = new Error('Too much nesting in IMAP string');
-            error.code = 'MAX_IMAP_NESTING_REACHED';
             // A bounded prefix only, the error travels whole into logs and rejections
-            error._imapStr = this.str.slice(0, ERROR_CONTEXT_LENGTH);
-            throw error;
+            throw createImapError('Too much nesting in IMAP string', 'MAX_IMAP_NESTING_REACHED', { _imapStr: this.str.slice(0, ERROR_CONTEXT_LENGTH) });
         }
 
         if (typeof startPos === 'number') {
@@ -305,10 +321,7 @@ export class TokenParser {
         // error instead of reading a missing buffer or shifting every later literal by one
         const takeLiteral = (literals: Buffer[]): Buffer => {
             if (!literals.length) {
-                let error: ImapFlowError = new Error(`Literal without data at position ${this.pos + i} [E35]`);
-                error.code = 'ParserError35';
-                error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                throw error;
+                throw this.parserError(`Literal without data at position ${this.pos + i} [E35]`, 'ParserError35', this.pos + i, chr);
             }
             return literals.shift()!;
         };
@@ -321,10 +334,7 @@ export class TokenParser {
         // used to fall through into the default branch
         const startAtom = (): void => {
             if (!imapFormalSyntax['ATOM-CHAR']().includes(chr) && chr !== '\\' && chr !== '%' && chr.charCodeAt(0) < 0x80) {
-                let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E13: ${JSON.stringify(chr)}]`);
-                error.code = 'ParserError13';
-                error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                throw error;
+                throw this.parserError(`Unexpected char at position ${this.pos + i} [E13: ${JSON.stringify(chr)}]`, 'ParserError13', this.pos + i, chr);
             }
 
             this.currentNode = this.createNode(this.currentNode, this.pos + i);
@@ -357,10 +367,7 @@ export class TokenParser {
                         // ) closes a list
                         case ')':
                             if (this.currentNode.type !== 'LIST') {
-                                let error: ImapFlowError = new Error(`Unexpected list terminator ) at position ${this.pos + i} [E10]`);
-                                error.code = 'ParserError10';
-                                error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                                throw error;
+                                throw this.parserError(`Unexpected list terminator ) at position ${this.pos + i} [E10]`, 'ParserError10', this.pos + i, chr);
                             }
 
                             this.currentNode.isClosed = true;
@@ -373,10 +380,7 @@ export class TokenParser {
                         // ] closes section group
                         case ']':
                             if (this.currentNode.type !== 'SECTION') {
-                                let error: ImapFlowError = new Error(`Unexpected section terminator ] at position ${this.pos + i} [E11]`);
-                                error.code = 'ParserError11';
-                                error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                                throw error;
+                                throw this.parserError(`Unexpected section terminator ] at position ${this.pos + i} [E11]`, 'ParserError11', this.pos + i, chr);
                             }
                             this.currentNode.isClosed = true;
                             this.currentNode.endPos = this.pos + i;
@@ -422,10 +426,7 @@ export class TokenParser {
                                     break;
                                 }
 
-                                let error: ImapFlowError = new Error(`Unexpected literal8 marker at position ${this.pos + i} [E12]`);
-                                error.code = 'ParserError12';
-                                error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                                throw error;
+                                throw this.parserError(`Unexpected literal8 marker at position ${this.pos + i} [E12]`, 'ParserError12', this.pos + i, chr);
                             }
                             // Mark the next literal as literal8 type; consumed when '{' is encountered
                             this.expectedLiteralType = 'literal8';
@@ -613,15 +614,9 @@ export class TokenParser {
                         !(chr === '*' && this.currentNode.value === '\\') &&
                         (!this.parent || !this.parent.command || !['NO', 'BAD', 'OK'].includes(this.parent.command.toUpperCase()))
                     ) {
-                        let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E16: ${JSON.stringify(chr)}]`);
-                        error.code = 'ParserError16';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(`Unexpected char at position ${this.pos + i} [E16: ${JSON.stringify(chr)}]`, 'ParserError16', this.pos + i, chr);
                     } else if (this.currentNode.value === '\\*') {
-                        let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E17: ${JSON.stringify(chr)}]`);
-                        error.code = 'ParserError17';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(`Unexpected char at position ${this.pos + i} [E17: ${JSON.stringify(chr)}]`, 'ParserError17', this.pos + i, chr);
                     }
 
                     appendToToken(chr);
@@ -643,10 +638,7 @@ export class TokenParser {
                     if (chr === '\\') {
                         i++;
                         if (i >= len) {
-                            let error: ImapFlowError = new Error(`Unexpected end of input at position ${this.pos + i} [E18]`);
-                            error.code = 'ParserError18';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i };
-                            throw error;
+                            throw this.parserError(`Unexpected end of input at position ${this.pos + i} [E18]`, 'ParserError18', this.pos + i);
                         }
                         chr = this.str.charAt(i);
                     }
@@ -657,10 +649,7 @@ export class TokenParser {
                 case STATE_PARTIAL:
                     if (chr === '>') {
                         if (tokenLast === '.') {
-                            let error: ImapFlowError = new Error(`Unexpected end of partial at position ${this.pos + i} [E19]`);
-                            error.code = 'ParserError19';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(`Unexpected end of partial at position ${this.pos + i} [E19]`, 'ParserError19', this.pos + i, chr);
                         }
                         this.currentNode.endPos = this.pos + i;
                         this.currentNode.isClosed = true;
@@ -671,24 +660,15 @@ export class TokenParser {
                     }
 
                     if (chr === '.' && (!tokenLength || tokenHasDot)) {
-                        let error: ImapFlowError = new Error(`Unexpected partial separator . at position ${this.pos + i} [E20]`);
-                        error.code = 'ParserError20';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(`Unexpected partial separator . at position ${this.pos + i} [E20]`, 'ParserError20', this.pos + i, chr);
                     }
 
                     if (!imapFormalSyntax.DIGIT().includes(chr) && chr !== '.') {
-                        let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E21: ${JSON.stringify(chr)}]`);
-                        error.code = 'ParserError21';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(`Unexpected char at position ${this.pos + i} [E21: ${JSON.stringify(chr)}]`, 'ParserError21', this.pos + i, chr);
                     }
 
                     if (tokenLast === '0' && (tokenLength === 1 || tokenPrev === '.') && chr !== '.') {
-                        let error: ImapFlowError = new Error(`Invalid partial at position ${this.pos + i} [E22: ${JSON.stringify(chr)}]`);
-                        error.code = 'ParserError22';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(`Invalid partial at position ${this.pos + i} [E22: ${JSON.stringify(chr)}]`, 'ParserError22', this.pos + i, chr);
                     }
 
                     appendToToken(chr);
@@ -727,20 +707,24 @@ export class TokenParser {
 
                     if (chr === '}') {
                         if (!('literalLength' in this.currentNode)) {
-                            let error: ImapFlowError = new Error(`Unexpected literal prefix end char } at position ${this.pos + i} [E23]`);
-                            error.code = 'ParserError23';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(
+                                `Unexpected literal prefix end char } at position ${this.pos + i} [E23]`,
+                                'ParserError23',
+                                this.pos + i,
+                                chr
+                            );
                         }
                         if (this.str.charAt(i + 1) === '\n') {
                             i++;
                         } else if (this.str.charAt(i + 1) === '\r' && this.str.charAt(i + 2) === '\n') {
                             i += 2;
                         } else {
-                            let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E24: ${JSON.stringify(chr)}]`);
-                            error.code = 'ParserError24';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(
+                                `Unexpected char at position ${this.pos + i} [E24: ${JSON.stringify(chr)}]`,
+                                'ParserError24',
+                                this.pos + i,
+                                chr
+                            );
                         }
 
                         this.currentNode.literalLength = Number(this.currentNode.literalLength);
@@ -809,16 +793,10 @@ export class TokenParser {
                         break;
                     }
                     if (!imapFormalSyntax.DIGIT().includes(chr)) {
-                        let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E25: ${JSON.stringify(chr)}]`);
-                        error.code = 'ParserError25';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(`Unexpected char at position ${this.pos + i} [E25: ${JSON.stringify(chr)}]`, 'ParserError25', this.pos + i, chr);
                     }
                     if (this.currentNode.literalLength === '0') {
-                        let error: ImapFlowError = new Error(`Invalid literal at position ${this.pos + i} [E26]`);
-                        error.code = 'ParserError26';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(`Invalid literal at position ${this.pos + i} [E26]`, 'ParserError26', this.pos + i, chr);
                     }
                     this.currentNode.literalLength = (this.currentNode.literalLength || '') + chr;
                     break;
@@ -835,17 +813,21 @@ export class TokenParser {
                                 continueAsAtom();
                                 break;
                             }
-                            let error: ImapFlowError = new Error(`Unexpected end of sequence at position ${this.pos + i} [E27: ${JSON.stringify(chr)}]`);
-                            error.code = 'ParserError27';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(
+                                `Unexpected end of sequence at position ${this.pos + i} [E27: ${JSON.stringify(chr)}]`,
+                                'ParserError27',
+                                this.pos + i,
+                                chr
+                            );
                         }
 
                         if (this.currentNode.value !== '*' && tokenLast === '*' && tokenPrev !== ':') {
-                            let error: ImapFlowError = new Error(`Unexpected end of sequence at position ${this.pos + i} [E28: ${JSON.stringify(chr)}]`);
-                            error.code = 'ParserError28';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(
+                                `Unexpected end of sequence at position ${this.pos + i} [E28: ${JSON.stringify(chr)}]`,
+                                'ParserError28',
+                                this.pos + i,
+                                chr
+                            );
                         }
 
                         this.currentNode.isClosed = true;
@@ -868,17 +850,11 @@ export class TokenParser {
                                 continueAsAtom();
                                 break;
                             }
-                            let error: ImapFlowError = new Error(`Unexpected range separator : at position ${this.pos + i} [E29]`);
-                            error.code = 'ParserError29';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(`Unexpected range separator : at position ${this.pos + i} [E29]`, 'ParserError29', this.pos + i, chr);
                         }
                     } else if (chr === '*') {
                         if (![',', ':'].includes(tokenLast)) {
-                            let error: ImapFlowError = new Error(`Unexpected range wildcard at position ${this.pos + i} [E30]`);
-                            error.code = 'ParserError30';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(`Unexpected range wildcard at position ${this.pos + i} [E30]`, 'ParserError30', this.pos + i, chr);
                         }
                     } else if (chr === ',') {
                         if (!RE_SINGLE_DIGIT.test(tokenLast) && tokenLast !== '*') {
@@ -886,33 +862,26 @@ export class TokenParser {
                                 continueAsAtom();
                                 break;
                             }
-                            let error: ImapFlowError = new Error(`Unexpected sequence separator , at position ${this.pos + i} [E31]`);
-                            error.code = 'ParserError31';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(`Unexpected sequence separator , at position ${this.pos + i} [E31]`, 'ParserError31', this.pos + i, chr);
                         }
                         if (tokenLast === '*' && tokenPrev !== ':') {
-                            let error: ImapFlowError = new Error(`Unexpected sequence separator , at position ${this.pos + i} [E32]`);
-                            error.code = 'ParserError32';
-                            error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                            throw error;
+                            throw this.parserError(`Unexpected sequence separator , at position ${this.pos + i} [E32]`, 'ParserError32', this.pos + i, chr);
                         }
                     } else if (!RE_SINGLE_DIGIT.test(chr)) {
                         if (!tokenHasStar) {
                             continueAsAtom();
                             break;
                         }
-                        let error: ImapFlowError = new Error(`Unexpected char at position ${this.pos + i} [E33: ${JSON.stringify(chr)}]`);
-                        error.code = 'ParserError33';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(`Unexpected char at position ${this.pos + i} [E33: ${JSON.stringify(chr)}]`, 'ParserError33', this.pos + i, chr);
                     }
 
                     if (RE_SINGLE_DIGIT.test(chr) && tokenLast === '*') {
-                        let error: ImapFlowError = new Error(`Unexpected number at position ${this.pos + i} [E34: ${JSON.stringify(chr)}]`);
-                        error.code = 'ParserError34';
-                        error.parserContext = { ...boundedInput(this.str), pos: this.pos + i, chr };
-                        throw error;
+                        throw this.parserError(
+                            `Unexpected number at position ${this.pos + i} [E34: ${JSON.stringify(chr)}]`,
+                            'ParserError34',
+                            this.pos + i,
+                            chr
+                        );
                     }
 
                     appendToToken(chr);

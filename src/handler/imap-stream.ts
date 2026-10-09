@@ -1,7 +1,7 @@
 import { Transform, type TransformCallback } from 'node:stream';
 import { createConnectionLogger } from '../logger.js';
 import { MAX_LITERAL_SIZE, MAX_LINE_SIZE, MAX_RESPONSE_SIZE, normalizeLimit, createLiteralTooLargeError } from './limits.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError } from '../errors.js';
 import type { Logger, InternalLogger } from '../types.js';
 import type { ImapStreamItem } from './types.js';
 
@@ -275,10 +275,10 @@ export class ImapStream extends Transform {
         if (lineLength <= this.maxLineLength) {
             return true;
         }
-        const err: ImapFlowError = new Error(`Line length ${lineLength} exceeds maximum allowed size of ${this.maxLineLength} bytes`);
-        err.code = 'LineTooLarge';
-        err.lineLength = lineLength;
-        err.maxSize = this.maxLineLength;
+        const err = createImapError(`Line length ${lineLength} exceeds maximum allowed size of ${this.maxLineLength} bytes`, 'LineTooLarge', {
+            lineLength,
+            maxSize: this.maxLineLength
+        });
         return this.failStream(err);
     }
 
@@ -302,10 +302,10 @@ export class ImapStream extends Transform {
             }
             return true;
         }
-        const err: ImapFlowError = new Error(`Response size ${total} exceeds maximum allowed size of ${this.maxResponseSize} bytes`);
-        err.code = 'ResponseTooLarge';
-        err.responseSize = total;
-        err.maxSize = this.maxResponseSize;
+        const err = createImapError(`Response size ${total} exceeds maximum allowed size of ${this.maxResponseSize} bytes`, 'ResponseTooLarge', {
+            responseSize: total,
+            maxSize: this.maxResponseSize
+        });
         return this.failStream(err);
     }
 

@@ -16,7 +16,7 @@ import { parser, compiler } from './handler/imap-handler.js';
 import { proxyConnection, detachEarlyErrorHandler } from './proxy-connection.js';
 import { ConnectionDeadline } from './connection-deadline.js';
 import { downloadMessage, downloadMessageParts } from './download.js';
-import { AuthenticationFailure, type ConnectionErrorSite, type ImapFlowError } from './errors.js';
+import { AuthenticationFailure, createImapError, type ConnectionErrorSite, type ImapFlowError, type ImapFlowErrorCode } from './errors.js';
 import imapCommands, { type CommandHandler } from './imap-commands.js';
 
 import {
@@ -1091,6 +1091,9 @@ export class ImapFlow extends EventEmitter {
     // and once as a string (for logging, with sensitive data masked).
     // When LITERAL- or LITERAL+ extensions are available, the compiler can use
     // non-synchronizing literals to avoid waiting for server "+" continuation.
+    // Async although nothing in it awaits: a failure inside it rejects one microtask later, so a
+    // close() in the same tick settles the command with NoConnection first (see
+    // test/unhandled-rejection-test.ts)
     /** @internal */
     async send(data: QueuedRequest): Promise<void> {
         if (this.state === this.states.LOGOUT) {
@@ -1101,11 +1104,11 @@ export class ImapFlow extends EventEmitter {
             throw this.createNoConnectionError(false, { rejectedFrom: 'sendAfterLogout', command: data.command });
         }
 
-        // Classify before the first await. Every frame of this command - the command line and
-        // any continuation write that follows it - belongs to it until the next send(), because
+        // Classify once per command. Every frame of this command - the command line and any
+        // continuation write that follows it - belongs to it until the next send(), because
         // trySend() keeps one command in flight at a time. Reading currentRequest inside write()
-        // instead would be racy: rejectCurrentRequest() can clear it while the two compiler
-        // awaits below are pending, and the credential frame would then be logged in the clear.
+        // instead would be racy: rejectCurrentRequest() can clear it before a continuation frame
+        // is written, and the credential frame would then be logged in the clear.
         // Uppercased because the wire protocol is case-insensitive and exec() passes the
         // caller's spelling through unchanged. The command list covers the mechanisms whose
         // secret arrives in a continuation frame, which carries no attributes of its own; the
@@ -1117,7 +1120,7 @@ export class ImapFlow extends EventEmitter {
         // Compile with asArray=true: splits output into parts for literal handling.
         // First part is the command text up to the first literal, remaining parts
         // are stored in this.commandParts and sent after server "+" continuations.
-        let compiled = await compiler(data, {
+        let compiled = compiler(data, {
             asArray: true,
             // LITERAL- is part of base IMAP4rev2
             literalMinus: hasCapability(this, 'LITERAL-') || this.capabilities.has('LITERAL+')
@@ -1130,7 +1133,7 @@ export class ImapFlow extends EventEmitter {
         // Compile again for logging with isLogging=true: masks sensitive values
         // like passwords while producing a human-readable command string
         if (this.isLogLevelEnabled('debug')) {
-            let logCompiled = await compiler(data, {
+            let logCompiled = compiler(data, {
                 isLogging: true
             });
             this.log.debug({ src: 'c', msg: logCompiled.toString(), cid: this.id, comment: options.comment });
@@ -1411,9 +1414,7 @@ export class ImapFlow extends EventEmitter {
                 // parser would keep waiting on its backpressure callback forever, which is a
                 // silent permanent hang. Fail closed instead.
                 keepReading = false;
-                let error: ImapFlowError = new Error('Failed to process server response');
-                error.code = 'ResponseProcessingFailed';
-                error._err = err as Error;
+                let error = createImapError('Failed to process server response', 'ResponseProcessingFailed', { _err: err as Error });
                 this.log.error({ msg: 'Failed to process server response', err, cid: this.id });
                 this.rejectCurrentRequest(error);
                 this.failProtocol(error);
@@ -1548,7 +1549,7 @@ export class ImapFlow extends EventEmitter {
         let logLevel: LogLevel =
             /^\d+$/.test(parsed.command || '') && parsed.attributes && parsed.attributes[0] && parsed.attributes[0].value === 'FETCH' ? 'trace' : 'debug';
         if (this.isLogLevelEnabled(logLevel)) {
-            let logCompiled = await compiler(parsed, {
+            let logCompiled = compiler(parsed, {
                 isLogging: true
             });
             this.log[logLevel]({ src: 's', msg: logCompiled.toString(), cid: this.id, nullBytesRemoved: parsed.nullBytesRemoved });
@@ -1656,12 +1657,12 @@ export class ImapFlow extends EventEmitter {
                 let request = this.requestTagMap.get(parsed.tag) as PendingRequest;
                 this.requestTagMap.delete(parsed.tag);
 
-                let err: ImapFlowError = new Error('Server sent a tagged response for a command that was not in flight');
-                err.code = 'UnexpectedTag';
-                err.details = {
-                    received: parsed.tag,
-                    expected: this.currentRequest ? this.currentRequest.tag : null
-                };
+                let err = createImapError('Server sent a tagged response for a command that was not in flight', 'UnexpectedTag', {
+                    details: {
+                        received: parsed.tag,
+                        expected: this.currentRequest ? this.currentRequest.tag : null
+                    }
+                });
 
                 this.log.error({ msg: 'Protocol desynchronization', err, cid: this.id });
                 request.reject(err);
@@ -1710,11 +1711,9 @@ export class ImapFlow extends EventEmitter {
                 try {
                     err.executedCommand =
                         parsed.tag +
-                        (
-                            await compiler(request, {
-                                isLogging: true
-                            })
-                        ).toString();
+                        compiler(request, {
+                            isLogging: true
+                        }).toString();
                 } catch {
                     // ignore
                 }
@@ -1777,9 +1776,7 @@ export class ImapFlow extends EventEmitter {
             }
 
             default: {
-                let err: ImapFlowError = new Error('Invalid server response');
-                err.code = 'InvalidResponse';
-                err.response = parsed;
+                let err = createImapError('Invalid server response', 'InvalidResponse', { response: parsed });
                 request.reject(err);
                 break;
             }
@@ -1889,11 +1886,7 @@ export class ImapFlow extends EventEmitter {
         this._socketTimeout =
             this._socketTimeout ||
             (() => {
-                const timeoutError = (): ImapFlowError => {
-                    const err: ImapFlowError = new Error('Socket timeout');
-                    err.code = 'ETIMEOUT';
-                    return err;
-                };
+                const timeoutError = (): ImapFlowError => createImapError('Socket timeout', 'ETIMEOUT');
 
                 if (!this.usable || !this.socket || this.socket.destroyed) {
                     this.emitError(timeoutError());
@@ -2249,11 +2242,11 @@ export class ImapFlow extends EventEmitter {
         // socket; injection that still races in afterwards corrupts the TLS handshake and
         // is rejected there instead (with a generic TLS error rather than STARTTLS_INJECTION).
         const failSTARTTLSInjection = (): ImapFlowError => {
-            let err: ImapFlowError = new Error(
-                'Server sent data after the STARTTLS response and before the TLS handshake; possible plaintext-injection attack'
+            let err = createImapError(
+                'Server sent data after the STARTTLS response and before the TLS handshake; possible plaintext-injection attack',
+                'STARTTLS_INJECTION',
+                { tlsFailed: true }
             );
-            err.code = 'STARTTLS_INJECTION';
-            err.tlsFailed = true;
             this.closeAfter();
             return err;
         };
@@ -2353,8 +2346,7 @@ export class ImapFlow extends EventEmitter {
 
             /* c8 ignore start */ // UPGRADE_TIMEOUT is 10s; firing it deterministically would make the test suite hang
             this.upgradeTimeout = setTimeout(() => {
-                let err: ImapFlowError = new Error('Failed to upgrade connection in required time');
-                err.code = 'UPGRADE_TIMEOUT';
+                let err = createImapError('Failed to upgrade connection in required time', 'UPGRADE_TIMEOUT');
                 settle(err);
             }, UPGRADE_TIMEOUT);
             /* c8 ignore stop */
@@ -2931,9 +2923,7 @@ export class ImapFlow extends EventEmitter {
     async connect(): Promise<void> {
         if (this._connectCalled) {
             // Prevent re-using ImapFlow instances by allowing to call connect just once.
-            let err: ImapFlowError = new Error('Can not re-use ImapFlow instance');
-            err.code = 'InstanceReused';
-            throw err;
+            throw createImapError('Can not re-use ImapFlow instance', 'InstanceReused');
         }
         this._connectCalled = true;
 
@@ -3042,15 +3032,17 @@ export class ImapFlow extends EventEmitter {
                     this.configureSocket(this.socket);
 
                     this.greetingTimeout = setTimeout(() => {
-                        let err: ImapFlowError = new Error(
+                        let err = createImapError(
                             /* c8 ignore next */ // the greeting-timeout test uses a plaintext socket; the secure-socket branch of this hint is not separately exercised
-                            `Failed to receive greeting from server in required time${!this.secureConnection ? '. Maybe should use TLS?' : ''}`
+                            `Failed to receive greeting from server in required time${!this.secureConnection ? '. Maybe should use TLS?' : ''}`,
+                            'GREETING_TIMEOUT',
+                            {
+                                details: {
+                                    /* c8 ignore next */ // firing the timeout with the default (large) value would hang the suite, so only the explicit-option path is tested
+                                    greetingTimeout: this.options.greetingTimeout || GREETING_TIMEOUT
+                                }
+                            }
                         );
-                        err.code = 'GREETING_TIMEOUT';
-                        err.details = {
-                            /* c8 ignore next */ // firing the timeout with the default (large) value would hang the suite, so only the explicit-option path is tested
-                            greetingTimeout: this.options.greetingTimeout || GREETING_TIMEOUT
-                        };
                         this.log.error({ err, cid: this.id });
                         this.closeAfter();
                         reject(err);
@@ -3147,7 +3139,7 @@ export class ImapFlow extends EventEmitter {
 
     // Connection-scoped wrapper around the shared stamping helper; see buildConnectionError().
     /** @internal */
-    createConnectionError(code: string, message: string, meta?: ConnectionErrorSite | undefined): ImapFlowError {
+    createConnectionError(code: ImapFlowErrorCode, message: string, meta?: ConnectionErrorSite | undefined): ImapFlowError {
         return buildConnectionError(this.id, code, message, meta);
     }
 
@@ -3301,9 +3293,11 @@ export class ImapFlow extends EventEmitter {
             let reject = this.initialReject;
             this.initialResolve = false;
             this.initialReject = false;
-            let err: ImapFlowError = new Error('Unexpected close');
-            /* c8 ignore next */ // closing a pending connect over an already-secure socket (the TLS branch) is not separately exercised
-            err.code = `ClosedAfterConnect${this.secureConnection ? 'TLS' : 'Text'}`;
+            let err = createImapError(
+                'Unexpected close',
+                /* c8 ignore next */ // closing a pending connect over an already-secure socket (the TLS branch) is not separately exercised
+                this.secureConnection ? 'ClosedAfterConnectTLS' : 'ClosedAfterConnectText'
+            );
             // Surface the server's BYE reason (e.g. "Too many connections") when the
             // connection was closed by an untagged BYE, so the caller sees why.
             if (this.byeReason) {
@@ -4594,9 +4588,7 @@ export class ImapFlow extends EventEmitter {
                     const idx = this.locks.indexOf(lockEntry);
                     if (idx !== -1) {
                         this.locks.splice(idx, 1);
-                        let err: ImapFlowError = new Error('Timed out waiting for mailbox lock');
-                        err.code = 'LockTimeout';
-                        err.lockId = lockEntry.lockId;
+                        let err = createImapError('Timed out waiting for mailbox lock', 'LockTimeout', { lockId: lockEntry.lockId });
                         reject(err);
                     }
                 }, Number(lockOptions.acquireTimeout));

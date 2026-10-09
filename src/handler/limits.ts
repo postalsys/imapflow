@@ -2,7 +2,7 @@
 // (ImapStream) and the standalone token parser cannot drift apart, and so the documented
 // defaults in the ImapFlowOptions type describe both paths.
 
-import type { ImapFlowError } from '../errors.js';
+import { createImapError, type ImapFlowError } from '../errors.js';
 
 // Maximum allowed literal size: 1GB (1073741824 bytes)
 export const MAX_LITERAL_SIZE = 1024 * 1024 * 1024;
@@ -61,10 +61,8 @@ export const normalizeLimit = (value: unknown, defaultValue: number): number =>
  * @param reason - What the bound was, when it is not the configured maximum.
  * @returns The error to emit or throw.
  */
-export const createLiteralTooLargeError = (literalSize: number, maxSize: number, reason?: string | null | undefined): ImapFlowError => {
-    const err: ImapFlowError = new Error(`Literal size ${literalSize} exceeds ${reason || `maximum allowed size of ${maxSize} bytes`}`);
-    err.code = 'LiteralTooLarge';
-    err.literalSize = literalSize;
-    err.maxSize = maxSize;
-    return err;
-};
+export const createLiteralTooLargeError = (literalSize: number, maxSize: number, reason?: string | null | undefined): ImapFlowError =>
+    createImapError(`Literal size ${literalSize} exceeds ${reason || `maximum allowed size of ${maxSize} bytes`}`, 'LiteralTooLarge', {
+        literalSize,
+        maxSize
+    });

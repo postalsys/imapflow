@@ -1,7 +1,7 @@
 /* eslint no-console: 0, new-cap: 0 */
 
 import imapFormalSyntax from './imap-formal-syntax.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError } from '../errors.js';
 import type { CompilerOptions, ImapCompileInput, ImapCompileNode } from './types.js';
 
 // A single element of a sequence-set as defined by the RFC 9051 grammar: a number
@@ -51,9 +51,7 @@ const CRLF = /[\r\n]/;
  */
 const quoteString = (value: string): string => {
     if (NOT_QUOTABLE.test(value)) {
-        let error: ImapFlowError = new Error('Unquotable character in IMAP string value');
-        error.code = 'InvalidStringValue';
-        throw error;
+        throw createImapError('Unquotable character in IMAP string value', 'InvalidStringValue');
     }
     return '"' + value.replace(/["\\]/g, char => '\\' + char) + '"';
 };
@@ -80,12 +78,12 @@ interface EmitOptions {
  * @param options.isLogging - If true, redacts sensitive values and truncates long strings/literals for logging purposes.
  * @param options.literalPlus - If true, uses the LITERAL+ extension (appends "+" to literal length markers).
  * @param options.literalMinus - If true, uses the LITERAL- extension for literals up to 4096 bytes.
- * @returns A promise that resolves to an array of Buffers (if asArray is true) or a single concatenated Buffer.
+ * @returns An array of Buffers (if asArray is true) or a single concatenated Buffer.
  */
-function compiler(response: ImapCompileInput, options: CompilerOptions & { asArray: true }): Promise<Buffer[]>;
-function compiler(response: ImapCompileInput, options?: (CompilerOptions & { asArray?: false | undefined }) | undefined): Promise<Buffer>;
-function compiler(response: ImapCompileInput, options?: CompilerOptions | undefined): Promise<Buffer | Buffer[]>;
-async function compiler(response: ImapCompileInput, options?: CompilerOptions | undefined): Promise<Buffer | Buffer[]> {
+function compiler(response: ImapCompileInput, options: CompilerOptions & { asArray: true }): Buffer[];
+function compiler(response: ImapCompileInput, options?: (CompilerOptions & { asArray?: false | undefined }) | undefined): Buffer;
+function compiler(response: ImapCompileInput, options?: CompilerOptions | undefined): Buffer | Buffer[];
+function compiler(response: ImapCompileInput, options?: CompilerOptions | undefined): Buffer | Buffer[] {
     let { asArray, isLogging, literalPlus, literalMinus } = options || {};
     const respParts: Buffer[][] = [];
 
@@ -101,9 +99,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
     const emitEntry = (entry: EmitEntry, opts?: EmitOptions | undefined): Buffer | null => {
         let { returnEmpty, raw } = opts || {};
         if (!raw && !isLogging && (typeof entry === 'string' || Buffer.isBuffer(entry)) && CRLF.test(entry.toString('latin1'))) {
-            let error: ImapFlowError = new Error('Line terminator in IMAP token');
-            error.code = 'InvalidTokenValue';
-            throw error;
+            throw createImapError('Line terminator in IMAP token', 'InvalidTokenValue');
         }
 
         if (typeof entry === 'string') {
@@ -134,7 +130,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
     // leading space
     let afterOpener = false;
 
-    let walk = async (node: ImapCompileNode, options?: { subArray?: boolean | undefined } | undefined): Promise<void> => {
+    let walk = (node: ImapCompileNode, options?: { subArray?: boolean | undefined } | undefined): void => {
         options = options || {};
 
         // Add a space separator when:
@@ -171,7 +167,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                 if (subArray && !Array.isArray(child)) {
                     subArray = false;
                 }
-                await walk(child, { subArray });
+                walk(child, { subArray });
             }
 
             resp.push(emitEntry(')')!);
@@ -267,9 +263,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                 if (!isLogging) {
                     val = node.value === null || node.value === undefined ? '' : node.value.toString();
                     if (!isValidSequenceSet(val)) {
-                        let error: ImapFlowError = new Error('Invalid sequence set value');
-                        error.code = 'InvalidSequenceSet';
-                        throw error;
+                        throw createImapError('Invalid sequence set value', 'InvalidSequenceSet');
                     }
                     resp.push(emitEntry(val, { raw: true })!);
                 } else if (node.value) {
@@ -284,9 +278,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                 // this check runs first only to raise the more specific InvalidTextValue code.
                 if (node.value) {
                     if (!isLogging && CRLF.test(node.value.toString())) {
-                        let error: ImapFlowError = new Error('Line terminator in IMAP text value');
-                        error.code = 'InvalidTextValue';
-                        throw error;
+                        throw createImapError('Line terminator in IMAP text value', 'InvalidTextValue');
                     }
                     resp.push(emitEntry(node.value)!);
                 }
@@ -328,7 +320,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
                     afterOpener = true;
 
                     for (let child of node.section) {
-                        await walk(child);
+                        walk(child);
                     }
 
                     resp.push(emitEntry(']')!);
@@ -349,7 +341,7 @@ async function compiler(response: ImapCompileInput, options?: CompilerOptions | 
     if (response.attributes) {
         let attributes: ImapCompileNode[] = Array.isArray(response.attributes) ? response.attributes : ([] as ImapCompileNode[]).concat(response.attributes);
         for (let child of attributes) {
-            await walk(child);
+            walk(child);
         }
     }
 

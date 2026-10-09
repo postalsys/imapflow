@@ -1,5 +1,5 @@
 import { clearTimer } from './tools.js';
-import type { ImapFlowError } from './errors.js';
+import { createImapError, type ImapFlowError } from './errors.js';
 
 // Default upper bound for establishing a usable transport, including DNS and proxy negotiation.
 export const CONNECT_TIMEOUT = 90 * 1000;
@@ -36,10 +36,7 @@ export class ConnectionDeadline {
      * @returns The shared `CONNECT_TIMEOUT` error.
      */
     error(): ImapFlowError {
-        let err: ImapFlowError = new Error('Failed to establish connection in required time');
-        err.code = 'CONNECT_TIMEOUT';
-        err.details = { connectionTimeout: this.timeout };
-        return err;
+        return createImapError('Failed to establish connection in required time', 'CONNECT_TIMEOUT', { details: { connectionTimeout: this.timeout } });
     }
 
     /**

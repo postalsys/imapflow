@@ -17,6 +17,22 @@ const compileError = async (input: any) => {
 };
 
 describe('imap-compiler', () => {
+    it('IMAP Compiler: compiles synchronously', () => {
+        // A plain return value, no promise: the walk has no asynchronous step
+        const single = compiler({ tag: 'A1', command: 'SELECT', attributes: [{ type: 'ATOM', value: 'INBOX' }] });
+        assert.ok(Buffer.isBuffer(single));
+        assert.equal(single.toString(), 'A1 SELECT INBOX');
+
+        const parts = compiler({ tag: 'A2', command: 'LOGIN', attributes: [{ type: 'LITERAL', value: 'user' }, 'pass'] }, { asArray: true });
+        assert.ok(Array.isArray(parts));
+        assert.deepEqual(
+            parts.map(part => part.toString()),
+            ['A2 LOGIN {4}\r\n', 'user "pass"']
+        );
+
+        // Refusals throw synchronously instead of rejecting
+        assert.throws(() => compiler({ tag: 'A3', command: 'NOOP\r\nA4 LOGOUT' }), { code: 'InvalidTokenValue' });
+    });
     it('IMAP Compiler: mixed', async () => {
         const command =
             '* FETCH (ENVELOPE ("Mon, 2 Sep 2013 05:30:13 -0700 (PDT)" NIL ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "tr.ee")) NIL NIL NIL "<-4730417346358914070@unknownmsgid>") BODYSTRUCTURE (("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 105 (NIL NIL ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "pangalink.net")) NIL NIL "<test1>" NIL) ("TEXT" "PLAIN" NIL NIL NIL "7BIT" 12 0 NIL NIL NIL) 5 NIL NIL NIL)("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 83 (NIL NIL ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "kreata.ee")) ((NIL NIL "andris" "pangalink.net")) NIL NIL "NIL" NIL) ("TEXT" "PLAIN" NIL NIL NIL "7BIT" 12 0 NIL NIL NIL) 4 NIL NIL NIL)("TEXT" "HTML" ("CHARSET" "utf-8") NIL NIL "QUOTED-PRINTABLE" 19 0 NIL NIL NIL) "MIXED" ("BOUNDARY" "----mailcomposer-?=_1-1328088797399") NIL NIL))';
@@ -81,18 +97,19 @@ describe('imap-compiler', () => {
         ));
     it('IMAP Compiler: a sequence set that is not a string, number or Buffer is refused', async () => {
         // Writing nothing would leave the next argument in the sequence set's place
-        await assert.rejects(
-            (compiler as any)({
-                tag: '*',
-                command: 'CMD',
-                attributes: [{ type: 'SEQUENCE', value: { unexpected: true } }]
-            }),
+        assert.throws(
+            () =>
+                (compiler as any)({
+                    tag: '*',
+                    command: 'CMD',
+                    attributes: [{ type: 'SEQUENCE', value: { unexpected: true } }]
+                }),
             { code: 'InvalidSequenceSet' }
         );
     });
     it('IMAP Compiler: an empty or missing sequence set is refused', async () => {
         for (let value of ['', null, undefined]) {
-            await assert.rejects(compiler({ tag: 'A', command: 'UID FETCH', attributes: [{ type: 'SEQUENCE', value }, 'X'] }), { code: 'InvalidSequenceSet' });
+            assert.throws(() => compiler({ tag: 'A', command: 'UID FETCH', attributes: [{ type: 'SEQUENCE', value }, 'X'] }), { code: 'InvalidSequenceSet' });
         }
     });
     it('IMAP Compiler: a sequence set of 0 is written, not dropped', async () => {
@@ -741,8 +758,8 @@ describe('imap-compiler', () => {
 
     it('IMAP Compiler: a lone CR in the tag or command name is refused', async () => {
         // a bare CR ends the line for some servers, so it counts as a line terminator too
-        await assert.rejects(compiler({ tag: 'A\r', command: 'NOOP' }), { code: 'InvalidTokenValue' });
-        await assert.rejects(compiler({ tag: 'A', command: 'NOOP\rB' }), { code: 'InvalidTokenValue' });
+        assert.throws(() => compiler({ tag: 'A\r', command: 'NOOP' }), { code: 'InvalidTokenValue' });
+        assert.throws(() => compiler({ tag: 'A', command: 'NOOP\rB' }), { code: 'InvalidTokenValue' });
     });
     it('IMAP Compiler: logging shortens strings longer than 100 characters only', async () => {
         let s100 = 'x'.repeat(100);

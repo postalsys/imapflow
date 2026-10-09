@@ -10,7 +10,7 @@ import {
 } from '../tools.js';
 import { parseStatusList } from './status-fields.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError, type ImapFlowError } from '../errors.js';
 import type { ImapCompileNode, ImapResponse } from '../handler/types.js';
 import type { MailboxObject, StatusObject, StatusQuery } from '../types.js';
 
@@ -119,10 +119,7 @@ export default async function status(connection: ImapFlow, path: string | string
                 return false;
             });
             if (folders && !folders.length) {
-                let error: ImapFlowError = new Error(`Mailbox doesn't exist: ${path}`);
-                error.code = 'NotFound';
-                error.response = err;
-                throw error;
+                throw createImapError(`Mailbox doesn't exist: ${path}`, 'NotFound', { response: err });
             }
         }
 

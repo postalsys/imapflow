@@ -9,7 +9,7 @@ import { JPDecoder } from './jp-decoder.js';
 import iconv from 'iconv-lite';
 import type { Transform } from 'node:stream';
 import type { ImapFlow } from './imap-flow.js';
-import { ImapFlowErrorCode, type ConnectionErrorSite, type ImapFlowError } from './errors.js';
+import { createImapError, ImapFlowErrorCode, type ConnectionErrorSite, type ImapFlowError } from './errors.js';
 import type { ImapAttribute, ImapAttributeList, ImapAttributeNode, ImapCompileInput, ImapResponse } from './handler/types.js';
 import type {
     FetchMessageObject,
@@ -130,14 +130,8 @@ type MessageMap = Omit<FetchMessageObject, 'seq' | 'uid'> & { seq?: number | und
  * @param meta - Fields to stamp on the error
  * @returns The stamped error
  */
-export function buildConnectionError(cid: string, code: string, message: string, meta?: ConnectionErrorSite | undefined): ImapFlowError {
-    const error: ImapFlowError = new Error(message);
-    error.code = code;
-    error.cid = cid;
-    if (meta) {
-        Object.assign(error, meta);
-    }
-    return error;
+export function buildConnectionError(cid: string, code: ImapFlowErrorCode, message: string, meta?: ConnectionErrorSite | undefined): ImapFlowError {
+    return createImapError(message, code, { cid, ...meta });
 }
 
 /**
@@ -160,7 +154,8 @@ export function buildConnectionError(cid: string, code: string, message: string,
  * @returns A separate error describing the same failure at the new site
  */
 export function restampConnectionError(err: ImapFlowError, meta?: ConnectionErrorSite | undefined): ImapFlowError {
-    let error = buildConnectionError(err.cid as string, err.code as string, err.message, err);
+    // the original code is carried over unchanged, whatever its origin
+    let error = buildConnectionError(err.cid as string, err.code as ImapFlowErrorCode, err.message, err);
     for (let key of CONNECTION_ERROR_SITE_KEYS) {
         delete error[key];
     }
@@ -544,13 +539,14 @@ export function getTextValues(attributes: ImapAttributeList | undefined): string
  * @param response - Parsed IMAP server response
  * @returns Compiled response text, or false if no response
  */
+// Async although nothing in it awaits any more: `imapflow/lib/tools` deep imports may chain on the promise
 export async function getErrorText(response: ImapResponse | string | false | undefined): Promise<string | false> {
     if (!response) {
         return false;
     }
 
     try {
-        return (await compiler(response as ImapCompileInput)).toString();
+        return compiler(response as ImapCompileInput).toString();
     } catch {
         // The wire encoder refuses values that cannot be expressed as a valid IMAP
         // string, which is what keeps user-supplied data from breaking out of a
@@ -558,7 +554,7 @@ export async function getErrorText(response: ImapResponse | string | false | und
         // tolerates stray bytes inside an OK/NO/BAD atom, and those bytes then have
         // no valid re-encoding. This text is diagnostic, so fall back to the logging
         // encoder rather than replacing the server's error with an encoding failure.
-        return (await compiler(response as ImapCompileInput, { isLogging: true })).toString();
+        return compiler(response as ImapCompileInput, { isLogging: true }).toString();
     }
 }
 
@@ -796,6 +792,7 @@ export function mergeFetchRows(rows: FetchMessageObject[]): FetchMessageObject {
  * @param connection - Connection the response arrived on, decodes Gmail labels like mailbox names
  * @returns Formatted message object with properties like seq, uid, flags, envelope, etc.
  */
+// Async although nothing in it awaits any more: `imapflow/lib/tools` deep imports may chain on the promise
 export async function formatMessageResponse(
     untagged: ImapResponse,
     mailbox: MailboxObject,
@@ -825,11 +822,9 @@ export async function formatMessageResponse(
         let attribute = attributes[i];
         if (i % 2 === 0) {
             origin = false;
-            key = (
-                await compiler({
-                    attributes: [attribute]
-                })
-            )
+            key = compiler({
+                attributes: [attribute]
+            })
                 .toString()
                 .toLowerCase()
                 .replace(/<(\d+)(\.\d+)?>$/, (match, start: string) => {

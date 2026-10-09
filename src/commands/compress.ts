@@ -1,5 +1,5 @@
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError } from '../errors.js';
 
 /**
  * Requests DEFLATE compression from the server.
@@ -37,8 +37,7 @@ export default async function compress(connection: ImapFlow): Promise<boolean> {
     // back its unconsumed tail on unpipe so the transport can feed it into the
     // inflater - not something a command module can reach from here.
     if (response.hasTrailingData) {
-        let error: ImapFlowError = new Error('Server sent data between the COMPRESS response and the compression layer switch');
-        error.code = 'COMPRESS_TRAILING_DATA';
+        let error = createImapError('Server sent data between the COMPRESS response and the compression layer switch', 'COMPRESS_TRAILING_DATA');
         connection.log.error({ err: error, cid: connection.id });
         // Schedule the close before releasing parser backpressure, so the buffered
         // deflate-framed bytes cannot settle anything before teardown begins. This is

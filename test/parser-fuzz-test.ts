@@ -35,7 +35,8 @@ const frame = async (chunks: Buffer[], options = {}): Promise<Framed> => {
 const parse = (item: Framed['items'][number]): Promise<ImapResponse> => parser(item.payload, { literals: item.literals.slice() });
 
 // An error the parser or the stream is expected to raise carries a string code. Anything else
-// (TypeError, RangeError, a thrown non-Error) is a bug
+// (TypeError, RangeError, a thrown non-Error) is a bug. The parser re-raises such an exception as
+// ParserErrorInternal, so that code is a bug too
 const assertCodedError = (err: unknown, context: string) => {
     assert.ok(err instanceof Error, `${context}: thrown value is not an Error: ${String(err)}`);
     assert.ok(
@@ -43,6 +44,11 @@ const assertCodedError = (err: unknown, context: string) => {
         `${context}: ${err.constructor.name} escaped the parser: ${err.message}\n${err.stack}`
     );
     assert.equal(typeof (err as ImapFlowError).code, 'string', `${context}: error without a code: ${err.message}`);
+    assert.notEqual(
+        (err as ImapFlowError).code,
+        'ParserErrorInternal',
+        `${context}: unexpected exception inside the parser: ${err.message}\n${(err as ImapFlowError)._err?.stack}`
+    );
 };
 
 const show = (buf: Buffer): string => JSON.stringify(buf.toString('latin1').slice(0, 300));

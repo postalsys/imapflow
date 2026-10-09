@@ -6,7 +6,7 @@ import tls from 'node:tls';
 import { ConnectionDeadline } from './connection-deadline.js';
 import { clearTimer } from './tools.js';
 import type { InternalLogger } from './types.js';
-import type { ImapFlowError } from './errors.js';
+import { createImapError, type ImapFlowError, type ImapFlowErrorCode } from './errors.js';
 
 /**
  * A socket handed out by the proxy helpers, carrying the early error handler installed by
@@ -54,11 +54,7 @@ const redactUrl = (proxyUrl: URL): string => {
     return redacted.href;
 };
 
-const proxyError = (message: string, code?: string | undefined): ImapFlowError => {
-    let err: ImapFlowError = new Error(message);
-    err.code = code || 'ProxyError';
-    return err;
-};
+const proxyError = (message: string, code?: ImapFlowErrorCode | undefined): ImapFlowError => createImapError(message, code || 'ProxyError');
 
 // URL userinfo is percent-encoded, so it has to be decoded before it can be used as credentials.
 // A password containing a bare '%' is not valid percent-encoding and makes decodeURIComponent
@@ -453,7 +449,7 @@ const proxyConnection = async (
         // new URL() attaches the string it rejected to err.input, which here is the full proxy
         // endpoint including its password. Any logger that serializes error properties would
         // write that out in clear text, so the cause is reported without carrying the value.
-        throw proxyError('Invalid proxy URL', (err as ImapFlowError).code || 'ERR_INVALID_URL');
+        throw proxyError('Invalid proxy URL', ((err as ImapFlowError).code as ImapFlowErrorCode | undefined) || 'ERR_INVALID_URL');
     }
     let protocol = proxyUrl.protocol.replace(/:$/, '').toLowerCase();
 

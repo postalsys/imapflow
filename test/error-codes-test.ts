@@ -7,47 +7,31 @@ import { ImapFlowErrorCode } from '../src/imap-flow.js';
 
 const srcDir = fileURLToPath(new URL('../src/', import.meta.url));
 
-// Every literal error code the sources set: `.code = 'X'`, `.code = (...) || 'X'`,
-// createConnectionError('X', ...), fail('X', ...) in search-compiler.ts and proxyError(..., 'X')
-// or proxyError(..., ... || 'X').
-const collectCodes = (): Set<string> => {
-    const patterns = [
-        /\.code = (?:[^;]*\|\| )?'([A-Za-z0-9_]+)'/g,
-        /createConnectionError\('([A-Za-z0-9_]+)'/g,
-        /\bfail\('([A-Za-z0-9_]+)'/g,
-        /proxyError\([^;]*?(?:, |\|\| )'([A-Za-z0-9_]+)'\)/g
-    ];
-    const codes = new Set<string>();
-    for (const file of fs.readdirSync(srcDir, { recursive: true, encoding: 'utf-8' }).filter(name => name.endsWith('.ts'))) {
-        const source = fs.readFileSync(path.join(srcDir, file), 'utf-8');
-        for (const pattern of patterns) {
-            for (const match of source.matchAll(pattern)) {
-                codes.add(match[1]!);
-            }
-        }
-    }
-    return codes;
-};
-
-const found = collectCodes();
+// Every source file except errors.ts, which declares the codes
+const sources = fs
+    .readdirSync(srcDir, { recursive: true, encoding: 'utf-8' })
+    .filter(name => name.endsWith('.ts') && name !== 'errors.ts')
+    .map(name => fs.readFileSync(path.join(srcDir, name), 'utf-8'));
 
 describe('ImapFlowErrorCode', () => {
-    it('lists every error code the library sets', () => {
+    // createImapError() and the helpers built on it type their code as ImapFlowErrorCode, so the
+    // compiler checks those. What is left are the few errors that get their code assigned
+    // directly: `.code = 'X'` or `.code = (...) || 'X'`.
+    it('lists every error code the library assigns directly', () => {
         const listed = new Set<string>(Object.values(ImapFlowErrorCode));
-        const set = [...found].filter(code => !/^ParserError\d+$/.test(code));
-        assert.ok(set.length > 20, 'the scan found the error codes');
-        for (const code of set) {
+        const assigned = sources.flatMap(source => [...source.matchAll(/\.code = (?:[^;]*\|\| )?'([A-Za-z0-9_]+)'/g)].map(match => match[1]!));
+        assert.ok(assigned.length > 0, 'the scan found the directly assigned codes');
+        for (const code of assigned) {
             assert.ok(listed.has(code), `${code} is set in src/ but missing from ImapFlowErrorCode`);
         }
     });
 
-    it('lists no code the library does not set', () => {
+    it('lists no code the library does not use', () => {
         for (const code of Object.values(ImapFlowErrorCode)) {
-            // set through a template literal
-            if (code.startsWith('ClosedAfterConnect')) {
-                continue;
-            }
-            assert.ok(found.has(code), `${code} is listed but not set anywhere in src/`);
+            assert.ok(
+                sources.some(source => source.includes(`'${code}'`)),
+                `${code} is listed but not used anywhere in src/`
+            );
         }
     });
 
@@ -55,10 +39,5 @@ describe('ImapFlowErrorCode', () => {
         for (const [key, value] of Object.entries(ImapFlowErrorCode)) {
             assert.equal(value, key);
         }
-    });
-
-    it('covers both ClosedAfterConnect variants', () => {
-        const source = fs.readFileSync(path.join(srcDir, 'imap-flow.ts'), 'utf-8');
-        assert.ok(source.includes("`ClosedAfterConnect${this.secureConnection ? 'TLS' : 'Text'}`"));
     });
 });

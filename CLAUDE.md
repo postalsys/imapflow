@@ -129,7 +129,7 @@ stay CommonJS-compatible:
 - Never use emojis in code or documentation, only printable ASCII characters.
 - Use a single hyphen-minus (`-`) as a dash in user-facing strings and docs. Never use double hyphens (`--`), em dashes, or en dashes.
 - Every options object a method reads has an exported interface in `src/types.ts` (or next to the code that reads it, for internal ones), and every optional property carries `| undefined`.
-- Errors with extra properties are typed as `ImapFlowError` from `src/errors.ts`: `let err: ImapFlowError = new Error('...'); err.code = 'X';`. Do not invent new ad-hoc error properties without adding them there.
+- Coded errors are built with `createImapError(message, code, props?)` from `src/errors.ts`, which returns an `ImapFlowError` and type-checks `code` against `ImapFlowErrorCode` (or a numbered `ParserErrorN`). A new code gets an entry in `ImapFlowErrorCode`. Do not invent new ad-hoc error properties without adding them to `ImapFlowError`.
 - Prefer small, surgical diffs. The codebase is mature and load-bearing - avoid drive-by refactors or comment churn outside the scope of the change.
 - When composing git commit messages, do not include Claude as a co-contributor.
 - Use Conventional Commit prefixes (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `ci:`, ...). Versioning and the changelog are driven by these prefixes via release-please.

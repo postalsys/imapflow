@@ -37,6 +37,8 @@ export const ImapFlowErrorCode = {
     // response parsing and size limits
     ParserError: 'ParserError',
     ParserErrorExchange: 'ParserErrorExchange',
+    // an unexpected exception inside the parser, re-raised with a code; a parser bug
+    ParserErrorInternal: 'ParserErrorInternal',
     MAX_IMAP_NESTING_REACHED: 'MAX_IMAP_NESTING_REACHED',
     LineTooLarge: 'LineTooLarge',
     LiteralTooLarge: 'LiteralTooLarge',
@@ -65,6 +67,9 @@ export const ImapFlowErrorCode = {
 
 /** One of the {@link ImapFlowErrorCode} values */
 export type ImapFlowErrorCode = (typeof ImapFlowErrorCode)[keyof typeof ImapFlowErrorCode];
+
+/** A numbered parser error code, `ParserError1` and up */
+export type ParserErrorCode = `ParserError${number}`;
 
 /**
  * An Error raised by ImapFlow, with the extra properties the library attaches to describe
@@ -147,4 +152,27 @@ export class AuthenticationFailure extends Error implements ImapFlowError {
     /** Text of the server's error response */
     declare response?: string | undefined;
     declare oauthError?: any;
+}
+
+/**
+ * Creates an {@link ImapFlowError} with a code and optional extra properties. The code is
+ * checked by the compiler against {@link ImapFlowErrorCode}, so a typo or an undeclared
+ * code fails the build instead of reaching consumers.
+ *
+ * @param message - The error message
+ * @param code - The error code
+ * @param props - Extra properties to set on the error
+ * @returns The error, ready to throw or reject with
+ */
+export function createImapError(
+    message: string,
+    code: ImapFlowErrorCode | ParserErrorCode,
+    props?: Omit<ImapFlowError, 'name' | 'message' | 'stack' | 'code'> | undefined
+): ImapFlowError {
+    const error: ImapFlowError = new Error(message);
+    error.code = code;
+    if (props) {
+        Object.assign(error, props);
+    }
+    return error;
 }

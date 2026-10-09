@@ -14,7 +14,7 @@ import { LimitedPassthrough, normalizeByteLimit } from './limited-passthrough.js
 // What a wait on the head stream listens for: it can take more input, it failed, or it went
 // away (a consumer destroying it closes it without a 'drain')
 const DRAIN_WAIT_EVENTS = ['drain', 'error', 'close'];
-import type { ImapFlowError } from './errors.js';
+import { createImapError } from './errors.js';
 import { getDecoder, isUnsafeKey } from './tools.js';
 import type { ImapFlow } from './imap-flow.js';
 import type {
@@ -130,10 +130,7 @@ async function fetchExpected(
             cid: client.id
         });
         if (attempt >= MAX_FETCH_ATTEMPTS) {
-            let err: ImapFlowError = new Error('Server kept answering with data of another request');
-            err.code = 'DownloadIncomplete';
-            err.cid = client.id;
-            throw err;
+            throw createImapError('Server kept answering with data of another request', 'DownloadIncomplete', { cid: client.id });
         }
     }
 }
@@ -611,11 +608,7 @@ export async function downloadMessage(
                 // Loud on purpose. Everything written downstream by this point holds
                 // duplicated content, and a quiet stop is indistinguishable from a clean EOF,
                 // so the consumer would store a corrupt body believing it intact.
-                let err: ImapFlowError = new Error('Download exceeded the expected message size');
-                err.code = 'DownloadOverflow';
-                err.maxSize = maxTotalBytes;
-                err.cid = client.id;
-                throw err;
+                throw createImapError('Download exceeded the expected message size', 'DownloadOverflow', { maxSize: maxTotalBytes, cid: client.id });
             }
 
             let { response, chunk } = await getNextPart();
@@ -628,10 +621,7 @@ export async function downloadMessage(
                 // The message is gone mid-download (expunged by another client, or the
                 // mailbox was closed). Ending the stream here would pass the truncated body
                 // off as complete, so the consumer is told the same way as for an overflow.
-                let err: ImapFlowError = new Error('Message disappeared before the download completed');
-                err.code = 'DownloadIncomplete';
-                err.cid = client.id;
-                throw err;
+                throw createImapError('Message disappeared before the download completed', 'DownloadIncomplete', { cid: client.id });
             }
 
             if (!chunk) {
