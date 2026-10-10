@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.4.0](https://github.com/postalsys/imapflow/compare/v2.3.0...v2.4.0) (2026-10-10)
+
+
+### Features
+
+* re-raise unexpected parser exceptions as coded ParserErrorInternal errors ([dda3f7e](https://github.com/postalsys/imapflow/commit/dda3f7e71e3c227479763a8c6af617fd4f57679a))
+
+
+### Bug Fixes
+
+* keep append literals in sync with their data and fail downloads cleanly ([752248e](https://github.com/postalsys/imapflow/commit/752248e07fd8930cb0943287c32e3bab88484d80))
+
 ## [2.3.0](https://github.com/postalsys/imapflow/compare/v2.2.11...v2.3.0) (2026-10-08)
 
 
