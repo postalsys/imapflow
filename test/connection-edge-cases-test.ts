@@ -4,7 +4,7 @@ import { ImapFlow } from '../src/imap-flow.js';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import type { MailboxObject } from '../src/types.js';
-import { makeClient, makeLoggingClient, makeIdleReadyClient } from './fixtures/test-client.js';
+import { makeClient, makeLoggingClient, makeIdleReadyClient, makeSocketStub } from './fixtures/test-client.js';
 
 // Helper to create a mock client with compression enabled
 async function setupCompressedClient() {
@@ -467,6 +467,37 @@ describe('connection-edge-cases', () => {
 
         assert.ok(Buffer.isBuffer(writtenData));
         assert.ok((writtenData as any).includes(Buffer.from('STRING_TEST\r\n')));
+    });
+    it('Connection Edge: a large Buffer gets its CRLF as a separate write instead of a copy', () => {
+        let client = makeClient({ logRaw: true });
+        let traces: any[] = [];
+        client.log.trace = (entry: any) => traces.push(entry);
+
+        let writes: Buffer[] = [];
+        client.socket = makeSocketStub();
+        client.writeSocket = { destroyed: false, write: (data: Buffer) => writes.push(data) };
+        client.commandParts = [];
+        // not a frame of an authentication exchange, so the raw log shows the data
+        client.rawSensitiveCommand = false;
+
+        let literal = Buffer.alloc(100 * 1024, 0x61);
+        client.write(literal);
+
+        assert.equal(writes.length, 2);
+        assert.equal(writes[0], literal, 'the literal itself is written, not a copy of it');
+        assert.equal(writes[1].toString(), '\r\n');
+        assert.equal(client.stats().sent, literal.length + 2);
+        // the raw log has an entry per socket write
+        assert.deepEqual(
+            traces.filter(entry => entry.msg === 'write to socket').map(entry => entry.data),
+            writes.map(data => data.toString('base64'))
+        );
+
+        // a literal that more parts follow gets no CRLF at all
+        writes = [];
+        client.commandParts = [Buffer.from('more')];
+        client.write(literal);
+        assert.deepEqual(writes, [literal]);
     });
     it('Connection Edge: Invalid write data type', () => {
         let client: any = new ImapFlow({

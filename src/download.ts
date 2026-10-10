@@ -316,6 +316,12 @@ export async function downloadMessage(
         let response = await fetchExpected(client, range, query, downloadOptions, expected);
 
         if (!response) {
+            // An empty answer also comes from a connection that closed while the consumer was
+            // paused between chunks (fetchOne() finds no mailbox then), and that is not a
+            // missing message: a caller that retries would skip it
+            if (!client.usable) {
+                throw client.createNoConnectionError(false, { rejectedFrom: 'download' });
+            }
             return { response: false, chunk: false };
         }
 
@@ -474,13 +480,20 @@ export async function downloadMessage(
     let limiters: Array<{ limited?: boolean | undefined }> = [];
     let isLimited = () => limiters.some(entry => entry.limited);
 
+    // Every stage after the head, so a download that ends early can release all of them
+    let stages: Transform[] = [];
+
     // Appending a stage means forwarding the current tail's errors to it before piping, so a
-    // failure anywhere reaches the stream the caller is reading
+    // failure anywhere reaches the stream the caller is reading. The stage is destroyed with
+    // the error rather than only emitting it: pipe() does not end its destination on a source
+    // error, so a consumer that only listens for 'finish' or 'close' (a plain .pipe() into a
+    // file) would otherwise wait forever.
     let pipeStage = <T extends Transform>(stage: T): T => {
         output.on('error', err => {
-            stage.emit('error', err);
+            stage.destroy(err);
         });
         output = output.pipe(stage);
+        stages.push(stage);
         return stage;
     };
 
@@ -529,8 +542,8 @@ export async function downloadMessage(
     // Cleanup function
     const cleanup = () => {
         fetchAborted = true;
-        if (stream && !stream.destroyed) {
-            stream.destroy();
+        for (let entry of [stream, ...stages]) {
+            entry.destroy();
         }
     };
 
@@ -655,7 +668,7 @@ export async function downloadMessage(
         fetchAllParts(head)
             .catch(err => {
                 if (!fetchAborted && stream && !stream.destroyed) {
-                    stream.emit('error', err);
+                    stream.destroy(err);
                     /* c8 ignore start */ // the else logs when a fetch error arrives after the stream was already torn down (timing-dependent)
                 } else {
                     // Log when error cannot be emitted to stream
@@ -679,7 +692,7 @@ export async function downloadMessage(
             // above rejects a promise nobody holds and takes the process down on
             // unhandledRejection. Reaching it always means an invariant broke - the head
             // stream kept pipeStage()'s error forwarder for the life of the download, so
-            // emit('error') above has somewhere to go - which is why it logs at error even
+            // destroy(err) above has somewhere to go - which is why it logs at error even
             // for a routine-looking connection code.
             .catch(err => client.log.error({ msg: 'Failed to fail the download stream', err, cid: client.id }));
     };

@@ -4,7 +4,7 @@ import { ImapFlow } from '../src/imap-flow.js';
 import libbase64 from 'libbase64';
 import libqp from 'libqp';
 import libmime from 'libmime';
-import { finished } from 'node:stream';
+import { finished, Transform } from 'node:stream';
 import { once } from 'node:events';
 import { chunkedFetchOne, installRejectionDetector, slowConsumer } from './fixtures/test-client.js';
 
@@ -558,6 +558,80 @@ describe('imap-flow-fetch-download', () => {
         await new Promise(r => setImmediate(r));
         assert.equal(calls, 2);
         assert.deepEqual(errors, [], 'an aborted download is not reported as incomplete');
+    });
+    it('Download: a connection lost between chunks is reported as a lost connection, not a vanished message', async () => {
+        // The consumer was paused while the connection closed, so the next chunk finds no
+        // mailbox. That is not an expunge: a caller that skips DownloadIncomplete messages would
+        // skip one that is still there instead of reconnecting.
+        let client = makeClient();
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            if (calls === 1) {
+                return { uid: 1, size: 100, source: Buffer.from('ABCD') };
+            }
+            // what close() leaves behind; the real fetchOne() returns undefined without a mailbox
+            client.usable = false;
+            client.mailbox = false;
+            return undefined;
+        };
+        let { content } = await client.download('1', false as any, { chunkSize: 4 });
+        await assert.rejects(collect(content), (err: any) => err.code === 'NoConnection');
+        assert.equal(calls, 2, 'a missing connection is not asked again');
+    });
+    it('Download: a failed download destroys the content stream, so a pipe() destination learns of it', { timeout: 5000 }, async () => {
+        // Emitting the error left the stream open: it never closed, and a plain .pipe() into a
+        // file stream waited forever without any signal
+        let client = makeClient();
+        let mime = Buffer.from('Content-Type: text/plain; charset=iso-8859-1; format=flowed\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n');
+        let calls = 0;
+        client.fetchOne = async () => {
+            calls++;
+            if (calls === 1) {
+                let bodyParts = new Map();
+                bodyParts.set('2.mime', mime);
+                bodyParts.set('2', Buffer.from('abcd'));
+                return { uid: 1, size: 1000, bodyParts };
+            }
+            throw client.createNoConnectionError();
+        };
+        let { content }: any = await client.download('1', '2', { chunkSize: 4 });
+        let errors: any[] = [];
+        content.on('error', (err: any) => errors.push(err));
+        content.pipe(slowConsumer());
+        // once() would reject on the 'error' that comes first
+        await new Promise(resolve => content.once('close', resolve));
+        assert.deepEqual(
+            errors.map(err => err.code),
+            ['NoConnection'],
+            'the error is reported once'
+        );
+        assert.ok(content.destroyed);
+    });
+    it('Download: a consumer that gives up releases every stage of the decoder pipeline', async t => {
+        let destroyed = new Set<any>();
+        let destroy = Transform.prototype.destroy;
+        t.mock.method(Transform.prototype, 'destroy', function (this: any, ...args: any[]) {
+            destroyed.add(this);
+            return destroy.apply(this, args as any);
+        });
+
+        let client = makeClient();
+        let mime = Buffer.from('Content-Type: text/plain; charset=iso-8859-1; format=flowed\r\nContent-Transfer-Encoding: base64\r\n\r\n');
+        client.fetchOne = async () => {
+            let bodyParts = new Map();
+            bodyParts.set('2.mime', mime);
+            bodyParts.set('2', Buffer.from('YWJj'));
+            return { uid: 1, size: 1000, bodyParts };
+        };
+        let { content }: any = await client.download('1', '2', { chunkSize: 4 });
+        content.destroy();
+        await once(content, 'close');
+        let stages = [...destroyed].filter(entry => entry !== content);
+        // the head (base64 decoder), the flowed limiter, the flowed decoder and the charset
+        // decoder; before, only the head was
+        assert.equal(stages.length, 4);
+        assert.ok(stages.every(entry => entry.destroyed));
     });
     it('Download: a missing chunk body still ends the stream cleanly', async () => {
         // The message exists but the window past the end comes back without the section, which

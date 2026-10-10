@@ -51,6 +51,42 @@ describe('commands/append', () => {
         assert.ok(Buffer.isBuffer(contentAttr.value));
         assert.equal((contentAttr as any).value.toString(), 'Test message');
     });
+    it('Commands: append sends a Uint8Array as the bytes it covers, without copying them', async () => {
+        let contentAttr: any = null;
+        const connection = createMockConnection({
+            state: 2,
+            mailbox: { path: 'OtherFolder' },
+            exec: async (cmd: any, attrs: any) => {
+                contentAttr = attrs.find((a: any) => a && a.type === 'LITERAL');
+                return { next: () => {}, response: { attributes: [] } };
+            }
+        });
+
+        // a view into a larger buffer, as TextEncoder output or a subarray gives
+        const padded = new TextEncoder().encode('xxTest messageyy');
+        const view = padded.subarray(2, padded.length - 2);
+        await appendCommand(connection, 'INBOX', view);
+        assert.ok(Buffer.isBuffer(contentAttr.value));
+        assert.equal(contentAttr.value.toString(), 'Test message');
+        assert.equal(contentAttr.value.buffer, padded.buffer, 'the same memory, not a copy');
+    });
+    it('Commands: append refuses content that is not bytes', async () => {
+        let execCalled = false;
+        const connection = createMockConnection({
+            state: 2,
+            exec: async () => {
+                execCalled = true;
+                return { next: () => {}, response: { attributes: [] } };
+            }
+        });
+
+        // A stream or a plain object used to go out as a literal announced with the size of its
+        // stringified form and no data, which left the session waiting for the missing bytes
+        for (const content of [{ pipe: () => {} }, 12345, null, [1, 2, 3]]) {
+            await assert.rejects(appendCommand(connection, 'INBOX', content as any), (err: any) => err.code === 'InvalidMessageContent');
+        }
+        assert.equal(execCalled, false);
+    });
     it('Commands: append skips when not authenticated', async () => {
         const connection = createMockConnection({ state: 1 }); // NOT_AUTHENTICATED
 

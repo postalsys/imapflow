@@ -141,8 +141,19 @@ describe('imap-flow-compress', () => {
         // through the compression pump so its buffer overflows and readNext waits for 'drain'.
         client.state = client.states.AUTHENTICATED;
         client.commandParts = [];
-        client.write(Buffer.alloc(128 * 1024, 0x61));
+        let literal = Buffer.alloc(128 * 1024, 0x61);
+        let deflated: Buffer[] = [];
+        let deflateWrite = client._deflate.write.bind(client._deflate);
+        client._deflate.write = (chunk: Buffer, ...rest: any[]) => {
+            deflated.push(chunk);
+            return deflateWrite(chunk, ...rest);
+        };
+        client.write(literal);
         await new Promise(r => setTimeout(r, 50));
+        // The literal and its CRLF are separate writes, and the pump hands them to deflate as
+        // they are: reading the PassThrough in byte mode joined them into a copy of the literal
+        assert.equal(deflated[0], literal);
+        assert.equal(Buffer.concat(deflated).length, literal.length + 2);
 
         // Each stream owns and reports its own lifecycle: the compression PassThrough used to proxy
         // the raw socket's `destroyed` getter, which made close() skip destroying it.

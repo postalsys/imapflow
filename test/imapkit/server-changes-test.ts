@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { pipeline } from 'node:stream/promises';
 import { closed, flagList, rfc822, startImapKit, within } from '../fixtures/imapkit.js';
+import { slowConsumer } from '../fixtures/test-client.js';
 
 // Changes made on the server, outside any IMAP session, through the ImapKit control API: they
 // reach the client the way a change by another session would (EXISTS, EXPUNGE or VANISHED,
@@ -183,6 +185,28 @@ describe('imapkit server changes: unsolicited output', () => {
         await closing;
         assert.equal(client.byeReason, 'Server maintenance');
     });
+
+    it('a disconnect while a download waits for its consumer fails the download as a lost connection', async t => {
+        const raw = rfc822('large', 'x'.repeat(300 * 1024));
+        const kit = await startImapKit(t, { server: { plugins: PLUGINS, storage: { INBOX: { messages: [{ raw }] } } } });
+        const client = await kit.connect();
+        await client.mailboxOpen('INBOX');
+        // nothing reads the content yet, so the download stops after the head chunk
+        const { content } = await client.download('1', undefined, { uid: true, chunkSize: 64 * 1024 });
+        const closing = closed(client);
+        kit.control.disconnect({ user: 'testuser' });
+        await closing;
+
+        // Before, the next chunk found no mailbox and was reported as an expunged message
+        // (DownloadIncomplete). The pipeline rejecting also shows the content stream was
+        // destroyed: a plain pipe() destination would otherwise wait forever.
+        const received: Buffer[] = [];
+        await assert.rejects(pipeline(content, slowConsumer({ onChunk: chunk => received.push(chunk) })), (err: any) => err.code === 'NoConnection');
+        assert.ok(content.destroyed);
+        // what did arrive is the start of the message
+        const got = Buffer.concat(received);
+        assert.ok(Buffer.from(raw).subarray(0, got.length).equals(got));
+    });
 });
 
 describe('imapkit server changes: what the client stored', () => {
@@ -205,7 +229,13 @@ describe('imapkit server changes: what the client stored', () => {
         it(`append stores the exact bytes and flags (${profile.name})`, async t => {
             const kit = await startImapKit(t, { server: { plugins: profile.plugins } });
             const client = await kit.connect();
-            for (const source of [rfc822('plain'), EIGHT_BIT]) {
+            // A Uint8Array view into a larger buffer (fetch().arrayBuffer(), TextEncoder) is sent as
+            // the bytes it covers; it used to be announced with the size of its stringified form
+            // and sent as nothing. The large message is written without copying it to append the
+            // closing CRLF.
+            const padded = new TextEncoder().encode('xx' + rfc822('view') + 'yy');
+            const view = padded.subarray(2, padded.length - 2);
+            for (const source of [rfc822('plain'), EIGHT_BIT, view, rfc822('large', 'x'.repeat(200 * 1024))]) {
                 const appended = await client.append('INBOX', source, ['\\Seen', '$Label'], new Date('2026-05-01T10:20:30Z'));
                 const stored = kit.control.getMessage('INBOX', appended.uid);
                 assert.ok(stored.raw!.equals(Buffer.from(source)), 'the stored message is byte for byte what was appended');

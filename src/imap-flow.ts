@@ -130,6 +130,11 @@ const RAW_SENSITIVE_COMMANDS = new Set(['LOGIN', 'AUTHENTICATE']);
 // about the length of what it replaced.
 const RAW_HIDDEN_PLACEHOLDER = Buffer.from('(* value hidden *)\r\n').toString('base64');
 
+// From this size up, a Buffer written as the last part of a command gets its CRLF as a socket
+// write of its own instead of being copied to append it (see write())
+const SEPARATE_LINE_BREAK_SIZE = 64 * 1024;
+const CRLF = Buffer.from('\r\n');
+
 // Servers, matched by the name in their ID response, that advertise IMAP4rev2 next to
 // IMAP4rev1 and accept ENABLE IMAP4rev2, but misbehave once it is enabled. ENABLE cannot
 // be undone (RFC 5161), so these are kept in IMAP4rev1 mode from the start. Strato's
@@ -1025,43 +1030,47 @@ export class ImapFlow extends EventEmitter {
         // commandParts holds the remaining parts (literal data, continuation); the CRLF
         // delimiter is only added when no more parts remain (the command is complete).
         let addLineBreak = !this.commandParts.length;
-        let data: Buffer;
+        // What goes to the socket, one write per entry. A large Buffer (the data of a literal)
+        // gets its CRLF as a write of its own, as concatenating would copy all of it.
+        let frames: Buffer[];
         if (typeof chunk === 'string') {
             if (addLineBreak) {
                 chunk += '\r\n';
             }
-            data = Buffer.from(chunk, 'binary');
+            frames = [Buffer.from(chunk, 'binary')];
         } else if (Buffer.isBuffer(chunk)) {
-            if (addLineBreak) {
-                data = Buffer.concat([chunk, Buffer.from('\r\n')]);
+            if (!addLineBreak) {
+                frames = [chunk];
             } else {
-                data = chunk;
+                frames = chunk.length >= SEPARATE_LINE_BREAK_SIZE ? [chunk, CRLF] : [Buffer.concat([chunk, CRLF])];
             }
         } else {
             return false;
         }
 
-        if (this.logRaw) {
-            // Client frames of an authentication exchange carry credentials: the LOGIN
-            // arguments, and for AUTHENTICATE also the continuation writes (SASL PLAIN
-            // response, AUTH=LOGIN password, OAuth token payload) that bypass send(). The
-            // parsed command log masks these, so the raw log must withhold them too, but
-            // `data` still carries the placeholder rather than being dropped - the field is
-            // part of the documented log format and consumers decode it unconditionally.
-            this.log.trace({
-                src: 'c',
-                msg: 'write to socket',
-                data: this.rawSensitiveCommand ? RAW_HIDDEN_PLACEHOLDER : data.toString('base64'),
-                ...(this.rawSensitiveCommand ? { hidden: true } : {}),
-                compress: !!this._deflate,
-                secure: !!this.secureConnection,
-                cid: this.id
-            });
+        for (let data of frames) {
+            if (this.logRaw) {
+                // Client frames of an authentication exchange carry credentials: the LOGIN
+                // arguments, and for AUTHENTICATE also the continuation writes (SASL PLAIN
+                // response, AUTH=LOGIN password, OAuth token payload) that bypass send(). The
+                // parsed command log masks these, so the raw log must withhold them too, but
+                // `data` still carries the placeholder rather than being dropped - the field is
+                // part of the documented log format and consumers decode it unconditionally.
+                this.log.trace({
+                    src: 'c',
+                    msg: 'write to socket',
+                    data: this.rawSensitiveCommand ? RAW_HIDDEN_PLACEHOLDER : data.toString('base64'),
+                    ...(this.rawSensitiveCommand ? { hidden: true } : {}),
+                    compress: !!this._deflate,
+                    secure: !!this.secureConnection,
+                    cid: this.id
+                });
+            }
+
+            this.writeBytesCounter += data.length;
+
+            (this.writeSocket as WriteSocket).write(data);
         }
-
-        this.writeBytesCounter += data.length;
-
-        (this.writeSocket as WriteSocket).write(data);
     }
 
     /**
@@ -2099,7 +2108,10 @@ export class ImapFlow extends EventEmitter {
         // to call deflate.flush() after each IMAP command to push all pending
         // compressed bytes to the server immediately (IMAP is request-response).
         const writeSocket: WriteSocket = new PassThrough({
-            highWaterMark: 64 * 1024 // 64KB buffer limit to prevent excessive memory usage
+            highWaterMark: 64 * 1024, // 64KB buffer limit to prevent excessive memory usage
+            // read() hands out each written chunk as is: in byte mode it joins whatever is
+            // queued into a new Buffer, which copies every large literal once more
+            readableObjectMode: true
         });
         this.writeSocket = writeSocket;
 
@@ -3866,7 +3878,7 @@ export class ImapFlow extends EventEmitter {
      * Appends a new message to a mailbox
      *
      * @param path Mailbox path to upload the message to (unicode string). If value is an array then it is joined using current delimiter symbols. Namespace prefix is added automatically if required.
-     * @param content RFC822 formatted email message
+     * @param content RFC822 formatted email message, as a Buffer, Uint8Array or string
      * @param flags an array of flags to be set for the uploaded message
      * @param idate internal date to be set for the message
      * @returns info about uploaded message
@@ -3876,7 +3888,7 @@ export class ImapFlow extends EventEmitter {
      */
     async append(
         path: string | string[],
-        content: string | Buffer,
+        content: string | Buffer | Uint8Array,
         flags?: string[] | undefined,
         idate?: Date | string | undefined
     ): Promise<AppendResponseObject | false> {
@@ -4228,7 +4240,8 @@ export class ImapFlow extends EventEmitter {
      * // download body part nr '1.2' from latest message
      * let download = await client.download('*', '1.2');
      * if (download.content) {
-     *     download.content.pipe(fs.createWriteStream(download.meta.filename));
+     *     // pipeline() rejects when the download fails, a plain .pipe() would not report it
+     *     await stream.promises.pipeline(download.content, fs.createWriteStream(download.meta.filename));
      * }
      */
     async download(range: SequenceString, part?: string | undefined, options?: DownloadOptions | undefined): Promise<DownloadObject | DownloadNotFound> {

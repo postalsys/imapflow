@@ -51,7 +51,7 @@ export default async function parser(command: Buffer | string, options?: ParserO
     // Workaround for buggy IMAP servers that pad responses with leading NUL (\x00) bytes.
     // Some servers (observed in the wild) prepend null bytes to their output, which would
     // cause parsing to fail. We strip them and note how many were removed for diagnostics.
-    if (command[0] === 0) {
+    if (Buffer.isBuffer(command) && command[0] === 0) {
         // find the first non null byte and trim
         let firstNonNull = -1;
         for (let i = 0; i < command.length; i++) {
@@ -64,7 +64,7 @@ export default async function parser(command: Buffer | string, options?: ParserO
             // All bytes are null, treat as a BAD response
             return { tag: '*', command: 'BAD', attributes: [] };
         }
-        command = command.slice(firstNonNull);
+        command = command.subarray(firstNonNull);
         nullBytesRemoved = firstNonNull;
     }
 

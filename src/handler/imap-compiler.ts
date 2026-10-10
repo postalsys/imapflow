@@ -206,6 +206,11 @@ function compiler(response: ImapCompileInput, options?: CompilerOptions | undefi
                 if (isLogging) {
                     resp.push(emitEntry(logPlaceholder((node.value as string | Buffer).length, 'literal'))!);
                 } else {
+                    // The size marker must match the bytes emitEntry() writes, and it writes
+                    // nothing for a value that is not a Buffer or a string
+                    if (node.value && !Buffer.isBuffer(node.value) && typeof node.value !== 'string') {
+                        throw createImapError('Literal value must be a Buffer or a string', 'InvalidTokenValue');
+                    }
                     // The literal size marker counts octets - string values are written as
                     // UTF-8, so their UTF-16 .length would undercount multi-byte characters
                     let literalLength = !node.value ? 0 : Buffer.isBuffer(node.value) ? node.value.length : Buffer.byteLength(node.value.toString());
@@ -349,7 +354,9 @@ function compiler(response: ImapCompileInput, options?: CompilerOptions | undefi
         respParts.push(resp);
     }
 
-    const compiled: Buffer[] = respParts.map(part => Buffer.concat(part));
+    // A part with a single entry (the data of a synchronizing literal) is used as is: copying a
+    // large message only to send it doubles its memory
+    const compiled: Buffer[] = respParts.map(part => (part.length === 1 ? part[0] : Buffer.concat(part)));
 
     // without asArray there is a single part, returned as is instead of copied
     return asArray ? compiled : compiled.length === 1 ? compiled[0] : Buffer.concat(compiled);

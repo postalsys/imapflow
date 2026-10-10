@@ -106,26 +106,34 @@ describe('handler-branches', () => {
         assert.equal(out[1], big.toString());
     });
 
-    // Synchronizing literal whose value is not a recognized type -> formatRespEntry(value, true)
-    // returns null, so `|| []` kicks in (line 156 right side) and the seeded resp is empty.
-    it('imap-compiler: synchronizing literal with non-buffer value seeds empty segment', async () => {
-        let out = (
-            await (compiler as any)(
-                {
-                    tag: '*',
-                    command: 'CMD',
-                    // value is an object that is neither string/number/Buffer, so the size
-                    // marker derives from the UTF-8 byte length of its stringified form
-                    // ('[object Object]', 15 bytes) while formatRespEntry(value, true)
-                    // returns null -> the seeded resp falls back to [] (line 156 right side).
-                    attributes: [{ type: 'LITERAL', value: { length: 10 } }]
-                },
-                { asArray: true }
-            )
-        ).map((entry: any) => entry.toString());
-        // Only the header segment is emitted; the empty seeded data segment is dropped
-        // because `if (resp.length)` is false at the end.
-        assert.deepEqual(out, ['* CMD {15}\r\n']);
+    // A literal value that is neither a Buffer nor a string would be announced with the size of
+    // its stringified form while emitEntry() writes no bytes for it, desynchronizing the session
+    // (a Uint8Array passed to append() did exactly that). The compiler refuses it instead.
+    it('imap-compiler: literal with a non-buffer value is refused', async () => {
+        for (let value of [{ length: 10 }, new Uint8Array([1, 2, 3])]) {
+            for (let opts of [{ asArray: true }, { asArray: true, literalPlus: true }, {}]) {
+                await assert.rejects(
+                    async () => (compiler as any)({ tag: '*', command: 'CMD', attributes: [{ type: 'LITERAL', value }] }, opts),
+                    (err: any) => err.code === 'InvalidTokenValue'
+                );
+            }
+        }
+    });
+
+    // An empty synchronizing literal has no data segment: emitEntry() yields nothing for null
+    it('imap-compiler: synchronizing literal with a null value has no data segment', async () => {
+        let out = (await (compiler as any)({ tag: '*', command: 'CMD', attributes: [{ type: 'LITERAL', value: null }] }, { asArray: true })).map((entry: any) =>
+            entry.toString()
+        );
+        assert.deepEqual(out, ['* CMD {0}\r\n']);
+    });
+
+    it('imap-compiler: the data of a synchronizing literal is returned as is, not copied', async () => {
+        let big = Buffer.alloc(8000, 0x61);
+        let out = await (compiler as any)({ tag: '*', command: 'CMD', attributes: [{ type: 'LITERAL', value: big }] }, { asArray: true });
+        assert.equal(out.length, 2);
+        assert.equal(out[0].toString(), '* CMD {8000}\r\n');
+        assert.equal(out[1], big);
     });
 
     // STRING node with falsy value -> `(node.value || '')` right side (line 165).

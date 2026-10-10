@@ -15,7 +15,7 @@ import {
     logConnectionError
 } from '../tools.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError, type ImapFlowError } from '../errors.js';
 import type { ImapCompileNode, ImapResponse } from '../handler/types.js';
 import type { AppendResponseObject } from '../types.js';
 
@@ -42,7 +42,7 @@ export interface AppendResult extends AppendResponseObject {
 export default async function append(
     connection: ImapFlow,
     destination: string | string[],
-    content: Buffer | string,
+    content: Buffer | Uint8Array | string,
     flags?: string | string[] | undefined,
     idate?: Date | string | false | undefined
 ): Promise<AppendResult | undefined> {
@@ -51,15 +51,23 @@ export default async function append(
         return;
     }
 
+    // The literal size marker is announced from these bytes, so anything that is not
+    // bytes (a Readable, a plain object) is refused here instead of desyncing the session
+    let message: Buffer;
     if (typeof content === 'string') {
-        content = Buffer.from(content);
+        message = Buffer.from(content);
+    } else if (content instanceof Uint8Array) {
+        // a Buffer as is, any other Uint8Array as a view over the same memory, not a copy
+        message = Buffer.isBuffer(content) ? content : Buffer.from(content.buffer, content.byteOffset, content.byteLength);
+    } else {
+        throw createImapError('Message content must be a Buffer, Uint8Array or string', 'InvalidMessageContent');
     }
 
     // APPENDLIMIT capability (RFC 7889): server may advertise the maximum message
     // size it accepts. Check before sending to avoid a wasted round-trip.
     if (connection.capabilities.has('APPENDLIMIT')) {
         let appendLimit = connection.capabilities.get('APPENDLIMIT');
-        if (typeof appendLimit === 'number' && appendLimit < content.length) {
+        if (typeof appendLimit === 'number' && appendLimit < message.length) {
             let err: ImapFlowError = new Error('Message content too big for APPENDLIMIT=' + appendLimit);
             err.serverResponseCode = 'APPENDLIMIT';
             throw err;
@@ -128,10 +136,10 @@ export default async function append(
     // Regular literals cannot contain NUL bytes per the IMAP grammar.
     let isLiteral8 = false;
     if (connection.capabilities.has('BINARY') && !connection.disableBinary) {
-        isLiteral8 = content.indexOf(Buffer.from([0])) >= 0;
+        isLiteral8 = message.indexOf(0) >= 0;
     }
 
-    attributes.push({ type: 'LITERAL', value: content, isLiteral8 });
+    attributes.push({ type: 'LITERAL', value: message, isLiteral8 });
 
     let map: AppendResult = { destination };
     if (connection.mailbox && connection.mailbox.path) {
