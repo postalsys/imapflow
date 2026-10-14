@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/postalsys/imapflow/compare/v2.4.0...v2.4.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **download:** bump libbase64 to decode padded base64 parts in linear memory ([1c83261](https://github.com/postalsys/imapflow/commit/1c832614dda83160de1387f08e7592add65e2779))
+
 ## [2.4.0](https://github.com/postalsys/imapflow/compare/v2.3.0...v2.4.0) (2026-10-10)
 
 
