@@ -310,6 +310,21 @@ describe('imap-flow-fetch-download', () => {
         assert.equal(res['2'].content.toString(), 'part two');
         assert.equal(res['2'].meta.encoding, 'base64');
     });
+    it('DownloadMany: a base64 part that pads every line is decoded', async () => {
+        let client = makeClient();
+        // every line encoded and padded on its own, as some mailers do
+        let lines = 100000;
+        let mime = Buffer.from('Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\n');
+        client.fetchOne = async () => {
+            let bodyParts = new Map();
+            bodyParts.set('2.mime', mime);
+            bodyParts.set('2', Buffer.from('YQ==\r\n'.repeat(lines)));
+            return { uid: 1, bodyParts };
+        };
+        let res: any = await client.downloadMany('1', ['2']);
+        assert.equal(res['2'].content.length, lines);
+        assert.ok(res['2'].content.every((byte: number) => byte === 0x61));
+    });
     it('Download: BODY-answered part is still decoded even when binary was requested', async () => {
         let client = makeClient();
         // RFC 3516 lets a server answer a BINARY request with a NO or a BODY response
