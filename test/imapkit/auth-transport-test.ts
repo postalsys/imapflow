@@ -145,6 +145,26 @@ describe('imapkit: transport', () => {
         await client.logout();
     });
 
+    it('ID is sent after STARTTLS, not before it (Namecheap Private Email)', async t => {
+        // Namecheap answers any command before STARTTLS with a line that has no tag at all,
+        // so an ID sent before the upgrade would wait for the socket timeout
+        const kit = await startImapKit(t, {
+            server: {
+                plugins: ['STARTTLS', 'ID', 'AUTH-PLAIN'],
+                script: {
+                    on: 'command',
+                    when: (context: any) => !context.connection.secureConnection && !['CAPABILITY', 'STARTTLS'].includes(context.command),
+                    send: 'BAD "Must issue a STARTTLS command first"\r\n'
+                }
+            }
+        });
+        const client = await kit.connect({ socketTimeout: 2000 });
+        assert.ok(client.secureConnection, 'connection upgraded');
+        assert.ok(kit.sent(/^\S+ ID /), 'ID was sent');
+        assert.equal(kit.script.rules[0]!.hits, 0, 'nothing but CAPABILITY and STARTTLS was sent in cleartext');
+        await client.logout();
+    });
+
     it('doSTARTTLS false stays on cleartext', async t => {
         const kit = await startImapKit(t, { server: { plugins: ['STARTTLS'] } });
         const client = await kit.connect({ doSTARTTLS: false });

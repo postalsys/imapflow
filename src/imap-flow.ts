@@ -1988,11 +1988,15 @@ export class ImapFlow extends EventEmitter {
     async startSession(): Promise<void> {
         await this.run('CAPABILITY');
 
+        await this.upgradeToSTARTTLS();
+
+        // ID goes after STARTTLS: the client info should not travel in cleartext, and some
+        // servers refuse every command but STARTTLS before the upgrade with an untagged BAD
+        // the client can not tie to ID, which then waits for the socket timeout (Namecheap
+        // Private Email). The capability list was refreshed by the upgrade.
         if (this.capabilities.has('ID')) {
             this.idRequested = await this.run('ID', this.clientInfo);
         }
-
-        await this.upgradeToSTARTTLS();
 
         await this.authenticate();
 
