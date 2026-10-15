@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.3](https://github.com/postalsys/imapflow/compare/v2.4.2...v2.4.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* fail the command on a NO or BAD status line without a tag ([5a38e17](https://github.com/postalsys/imapflow/commit/5a38e171ad8405583b090872076f464c4dc6f0e2))
+* send ID after STARTTLS instead of before it ([7d6f37a](https://github.com/postalsys/imapflow/commit/7d6f37a4e8eb2f9b0f921f6b004a1ba5e45b1867))
+* send ID after STARTTLS instead of before it ([197ecdc](https://github.com/postalsys/imapflow/commit/197ecdc49f2f64c45ee98c4e4284534662e26942))
+
 ## [2.4.2](https://github.com/postalsys/imapflow/compare/v2.4.1...v2.4.2) (2026-10-14)
 
 
