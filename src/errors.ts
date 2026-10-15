@@ -26,6 +26,7 @@ export const ImapFlowErrorCode = {
     // the server
     ETHROTTLE: 'ETHROTTLE',
     UnexpectedTag: 'UnexpectedTag',
+    MissingTag: 'MissingTag',
     InvalidResponse: 'InvalidResponse',
     ResponseProcessingFailed: 'ResponseProcessingFailed',
     STARTTLS_INJECTION: 'STARTTLS_INJECTION',

@@ -109,6 +109,32 @@ describe('imapkit faults: commands', () => {
         await client.logout();
     });
 
+    it('a NO or BAD without a tag fails the command instead of stalling it', async t => {
+        // Namecheap Private Email refuses commands before STARTTLS with a line that has no tag.
+        // The quoted text makes the first line unparseable, the second one parses with NO as its tag.
+        const kit = await start(t, [
+            { on: 'command', command: 'SELECT', times: 1, send: 'BAD "Must issue a STARTTLS command first"\r\n' },
+            { on: 'command', command: 'SELECT', times: 1, send: 'no Try again later\r\n' }
+        ]);
+        const client = await kit.connect({ socketTimeout: 2000 });
+        await assert.rejects(client.mailboxOpen('INBOX'), (err: any) => {
+            assert.equal(err.code, 'MissingTag');
+            assert.equal(err.responseStatus, 'BAD');
+            assert.equal(err.responseText, 'Must issue a STARTTLS command first');
+            return true;
+        });
+        await assert.rejects(client.mailboxOpen('INBOX'), (err: any) => {
+            assert.equal(err.code, 'MissingTag');
+            assert.equal(err.responseStatus, 'NO');
+            assert.equal(err.responseText, 'Try again later');
+            return true;
+        });
+        // the session goes on
+        const mailbox = await client.mailboxOpen('INBOX');
+        assert.equal(mailbox.exists, 2);
+        await client.logout();
+    });
+
     it('a throttled FETCH is retried after the suggested back-off (Microsoft 365)', async t => {
         const kit = await start(
             t,

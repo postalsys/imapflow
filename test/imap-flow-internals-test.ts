@@ -684,4 +684,39 @@ describe('imap-flow-internals', () => {
         assert.equal(captured.err, null, 'a line for another tag settles nothing');
         assert.ok(client.currentRequest, 'the in-flight request stays current');
     });
+
+    // ============================================================================
+    // rejectTaglessCompletion
+    // ============================================================================
+    it('Internals: rejectTaglessCompletion fails the in-flight command on a NO or BAD without a tag', () => {
+        let client = makeClient();
+        let captured: any = armInFlight(client, 'A1');
+        client.currentRequest.command = 'ID';
+
+        assert.equal(client.rejectTaglessCompletion(Buffer.from('\x00BAD "Must issue a STARTTLS command first"')), true);
+        assert.equal(captured.err.code, 'MissingTag');
+        assert.equal(captured.err.command, 'ID');
+        assert.equal(captured.err.responseStatus, 'BAD');
+        assert.equal(captured.err.responseText, 'Must issue a STARTTLS command first');
+        assert.equal(client.currentRequest, false, 'the request slot was cleared');
+
+        captured = armInFlight(client, 'A2');
+        assert.equal(client.rejectTaglessCompletion(Buffer.from('no')), true, 'status words are case-insensitive, text is optional');
+        assert.equal(captured.err.responseStatus, 'NO');
+        assert.equal(captured.err.responseText, '');
+    });
+    it('Internals: rejectTaglessCompletion leaves OK, other lines and unsent commands alone', () => {
+        let client = makeClient();
+        let captured = armInFlight(client, 'A1');
+
+        for (let line of ['OK done', 'NOOP', 'BADGER x', 'A1 NO other', '* NO warning']) {
+            assert.equal(client.rejectTaglessCompletion(Buffer.from(line)), false, line);
+        }
+        assert.equal(captured.err, null, 'nothing was settled');
+
+        client.currentRequest.sent = false;
+        assert.equal(client.rejectTaglessCompletion(Buffer.from('BAD x')), false, 'a command not yet on the wire stays current');
+        client.currentRequest = false;
+        assert.equal(client.rejectTaglessCompletion(Buffer.from('BAD x')), false, 'no command in flight');
+    });
 });

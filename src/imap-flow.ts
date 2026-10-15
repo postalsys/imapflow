@@ -1454,9 +1454,9 @@ export class ImapFlow extends EventEmitter {
      * @param parserError - The error the parser raised.
      * @internal
      */
-    rejectUnparsedCompletion(payload: Buffer, parserError: ImapFlowError): void {
+    rejectUnparsedCompletion(payload: Buffer, parserError: ImapFlowError): boolean {
         if (!this.currentRequest || !this.currentRequest.sent) {
-            return;
+            return false;
         }
 
         // Prefer the tag the parser had already extracted before it failed - it went
@@ -1469,14 +1469,51 @@ export class ImapFlow extends EventEmitter {
             tag = match && match[1];
         }
         if (!tag || tag !== this.currentRequest.tag) {
-            return;
+            return false;
         }
 
         let err: ImapFlowError = new Error('Failed to parse the server response for this command');
         err.code = parserError.code || 'ParserError';
         err.parserError = parserError;
-        this.rejectCurrentRequest(err);
+        this.failInFlight(err);
+        return true;
+    }
 
+    /**
+     * Fails the in-flight command when the server answered it with a NO or BAD status line that
+     * has no tag at all (Namecheap Private Email: `BAD "Must issue a STARTTLS command first"`).
+     * Only one command is ever on the wire, and leaving it pending would stall the connection
+     * until the socket timeout. Tags are uppercase hex, so a command can carry the tag BAD:
+     * callers check for the command's own tag first.
+     *
+     * @param payload - Raw bytes of the line.
+     * @returns `true` when the line failed the in-flight command
+     * @internal
+     */
+    rejectTaglessCompletion(payload: Buffer): boolean {
+        if (!this.currentRequest || !this.currentRequest.sent) {
+            return false;
+        }
+
+        let match = payload.toString('latin1', 0, 1024).match(/^\0*(BAD|NO)(?:\s+([^]*))?$/i);
+        if (!match) {
+            return false;
+        }
+
+        let err = createImapError('Command failed', 'MissingTag', {
+            command: this.currentRequest.command,
+            responseStatus: match[1].toUpperCase(),
+            responseText: (match[2] || '').trim().replace(/^"(.*)"$/, '$1')
+        });
+        this.log.warn({ msg: 'Server sent a status response without a tag', err, cid: this.id });
+        this.failInFlight(err);
+        return true;
+    }
+
+    // Rejects the in-flight command and moves on to the next queued one
+    /** @internal */
+    failInFlight(err: Error): void {
+        this.rejectCurrentRequest(err);
         this.trySend().catch(sendErr => logConnectionError(this, 'Failed to dispatch command', sendErr));
     }
 
@@ -1527,7 +1564,9 @@ export class ImapFlow extends EventEmitter {
             // timeout fires. The tag is recovered from the raw bytes (a tag is
             // ASTRING-CHAR only, so it survives whatever made the rest unparseable) and
             // the command is failed with the parser error instead of hanging.
-            this.rejectUnparsedCompletion(data.payload, err as ImapFlowError);
+            if (!this.rejectUnparsedCompletion(data.payload, err as ImapFlowError)) {
+                this.rejectTaglessCompletion(data.payload);
+            }
             return true;
         }
 
@@ -1638,7 +1677,8 @@ export class ImapFlow extends EventEmitter {
         // actually written to the socket (invariant 2), so the three cases below are kept apart:
         // the active command completes, a command that has not been written yet is proof of
         // desynchronization (queued behind another command, or current but not yet on the wire),
-        // and an entirely unknown tag is recorded but tolerated.
+        // and an entirely unknown tag is recorded but tolerated, unless the line is a NO or BAD
+        // that came without a tag (see rejectTaglessCompletion()).
         if (parsed.tag && !['*', '+'].includes(parsed.tag)) {
             if (this.currentRequest && this.currentRequest.tag === parsed.tag && this.currentRequest.sent) {
                 let request = this.takeCurrentRequest();
@@ -1677,7 +1717,7 @@ export class ImapFlow extends EventEmitter {
                 request.reject(err);
                 this.failProtocol(err);
                 return false;
-            } else {
+            } else if (!this.rejectTaglessCompletion(data.payload)) {
                 this.countUnknownTag(parsed.tag);
             }
         }
