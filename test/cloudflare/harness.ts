@@ -5,7 +5,6 @@ import net from 'node:net';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import type { ScenarioResult } from './worker.js';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -58,6 +57,3 @@ export const reachable = (host: string, port: number): Promise<boolean> =>
         });
         socket.once('error', () => resolve(false));
     });
-
-// The error and the log of a scenario, as an assertion message
-export const details = (result: ScenarioResult): string => JSON.stringify(result.error) + '\n' + result.logs.join('\n');

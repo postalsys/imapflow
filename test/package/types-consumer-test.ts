@@ -261,7 +261,13 @@ import type {
     ExpungeEvent,
     FlagsEvent,
     DownloadObject,
-    Logger
+    Logger,
+    ImapTransportOptions,
+    ImapTransportConnectOptions,
+    StreamsSocketInfo,
+    StreamsTlsInfo,
+    StreamsSocket,
+    StreamsTransportApi
 } from 'imapflow';
 
 declare const maybeString: string | undefined;
@@ -337,6 +343,58 @@ type _ESearchResult = NoneMissing<MissingUndefined<ESearchResult>>;
 type _ExpungeEvent = NoneMissing<MissingUndefined<ExpungeEvent>>;
 type _FlagsEvent = NoneMissing<MissingUndefined<FlagsEvent>>;
 type _DownloadObject = NoneMissing<MissingUndefined<DownloadObject>>;
+type _ImapTransportOptions = NoneMissing<MissingUndefined<ImapTransportOptions>>;
+type _ImapTransportConnectOptions = NoneMissing<MissingUndefined<ImapTransportConnectOptions>>;
+type _StreamsSocketInfo = NoneMissing<MissingUndefined<StreamsSocketInfo>>;
+type _StreamsTlsInfo = NoneMissing<MissingUndefined<StreamsTlsInfo>>;
+type _StreamsSocket = NoneMissing<MissingUndefined<StreamsSocket>>;
+type _StreamsTransportApi = NoneMissing<MissingUndefined<StreamsTransportApi>>;
+`;
+
+// The transport option: a hand-written transport returning a Duplex, createStreamsTransport()
+// over real web streams with an upgrade that may be left out, and createSocketsTransport() over
+// a cloudflare:sockets style connect()
+const transportConsumer = `
+import { Duplex } from 'node:stream';
+import { ImapFlow, ImapFlowErrorCode, createStreamsTransport, createSocketsTransport } from 'imapflow';
+import type { ImapTransport, ImapTransportSocket, SocketsConnect, StreamsSocket, StreamsTransportApi } from 'imapflow';
+
+const duplexTransport: ImapTransport = {
+    connect({ host, port, secure }, onConnect) {
+        const duplex = new Duplex({ read() {}, write(_chunk, _encoding, callback) { callback(); } });
+        // the inactivity timeout is the one socket method a transport must add to a Duplex
+        const socket: ImapTransportSocket = Object.assign(duplex, { setTimeout: (ms: number) => ms });
+        void host;
+        void port;
+        void secure;
+        queueMicrotask(onConnect);
+        return socket;
+    }
+};
+
+const openStreams = (): StreamsSocket => ({
+    opened: Promise.resolve({
+        readable: new ReadableStream<Uint8Array>(),
+        writable: new WritableStream<Uint8Array>(),
+        remotePort: 993,
+        tls: { authorized: true, version: 'TLSv1.3' }
+    }),
+    close: () => undefined
+});
+
+declare const maybeUpgrade: ((socket: StreamsSocket) => StreamsSocket) | undefined;
+const api: StreamsTransportApi = { open: () => openStreams(), upgrade: maybeUpgrade };
+const streamsTransport: ImapTransport = createStreamsTransport(api);
+
+declare const connect: SocketsConnect;
+const socketsTransport: ImapTransport = createSocketsTransport(connect);
+
+for (const transport of [duplexTransport, streamsTransport, socketsTransport]) {
+    new ImapFlow({ host: 'imap.example.com', port: 993, secure: true, transport });
+}
+
+const code: string = ImapFlowErrorCode.UnsupportedTransportOption;
+void code;
 `;
 
 // The class extends the plain EventEmitter and types its events through overloads, so the
@@ -461,8 +519,8 @@ describe('Built package types', { timeout: 120 * 1000, skip: hasDist ? false : '
             typeCheckConsumer(consumer, resolution.compilerOptions, resolution.type);
         });
 
-        it('accepts explicit undefined for every optional property with ' + resolution.name, () => {
-            typeCheckConsumer(exactOptionalConsumer, resolution.compilerOptions, resolution.type);
+        it('accepts explicit undefined for every optional property, and the transport types, with ' + resolution.name, () => {
+            typeCheckConsumer([exactOptionalConsumer, transportConsumer], resolution.compilerOptions, resolution.type);
         });
     }
 

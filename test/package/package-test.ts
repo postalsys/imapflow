@@ -99,6 +99,9 @@ describe('Built package', { timeout: 30 * 1000, skip: hasDist ? false : 'dist/ i
             assert.strictEqual(typeof imapflow.ImapFlow, 'function');
             assert.strictEqual(typeof imapflow.AuthenticationFailure, 'function');
             assert.strictEqual(imapflow.ImapFlowErrorCode.NoConnection, 'NoConnection');
+            assert.strictEqual(imapflow.ImapFlowErrorCode.UnsupportedTransportOption, 'UnsupportedTransportOption');
+            assert.strictEqual(typeof imapflow.createStreamsTransport, 'function');
+            assert.strictEqual(typeof imapflow.createSocketsTransport, 'function');
             assert.strictEqual(imapflow.default.ImapFlow, imapflow.ImapFlow);
             assert.strictEqual(typeof imapflow.ImapFlow.version, 'string');
         });
@@ -139,7 +142,9 @@ describe('Built package', { timeout: 30 * 1000, skip: hasDist ? false : 'dist/ i
                 ['connection-deadline', 'ConnectionDeadline'],
                 ['limited-passthrough', 'LimitedPassthrough'],
                 ['jp-decoder', 'JPDecoder'],
-                ['charsets', 'resolveCharset']
+                ['charsets', 'resolveCharset'],
+                ['streams-transport', 'createStreamsTransport'],
+                ['sockets-transport', 'createSocketsTransport']
             ]) {
                 assert.strictEqual(typeof require(subpath(name))[member], 'function', name + '.' + member);
             }
@@ -159,6 +164,8 @@ describe('Built package', { timeout: 30 * 1000, skip: hasDist ? false : 'dist/ i
             assert.strictEqual(typeof imapflow.ImapFlow, 'function');
             assert.strictEqual(typeof imapflow.AuthenticationFailure, 'function');
             assert.strictEqual(imapflow.ImapFlowErrorCode.NoConnection, 'NoConnection');
+            assert.strictEqual(typeof imapflow.createStreamsTransport, 'function');
+            assert.strictEqual(typeof imapflow.createSocketsTransport, 'function');
             assert.strictEqual(imapflow.default.ImapFlow, imapflow.ImapFlow);
             assert.strictEqual(imapflow.default.AuthenticationFailure, imapflow.AuthenticationFailure);
         });

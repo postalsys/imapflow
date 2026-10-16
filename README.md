@@ -51,6 +51,41 @@ Implicit TLS, STARTTLS, cleartext, IDLE, `download()` and the default logger wor
 - `client.tls` stays `false`, the runtime reports no cipher details.
 - A socket is closed when the request (or Durable Object event) that opened it ends. Run the whole session inside the handler, or inside `ctx.waitUntil()` to keep it going after the response.
 
+### Other connections
+
+The `transport` option takes any object with a `connect()` method, so other socket APIs plug in the same way. For an API built on web streams (a connection that opens with a promise of a `ReadableStream` and a `WritableStream` of bytes, as `cloudflare:sockets` and Chrome's Direct Sockets do), `createStreamsTransport()` does the wrapping:
+
+```js
+import { ImapFlow, createStreamsTransport } from 'imapflow';
+
+const transport = createStreamsTransport({
+    // `secure` says whether ImapFlow wants a TLS connection; throw to refuse what the API can not do
+    open: ({ host, port, secure }) => {
+        const socket = openSocket(host, port, secure);
+        return {
+            opened: socket.opened.then(() => ({ readable: socket.readable, writable: socket.writable })),
+            close: () => socket.close()
+        };
+    },
+    // optional: start TLS on an open connection after STARTTLS. Without it ImapFlow does not try
+    // STARTTLS, and with doSTARTTLS: true the connection fails with err.tlsFailed set
+    upgrade: (socket, options) => startTlsSomehow(socket)
+});
+```
+
+`opened` may also report `remoteAddress`, `remotePort`, `localAddress` and `localPort`, and for a TLS connection `tls: { authorized, name, version }`, which becomes `client.tls`. If `close()` fails while the streams are locked, it is called again with the locks released.
+
+An API built on events instead implements the transport itself: `connect(options, onConnect)` returns a Node.js `Duplex` stream of bytes and calls `onConnect` once the connection is up (or throws to refuse it), and an optional `upgrade(socket, options, onSecure)` starts TLS. The Duplex also needs `setTimeout(ms)`, emitting `timeout` after `ms` without traffic like `net.Socket` does: it is the watchdog behind the `socketTimeout` option.
+
+In a browser, ImapFlow runs from the ES module build when the bundler provides what Node.js has and browsers do not:
+
+- `node:stream` from [readable-stream](https://www.npmjs.com/package/readable-stream), `node:events` from [events](https://www.npmjs.com/package/events), and the `Buffer` global from [buffer](https://www.npmjs.com/package/buffer)
+- the `process` global from [process](https://www.npmjs.com/package/process), and `setImmediate()` and `clearImmediate()` globals
+- `node:crypto` with an MD5 `createHash()` (message ids on servers without OBJECTID), and `path` with `parse()` (used by a dependency for attachment file names)
+- empty modules for `node:net`, `node:tls`, `node:dns` and `node:zlib` (COMPRESS is then skipped)
+
+`test/browser/` in the repository has the complete esbuild setup, with the shims, and runs it in headless Chrome.
+
 ## Quick Example
 
 ```js

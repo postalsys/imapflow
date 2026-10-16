@@ -4,7 +4,6 @@
 
 import tls from 'node:tls';
 import net from 'node:net';
-import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { EventEmitter } from 'node:events';
 import { PassThrough, type Readable } from 'node:stream';
@@ -88,7 +87,8 @@ import type {
     StatusQuery,
     StoreOptions,
     TlsInfo,
-    ImapTransportOptions
+    ImapTransportOptions,
+    ImapTransportSocket
 } from './types.js';
 import type { ImapAttributeList, ImapAttributeNode, ImapCompileNode, ImapResponse, ImapStreamItem, SelectCommand } from './handler/types.js';
 import type { ProxySocket } from './proxy-connection.js';
@@ -97,7 +97,9 @@ export type * from './types.js';
 export type { ImapFlowError } from './errors.js';
 export { AuthenticationFailure, ImapFlowErrorCode } from './errors.js';
 export { createSocketsTransport } from './sockets-transport.js';
-export type { SocketsApiReader, SocketsApiSocket, SocketsApiWriter, SocketsConnect } from './sockets-transport.js';
+export type { SocketsApiSocket, SocketsConnect } from './sockets-transport.js';
+export { createStreamsTransport } from './streams-transport.js';
+export type { StreamsReader, StreamsSocket, StreamsSocketInfo, StreamsTlsInfo, StreamsTransportApi, StreamsWriter } from './streams-transport.js';
 export type { ImapAttribute, ImapAttributeList, ImapAttributeNode, ImapResponse } from './handler/types.js';
 
 const GREETING_TIMEOUT = 16 * 1000;
@@ -238,13 +240,11 @@ export type ConnectionStates = { readonly [K in keyof typeof stateValues]: Conne
 const states: ConnectionStates = stateValues;
 
 /**
- * The socket carrying the IMAP session. A TLS socket exposes `getCipher()` and `authorized`, a
- * cleartext socket does not, and the code checks for them at runtime.
+ * The socket carrying the IMAP session: a `net.Socket` or `tls.TLSSocket` on Node.js, or what a
+ * transport returns. Typed as {@link ImapTransportSocket}, so the client only relies on what
+ * every transport provides and checks for the optional members at runtime.
  */
-export type ImapSocket = net.Socket & {
-    getCipher?: (() => tls.CipherNameAndProtocol) | undefined;
-    authorized?: boolean | undefined;
-};
+export type ImapSocket = ImapTransportSocket;
 
 /**
  * Where outgoing bytes are written: the socket itself, or the PassThrough that feeds the
@@ -1002,7 +1002,7 @@ export class ImapFlow extends EventEmitter {
 
     /** @internal */
     getRandomId(): string {
-        let rid = BigInt('0x' + crypto.randomBytes(13).toString('hex')).toString(36);
+        let rid = BigInt('0x' + Buffer.from(globalThis.crypto.getRandomValues(new Uint8Array(13))).toString('hex')).toString(36);
         if (rid.length < 20) {
             rid = '0'.repeat(20 - rid.length) + rid;
         }
@@ -1899,6 +1899,9 @@ export class ImapFlow extends EventEmitter {
     armSocketTimeout(socket: ImapSocket): void {
         if (typeof socket.setTimeout === 'function') {
             socket.setTimeout(this.socketTimeout);
+        } else {
+            // a transport socket from plain JavaScript can lack it, which disables the watchdog
+            this.log.warn({ msg: 'The socket has no setTimeout(), socketTimeout is not enforced', cid: this.id });
         }
     }
 
@@ -2252,10 +2255,10 @@ export class ImapFlow extends EventEmitter {
     }
 
     /** @internal */
-    _failSTARTTLS(): false {
+    _failSTARTTLS(reason = 'Server does not support STARTTLS'): false {
         if (this.options.doSTARTTLS === true) {
             // STARTTLS configured as requirement
-            let err: ImapFlowError = new Error('Server does not support STARTTLS');
+            let err: ImapFlowError = new Error(reason);
             err.tlsFailed = true;
             throw err;
         }
@@ -2264,7 +2267,7 @@ export class ImapFlow extends EventEmitter {
         // may be a downgrade attack: say so rather than fall back silently (see the doSTARTTLS
         // option for the policy).
         this.log.warn({
-            msg: 'Server does not support STARTTLS, continuing over an unencrypted connection',
+            msg: reason + ', continuing over an unencrypted connection',
             host: this.host,
             port: this.port,
             cid: this.id
@@ -2294,6 +2297,10 @@ export class ImapFlow extends EventEmitter {
 
         if (!this.capabilities.has('STARTTLS')) {
             return this._failSTARTTLS();
+        }
+
+        if (this.options.transport && !this.options.transport.upgrade) {
+            return this._failSTARTTLS('The transport can not start TLS');
         }
 
         this.expectCapabilityUpdate = true;
@@ -2481,8 +2488,9 @@ export class ImapFlow extends EventEmitter {
                         this.emitError(ex as ImapFlowError);
                     }
                 };
+                // a transport without upgrade() never gets here, see the STARTTLS check above
                 tlsSocket = this.options.transport
-                    ? this.options.transport.upgrade(socketPlain, this.transportOptions(), onSecure)
+                    ? this.options.transport.upgrade!(socketPlain, this.transportOptions(), onSecure)
                     : tls.connect(opts, onSecure);
             } catch (err) {
                 // tls.connect() refused the upgrade before any handshake (an option the runtime
@@ -3179,7 +3187,16 @@ export class ImapFlow extends EventEmitter {
                     setImmediate(onConnect);
                 }
             } else if (transport) {
-                this.socket = transport.connect(this.transportOptions(), this.secureConnection, onConnect);
+                try {
+                    this.socket = transport.connect({ ...this.transportOptions(), secure: this.secureConnection }, onConnect);
+                } catch (err) {
+                    // refused up front: the connection deadline must not stay armed
+                    clearTimer(this.connectTimeout);
+                    this.closeAfter();
+                    this.log.error({ err, cid: this.id });
+                    reject(err);
+                    return;
+                }
             } else {
                 this.socket = connector.connect(opts, onConnect);
             }

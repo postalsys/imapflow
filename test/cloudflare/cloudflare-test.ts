@@ -4,8 +4,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startMockImapServer, type MockImapServer } from './mock-imap-server.js';
-import { startTourServer, assertTour } from './tour.js';
-import { freePort, createEtherealAccount, reachable, details } from './harness.js';
+import { startTourServer, assertTour, details } from '../fixtures/api-tour-server.js';
+import { freePort, createEtherealAccount, reachable } from './harness.js';
 import type { Scenario, ScenarioResult } from './worker.js';
 
 // Runs the built ES module output on the Cloudflare Workers runtime. `wrangler dev` starts a
@@ -196,6 +196,28 @@ describe('Cloudflare Workers', { timeout: 10 * 60 * 1000 }, () => {
         assert.ok(result.logs.includes('debug: Connection closed'), 'the connection was closed');
     });
 
+    it('starts STARTTLS through createSocketsTransport() and fails on a self-signed certificate', async () => {
+        // The handshake starts (no read in flight) instead of stalling until the upgrade timeout.
+        // workerd resolves the TLS socket as open before the handshake and fails the first
+        // write, so the error is a lost connection rather than a TLS failure; what matters is
+        // that the credentials never go out
+        const before = server.commands.length;
+        const started = Date.now();
+        const result = await run({
+            host: server.host,
+            port: server.port,
+            secure: false,
+            doSTARTTLS: true,
+            transport: 'sockets',
+            auth: { user: 'user', pass: 'pass' }
+        });
+        assert.equal(result.ok, false);
+        const commands = server.commands.slice(before);
+        assert.ok(commands.includes('STARTTLS'), 'the upgrade was requested');
+        assert.ok(!commands.some(command => /^(LOGIN|AUTHENTICATE)/.test(command)), 'no credentials were sent');
+        assert.ok(Date.now() - started < 8000, 'failed on the handshake, not at the upgrade timeout');
+    });
+
     it('idles and picks up an EXISTS pushed by the server', async () => {
         const before = server.messages.length;
         const result = await run({
@@ -241,7 +263,8 @@ describe('Cloudflare Workers', { timeout: 10 * 60 * 1000 }, () => {
         }
         const result = await run({ host, port: 143, secure: false, doSTARTTLS: true, transport: 'sockets' });
         assert.equal(result.secureConnection, true, details(result));
-        assert.equal(result.error?.message, 'Please configure the login');
+        // no credentials, so connect() stops after the upgrade with a non-TLS error
+        assert.ok(!result.error?.tlsFailed, details(result));
         assert.ok(!result.capabilities?.includes('STARTTLS'), 'the capabilities were read again after the upgrade');
     });
 

@@ -88,6 +88,31 @@ jobs:
                   cache: npm
             - run: npm install
             - run: npm run test:celld
+              env:
+                  CELLD_KEEP_LOGS: '1'
+            - uses: actions/upload-artifact@v4
+              if: failure()
+              with:
+                  name: celld-log
+                  path: .celld/celld.log
+                  if-no-files-found: ignore
+
+    # The ES module build in headless Chrome (preinstalled on the ubuntu runners): esbuild bundles
+    # it with polyfills for the Node.js builtins, and test/browser/page.ts runs sessions through
+    # the transport option against the browser build of ImapKit in the same page
+    test-browser:
+        name: Browser (headless Chrome)
+        timeout-minutes: 15
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - name: Use Node.js 24.x
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24.x
+                  cache: npm
+            - run: npm install
+            - run: npm run test:browser
 
     test-rev2:
         # Live IMAP4rev2 integration tests against a real Dovecot 2.4 server in

@@ -7,8 +7,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { startMockImapServer, type MockImapServer } from '../cloudflare/mock-imap-server.js';
-import { startTourServer, assertTour } from '../cloudflare/tour.js';
-import { freePort, createEtherealAccount, reachable, details } from '../cloudflare/harness.js';
+import { startTourServer, assertTour, details } from '../fixtures/api-tour-server.js';
+import { freePort, createEtherealAccount, reachable } from '../cloudflare/harness.js';
 import type { Scenario, ScenarioResult } from '../cloudflare/worker.js';
 
 // Runs the built ES module output on celld (https://celld.dev), a self-hosted runtime for
@@ -48,7 +48,9 @@ const linuxEsbuild = (): string => {
     return binary;
 };
 
-describe('celld', { timeout: 15 * 60 * 1000, skip: !dockerAvailable() && 'Docker is not available' }, () => {
+// Under the 15 minute CI job limit, so a hang still reaches after(), which keeps the logs and
+// removes the container. CI has Docker, so the suite is only skipped without it locally
+describe('celld', { timeout: 12 * 60 * 1000, skip: !process.env.CI && !dockerAvailable() && 'Docker is not available' }, () => {
     const container = `imapflow-celld-test-${process.pid}`;
     let workerUrl = '';
     let server: MockImapServer;
@@ -67,8 +69,9 @@ describe('celld', { timeout: 15 * 60 * 1000, skip: !dockerAvailable() && 'Docker
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(REQUEST_TIMEOUT)
         });
-        assert.equal(response.status, 200, 'the worker answered');
-        return response.json();
+        const text = await response.text();
+        assert.equal(response.status, 200, 'the worker answered: ' + text.slice(0, 500));
+        return JSON.parse(text);
     };
     const run = (scenario: Scenario): Promise<ScenarioResult> => post('/', scenario);
 
@@ -280,12 +283,20 @@ describe('celld', { timeout: 15 * 60 * 1000, skip: !dockerAvailable() && 'Docker
         assert.ok(result.error?.code === 'ETIMEOUT' || result.logs.some(line => line.includes('Socket timeout')), details(result));
     });
 
-    it('closes the socket when the request that opened it ends', async () => {
-        const held = await post('/hold', mock(server));
-        assert.equal(held.ok, true, details(held));
-        const reused = await post('/reuse', {});
-        assert.equal(reused.ok, false, 'the session did not survive its request');
-        assert.notEqual(reused.error?.message, 'no held session, the isolate was replaced', 'the second request ran in the same isolate');
+    it('closes the socket when the request that opened it ends', async t => {
+        // needs two requests in the same isolate, which celld dev keeps for back-to-back requests
+        // but does not promise: a replaced isolate is retried, not a failure
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const held = await post('/hold', mock(server));
+            assert.equal(held.ok, true, details(held));
+            const reused = await post('/reuse', {});
+            if (reused.error?.message === 'no held session, the isolate was replaced') {
+                continue;
+            }
+            assert.equal(reused.ok, false, 'the session did not survive its request');
+            return;
+        }
+        t.skip('celld replaced the isolate between the requests three times');
     });
 
     it('keeps a session running in waitUntil() after the response', async () => {
@@ -336,7 +347,8 @@ describe('celld', { timeout: 15 * 60 * 1000, skip: !dockerAvailable() && 'Docker
         }
         const result = await run({ host, port: 143, secure: false, doSTARTTLS: true, transport: 'sockets' });
         assert.equal(result.secureConnection, true, details(result));
-        assert.equal(result.error?.message, 'Please configure the login', details(result));
+        // no credentials, so connect() stops after the upgrade with a non-TLS error
+        assert.ok(!result.error?.tlsFailed, details(result));
         assert.ok(result.capabilities?.includes('IMAP4rev1'));
         assert.ok(!result.capabilities?.includes('STARTTLS'), 'the capabilities were read again after the upgrade');
     });

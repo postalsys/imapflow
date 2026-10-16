@@ -6,5 +6,5 @@
         "noEmit": true
     },
     "include": ["src/**/*.ts", "test/**/*.ts"],
-    "exclude": ["test/cloudflare/worker.ts", "test/celld/worker.ts"]
+    "exclude": ["test/cloudflare/worker.ts", "test/celld/worker.ts", "test/browser/page.ts"]
 }
