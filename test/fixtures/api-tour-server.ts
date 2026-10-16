@@ -1,13 +1,13 @@
-// The API tour of test/cloudflare/worker.ts (runTour) needs a full IMAP server: ImapKit with
-// every plugin, started in the test process. Shared by the Workers and celld harnesses, which run
-// the same tour on their runtime and check it here.
+// The Node.js side of the API tour (test/fixtures/api-tour.ts): the ImapKit server it runs
+// against, started in the test process, and the checks of what it reported. Shared by the
+// Workers, celld and browser harnesses.
 
 import assert from 'node:assert/strict';
 import imapkit from 'imapkit';
-import { ALL_PLUGINS, DEFAULT_STORAGE } from '../fixtures/imapkit.js';
-import { details } from './harness.js';
-import { listen } from '../fixtures/scripted-server.js';
-import type { Scenario, ScenarioResult } from './worker.js';
+import { ALL_PLUGINS, DEFAULT_STORAGE } from './imapkit-config.js';
+import { listen } from './scripted-server.js';
+import type { Scenario, ScenarioResult } from '../cloudflare/worker.js';
+import type { TourResult } from './api-tour.js';
 
 export interface TourServer {
     scenario: Scenario;
@@ -15,6 +15,9 @@ export interface TourServer {
     bad: string[];
     close(): Promise<void>;
 }
+
+// The error and the log of a scenario, as an assertion message
+export const details = (result: Pick<ScenarioResult, 'error' | 'logs'>): string => JSON.stringify(result.error) + '\n' + result.logs.join('\n');
 
 export const startTourServer = async (extra: Partial<Scenario> = {}): Promise<TourServer> => {
     const server = imapkit({
@@ -44,7 +47,7 @@ export const startTourServer = async (extra: Partial<Scenario> = {}): Promise<To
     };
 };
 
-export const assertTour = (result: ScenarioResult): void => {
+export const assertTour = (result: TourResult & Pick<ScenarioResult, 'ok' | 'error' | 'logs'>): void => {
     assert.equal(result.ok, true, details(result));
     assert.deepEqual(result.steps, [
         'connect',
@@ -94,6 +97,7 @@ export const assertTour = (result: ScenarioResult): void => {
         ['tour one', 'tour two', 'tour three']
     );
     for (const message of tour.fetchAll) {
+        assert.ok(typeof message.id === 'string' && message.id.length > 0, 'the message got an id');
         assert.deepEqual(message.flags, ['$Tour', '\\Seen']);
         assert.deepEqual(message.parts, ['1:text/plain', '2:application/octet-stream']);
         assert.equal(message.headers, `Subject: ${message.subject}`);

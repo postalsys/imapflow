@@ -2,7 +2,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import zlib from 'node:zlib';
-import { ImapFlow, createSocketsTransport } from '../src/imap-flow.js';
+import { ImapFlow, createSocketsTransport, createStreamsTransport, type ImapTransport, type StreamsSocket } from '../src/imap-flow.js';
 import { isIpLiteral } from '../src/tools.js';
 import { startMockImapServer, type MockImapServer } from './cloudflare/mock-imap-server.js';
 import { createShim, type ShimState } from './fixtures/sockets-shim.js';
@@ -10,6 +10,8 @@ import { freePort } from './cloudflare/harness.js';
 
 // createSocketsTransport() runs on celld (test/celld/ covers it there). Here it runs against the
 // cloudflare:sockets API implemented over node:net and node:tls by test/fixtures/sockets-shim.ts.
+
+const tick = () => new Promise(resolve => setImmediate(resolve));
 
 describe('createSocketsTransport()', () => {
     let server: MockImapServer;
@@ -197,6 +199,212 @@ describe('createSocketsTransport()', () => {
     });
 });
 
+describe('createStreamsTransport()', () => {
+    let server: MockImapServer;
+    const state: ShimState = { startTlsCalls: 0 };
+
+    before(async () => {
+        server = await startMockImapServer({ starttls: true });
+    });
+
+    after(async () => {
+        await server.close();
+    });
+
+    // A web streams API without STARTTLS, opened over the cloudflare:sockets shim
+    const plainApi = {
+        open: ({ host, port }: { host: string; port: number }): StreamsSocket => {
+            const raw = createShim(state)({ hostname: host, port });
+            return { opened: raw.opened.then(() => ({ readable: raw.readable, writable: raw.writable })), close: () => raw.close() };
+        }
+    };
+
+    const client = (transport: ReturnType<typeof createStreamsTransport>, options?: Partial<ConstructorParameters<typeof ImapFlow>[0]>) =>
+        new ImapFlow({ host: server.host, port: server.port, secure: false, auth: { user: 'user', pass: 'pass' }, logger: false, transport, ...options });
+
+    it('does not try STARTTLS when the API can not upgrade', async () => {
+        const transport = createStreamsTransport(plainApi);
+        assert.equal(transport.upgrade, undefined);
+        assert.equal(transport.prepareUpgrade, undefined);
+        const before = server.commands.length;
+        const imap = client(transport, { doSTARTTLS: undefined, disableCompression: true });
+        await imap.connect();
+        assert.equal(imap.secureConnection, false);
+        assert.ok(!server.commands.slice(before).includes('STARTTLS'), 'STARTTLS was not sent');
+        await imap.logout();
+    });
+
+    it('fails a required STARTTLS when the API can not upgrade', async () => {
+        const imap = client(createStreamsTransport(plainApi), { doSTARTTLS: true });
+        await assert.rejects(imap.connect(), (err: any) => err.tlsFailed === true && /The transport can not start TLS/.test(err.message));
+    });
+
+    it('closes the connection when the API refuses an upgrade', async () => {
+        let closed = 0;
+        const transport = createStreamsTransport({
+            open: options => {
+                const socket = plainApi.open(options);
+                return {
+                    ...socket,
+                    close: () => {
+                        closed++;
+                        return socket.close();
+                    }
+                };
+            },
+            upgrade: () => {
+                throw new Error('no TLS today');
+            }
+        });
+        const imap = client(transport, { doSTARTTLS: true });
+        await assert.rejects(imap.connect(), (err: any) => err.tlsFailed === true && /no TLS today/.test(err.message));
+        await tick();
+        assert.equal(closed, 1, 'the cleartext connection was closed');
+    });
+
+    it('reports the TLS details the API gives as client.tls', async () => {
+        for (const [tls, expected] of [
+            [
+                { authorized: true, name: 'TLS_AES_256_GCM_SHA384', version: 'TLSv1.3' },
+                { name: 'TLS_AES_256_GCM_SHA384', standardName: 'TLS_AES_256_GCM_SHA384', version: 'TLSv1.3', authorized: true }
+            ],
+            [
+                { authorized: true, name: 'AES', standardName: 'TLS_AES' },
+                { name: 'AES', standardName: 'TLS_AES', version: '', authorized: true }
+            ],
+            [{ authorized: false }, { name: '', standardName: '', version: '', authorized: false }]
+        ] as const) {
+            const transport = createStreamsTransport({
+                open: options => {
+                    const socket = plainApi.open(options);
+                    return { ...socket, opened: socket.opened.then(info => ({ ...info, tls })) };
+                }
+            });
+            const imap = client(transport, { doSTARTTLS: false });
+            await imap.connect();
+            assert.deepEqual(imap.tls, expected);
+            await imap.logout();
+        }
+    });
+
+    it('closes again with the stream locks released when close() refuses', async () => {
+        let calls = 0;
+        const transport = createStreamsTransport({
+            open: options => {
+                const socket = plainApi.open(options);
+                return {
+                    ...socket,
+                    close: () => {
+                        calls++;
+                        return calls === 1 ? Promise.reject(new Error('the streams are locked')) : socket.close();
+                    }
+                };
+            }
+        });
+        const imap = client(transport, { doSTARTTLS: false });
+        await imap.connect();
+        await imap.logout();
+        await tick();
+        assert.equal(calls, 2);
+    });
+
+    it('closes again even when releasing a stream lock throws', async () => {
+        let calls = 0;
+        const locked = () => {
+            throw new Error('a read is in flight');
+        };
+        const transport = createStreamsTransport({
+            open: () => ({
+                opened: Promise.resolve({
+                    readable: { getReader: () => ({ read: () => new Promise<never>(() => {}), releaseLock: locked }) },
+                    writable: { getWriter: () => ({ write: async () => {}, releaseLock: locked }) }
+                }),
+                close: () => {
+                    calls++;
+                    return calls === 1 ? Promise.reject(new Error('the streams are locked')) : undefined;
+                }
+            })
+        });
+        const socket = transport.connect({ host: 'imap.example.com', port: 993, secure: true }, () => false);
+        socket.on('data', () => false);
+        await tick();
+        socket.destroy();
+        await tick();
+        assert.equal(calls, 2);
+    });
+
+    it('ignores a close() that throws', async () => {
+        const transport = createStreamsTransport({
+            open: options => ({
+                ...plainApi.open(options),
+                close: () => {
+                    throw new Error('already closed');
+                }
+            })
+        });
+        const imap = client(transport, { doSTARTTLS: false });
+        await imap.connect();
+        await imap.logout();
+    });
+});
+
+describe('transport option', () => {
+    let server: MockImapServer;
+
+    before(async () => {
+        server = await startMockImapServer({ starttls: true });
+    });
+
+    after(async () => {
+        await server.close();
+    });
+
+    it('runs a session over a hand-written transport without upgrade, skipping STARTTLS', async () => {
+        // a net.Socket is a Duplex, the smallest transport there is
+        const transport: ImapTransport = { connect: ({ host, port }, onConnect) => net.connect({ host, port }, onConnect) };
+        const before = server.commands.length;
+        const imap = new ImapFlow({ host: server.host, port: server.port, secure: false, auth: { user: 'user', pass: 'pass' }, logger: false, transport });
+        await imap.connect();
+        assert.equal(imap.secureConnection, false);
+        assert.ok(!server.commands.slice(before).includes('STARTTLS'));
+        await imap.logout();
+    });
+
+    it('warns when a transport socket has no setTimeout(), the watchdog is off then', async () => {
+        const transport: ImapTransport = {
+            connect: ({ host, port }, onConnect) => Object.assign(net.connect({ host, port }, onConnect), { setTimeout: undefined }) as any
+        };
+        const warnings: string[] = [];
+        const logger = { debug: () => {}, info: () => {}, error: () => {}, warn: (entry: { msg?: string }) => warnings.push(entry.msg || '') };
+        const imap = new ImapFlow({
+            host: server.host,
+            port: server.port,
+            secure: false,
+            doSTARTTLS: false,
+            auth: { user: 'user', pass: 'pass' },
+            logger,
+            transport
+        });
+        await imap.connect();
+        assert.ok(warnings.includes('The socket has no setTimeout(), socketTimeout is not enforced'), warnings.join('\n'));
+        await imap.logout();
+    });
+
+    it('rejects at once and leaves no deadline armed when connect() throws', async () => {
+        const transport: ImapTransport = {
+            connect: () => {
+                throw new Error('no sockets here');
+            }
+        };
+        const imap = new ImapFlow({ host: server.host, port: server.port, logger: false, connectionTimeout: 3000, transport });
+        const closed = new Promise(resolve => imap.once('close', resolve));
+        const started = Date.now();
+        await assert.rejects(imap.connect(), /no sockets here/);
+        await closed;
+        assert.ok(Date.now() - started < 1000, 'closed right away, not at the connection deadline');
+    });
+});
+
 describe('isIpLiteral()', () => {
     it('tells IP literals from hostnames', () => {
         for (const host of ['127.0.0.1', '10.0.0.255', '::1', 'fe80::1', '2001:db8::8a2e:370:7334', '::ffff:192.0.2.1']) {
@@ -258,7 +466,13 @@ const fakeSocket = () => {
         open,
         fail,
         closedReject,
-        send: (data: string | Buffer) => controller.enqueue(new Uint8Array(Buffer.from(data))),
+        // a view into a larger buffer, as runtimes hand out: the transport must honor byteOffset
+        send: (data: string | Buffer) => {
+            const bytes = Buffer.from(data);
+            const backing = new Uint8Array(bytes.length + 10);
+            backing.set(bytes, 7);
+            controller.enqueue(new Uint8Array(backing.buffer, 7, bytes.length));
+        },
         end: () => controller.close(),
         error: (err: Error) => controller.error(err),
         get tls() {
@@ -269,13 +483,12 @@ const fakeSocket = () => {
 
 const transportFor = (fake: ReturnType<typeof fakeSocket>) => createSocketsTransport(() => fake.socket);
 const options = { host: 'imap.example.com', port: 993 };
-const tick = () => new Promise(resolve => setImmediate(resolve));
 
 describe('createSocketsTransport() socket', () => {
     it('reports the addresses of the connection', async () => {
         const fake = fakeSocket();
         let connected = false;
-        const socket = transportFor(fake).connect(options, true, () => (connected = true)) as any;
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => (connected = true)) as any;
         fake.open({ remoteAddress: '[2001:db8::1]:993', localAddress: 'not an address' });
         await tick();
         assert.equal(connected, true);
@@ -287,24 +500,24 @@ describe('createSocketsTransport() socket', () => {
 
     it('emits timeout only after a whole idle period, however recent the last traffic', async () => {
         const fake = fakeSocket();
-        const socket = transportFor(fake).connect(options, true, () => false) as any;
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => false) as any;
         fake.open({});
         await tick();
         let timeouts = 0;
         socket.on('timeout', () => timeouts++);
-        socket.setTimeout(150);
-        await new Promise(resolve => setTimeout(resolve, 100));
+        socket.setTimeout(600);
+        await new Promise(resolve => setTimeout(resolve, 300));
         socket.write('A1 NOOP\r\n');
-        await new Promise(resolve => setTimeout(resolve, 100));
-        assert.equal(timeouts, 0, 'the write 100ms in reset the idle period');
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise(resolve => setTimeout(resolve, 400));
+        assert.equal(timeouts, 0, 'the write 300ms in reset the idle period');
+        await new Promise(resolve => setTimeout(resolve, 400));
         assert.equal(timeouts, 1);
         socket.destroy();
     });
 
     it('opens without address details', async () => {
         const fake = fakeSocket();
-        const socket = transportFor(fake).connect(options, true, () => false) as any;
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => false) as any;
         fake.open(undefined);
         await tick();
         assert.equal(socket.remoteAddress, undefined);
@@ -314,7 +527,7 @@ describe('createSocketsTransport() socket', () => {
 
     it('starts reading once open when a read was requested before', async () => {
         const fake = fakeSocket();
-        const socket = transportFor(fake).connect(options, true, () => false) as any;
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => false) as any;
         const data = new Promise<string>(resolve => socket.once('data', (chunk: Buffer) => resolve(chunk.toString())));
         await tick();
         fake.open({});
@@ -327,17 +540,17 @@ describe('createSocketsTransport() socket', () => {
         const fake = fakeSocket();
         fake.socket.closeFails = true;
         let connected = false;
-        const socket = transportFor(fake).connect(options, true, () => (connected = true)) as any;
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => (connected = true)) as any;
         socket.destroy();
         fake.open({});
         await tick();
         assert.equal(connected, false);
-        assert.equal(fake.socket.closeCalls, 1);
+        assert.equal(fake.socket.closeCalls, 2, 'a refused close() is tried again with the locks released');
     });
 
     it('refuses a write before the socket is open', async () => {
         const fake = fakeSocket();
-        const socket = transportFor(fake).connect(options, true, () => false) as any;
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => false) as any;
         const error = new Promise<Error>(resolve => socket.once('error', resolve));
         socket.write('a NOOP\r\n');
         assert.match((await error).message, /not open yet/);
@@ -346,7 +559,7 @@ describe('createSocketsTransport() socket', () => {
     it('reports a connection that can not be opened, and a failed read or close', async () => {
         for (const failure of ['opened', 'read', 'closed'] as const) {
             const fake = fakeSocket();
-            const socket = transportFor(fake).connect(options, true, () => false) as any;
+            const socket = transportFor(fake).connect({ ...options, secure: true }, () => false) as any;
             const error = new Promise<Error>(resolve => socket.once('error', resolve));
             if (failure === 'opened') {
                 fake.fail(new Error('refused'));
@@ -366,7 +579,7 @@ describe('createSocketsTransport() socket', () => {
 
     it('ends when the server closes, and stops reading once destroyed', async () => {
         const fake = fakeSocket();
-        const socket = transportFor(fake).connect(options, true, () => false) as any;
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => false) as any;
         fake.open({});
         const ended = new Promise(resolve => socket.once('end', resolve));
         socket.resume();
@@ -374,7 +587,7 @@ describe('createSocketsTransport() socket', () => {
         await ended;
 
         const other = fakeSocket();
-        const destroyed = transportFor(other).connect(options, true, () => false) as any;
+        const destroyed = transportFor(other).connect({ ...options, secure: true }, () => false) as any;
         other.open({});
         const chunks: Buffer[] = [];
         destroyed.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -387,7 +600,7 @@ describe('createSocketsTransport() socket', () => {
 
     it('stops reading while the consumer does not, and resumes', async () => {
         const fake = fakeSocket();
-        const socket = transportFor(fake).connect(options, true, () => false) as any;
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => false) as any;
         fake.open({});
         await tick();
         socket.read(0);
@@ -406,7 +619,7 @@ describe('createSocketsTransport() socket', () => {
     it('holds reads after a STARTTLS OK split over chunks, and keeps reading after a NO', async () => {
         const fake = fakeSocket();
         const transport = transportFor(fake);
-        const socket = transport.connect({ host: 'imap.example.com', port: 143 }, false, () => false) as any;
+        const socket = transport.connect({ host: 'imap.example.com', port: 143, secure: false }, () => false) as any;
         fake.open({});
         const received: string[] = [];
         socket.on('data', (chunk: Buffer) => received.push(chunk.toString()));
@@ -433,20 +646,60 @@ describe('createSocketsTransport() socket', () => {
         assert.ok(received.join('').endsWith('+ A2 OK not tagged\r\nA2 OK begin\r\n'), 'nothing read after the OK');
 
         let secure = false;
-        const tlsSocket = transport.upgrade(socket, { host: 'imap.example.com', port: 143 }, () => (secure = true)) as any;
+        const tlsSocket = transport.upgrade!(socket, { host: 'imap.example.com', port: 143 }, () => (secure = true)) as any;
         fake.tls!.open({});
         await tick();
         assert.equal(secure, true);
         tlsSocket.destroy();
-        assert.equal(fake.socket.closeCalls, 0, 'the cleartext socket is left to the TLS one');
         assert.equal(fake.tls!.socket.closeCalls, 1);
+        assert.equal(fake.socket.closeCalls, 1, 'the cleartext connection is closed after the TLS one');
+    });
+
+    it('finds the STARTTLS response with bare LF line ends, in any case, past an overlong line', async () => {
+        const fake = fakeSocket();
+        const transport = transportFor(fake);
+        const socket = transport.connect({ host: 'imap.example.com', port: 143, secure: false }, () => false) as any;
+        fake.open({});
+        const received: string[] = [];
+        socket.on('data', (chunk: Buffer) => received.push(chunk.toString('latin1')));
+        await tick();
+
+        transport.prepareUpgrade!(socket);
+        socket.write('A1 STARTTLS\r\n');
+        await tick();
+        // the last 1024 characters of an overlong untagged line look like a tagged NO, which
+        // must not end the wait: reads would then go on past the real OK
+        fake.send('* OK ' + 'x'.repeat(2000) + ' T1 NO ' + 'y'.repeat(1018));
+        fake.send('y');
+        fake.send('\nA1 ok begin\n');
+        await tick();
+        fake.send('after');
+        await tick();
+        assert.ok(received.join('').endsWith('A1 ok begin\n'), 'reads stopped after the real OK');
+
+        let failed: Error | null = null;
+        const tlsSocket = transport.upgrade!(socket, { host: 'imap.example.com', port: 143 }, () => false) as any;
+        tlsSocket.on('error', (err: Error) => (failed = err));
+        fake.tls!.fail(new Error('handshake failed'));
+        await tick();
+        assert.equal((failed as Error | null)?.message, 'handshake failed');
+        assert.equal(fake.socket.closeCalls, 1, 'the cleartext connection is closed after a failed handshake');
+    });
+
+    it('fails a socket whose streams are already locked', async () => {
+        const fake = fakeSocket();
+        fake.socket.readable.getReader();
+        const socket = transportFor(fake).connect({ ...options, secure: true }, () => assert.fail('connected')) as any;
+        const failed = new Promise<Error>(resolve => socket.on('error', resolve));
+        fake.open({});
+        assert.match((await failed).message, /locked/);
     });
 
     it('refuses TLS options on an upgrade', () => {
         const fake = fakeSocket();
         const transport = transportFor(fake);
-        const socket = transport.connect({ host: 'imap.example.com', port: 143 }, false, () => false);
-        assert.throws(() => transport.upgrade(socket, { host: 'imap.example.com', port: 143, tls: { pfx: 'x' } }, () => false), {
+        const socket = transport.connect({ host: 'imap.example.com', port: 143, secure: false }, () => false);
+        assert.throws(() => transport.upgrade!(socket, { host: 'imap.example.com', port: 143, tls: { pfx: 'x' } }, () => false), {
             code: 'UnsupportedTransportOption'
         });
         socket.destroy();
