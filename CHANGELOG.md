@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.5.0](https://github.com/postalsys/imapflow/compare/v2.4.3...v2.5.0) (2026-10-16)
+
+
+### Features
+
+* add a transport option and createSocketsTransport() for celld ([f4411aa](https://github.com/postalsys/imapflow/commit/f4411aa55635cb46b0e29a31965816e613d10ab9))
+* add createStreamsTransport() for socket APIs built on web streams ([c092ac4](https://github.com/postalsys/imapflow/commit/c092ac4f2b6da61e9409e70bbaa07df1b60c0167))
+* add createStreamsTransport() for socket APIs built on web streams ([fec7999](https://github.com/postalsys/imapflow/commit/fec79997db36878a8e3222833837d09f011eac3e))
+
 ## [2.4.3](https://github.com/postalsys/imapflow/compare/v2.4.2...v2.4.3) (2026-10-15)
 
 
