@@ -1652,6 +1652,98 @@ describe('tools', () => {
         assert.equal(tools.packMessageRange([3, 1, 2, 2, 5]), '1:3,5');
         assert.equal(tools.packMessageRange([5, 5, 5]), '5');
     });
+    it('Tools: packMessageRange matches a reference implementation on random sets', () => {
+        // The straightforward run builder the forward pass has to agree with
+        const reference = (values: number[]): string => {
+            let sorted = Array.from(new Set(values)).sort((a, b) => a - b);
+            let runs: number[][] = [];
+            for (let value of sorted) {
+                let run = runs[runs.length - 1];
+                if (run && run[run.length - 1] === value - 1) {
+                    run.push(value);
+                } else {
+                    runs.push([value]);
+                }
+            }
+            return runs.map(run => (run.length === 1 ? String(run[0]) : `${run[0]}:${run[run.length - 1]}`)).join(',');
+        };
+
+        for (let round = 0; round < 200; round++) {
+            let length = Math.floor(Math.random() * 200);
+            let values = Array.from({ length }, () => 1 + Math.floor(Math.random() * 300));
+            assert.equal(tools.packMessageRange(values), reference(values), JSON.stringify(values));
+        }
+    });
+    it('Tools: packMessageRange packs a million UIDs in linear time', () => {
+        // Regression for the quadratic unshift() loop: 200k UIDs took over two seconds, a million
+        // about a minute, all of it blocking the event loop. Measured at about 120 ms after the
+        // fix, the bound leaves room for a slow CI runner.
+        let gapped = Array.from({ length: 1000000 }, (_, i) => i * 2 + 1);
+        let started = Date.now();
+        let packed = tools.packMessageRange(gapped);
+        let elapsed = Date.now() - started;
+        assert.ok(elapsed < 5000, `packing a million gapped UIDs took ${elapsed} ms`);
+        assert.ok(packed.startsWith('1,3,5,'));
+        assert.ok(packed.endsWith(',1999997,1999999'));
+        assert.equal(packed.split(',').length, 1000000);
+
+        let contiguous = Array.from({ length: 1000000 }, (_, i) => i + 1);
+        started = Date.now();
+        assert.equal(tools.packMessageRange(contiguous), '1:1000000');
+        elapsed = Date.now() - started;
+        assert.ok(elapsed < 5000, `packing a million contiguous UIDs took ${elapsed} ms`);
+    });
+    it('Tools: getFolderTree builds a tree of 100k sibling folders in linear time', () => {
+        // Regression for the folders.find() lookup per folder, quadratic in the number of
+        // siblings: 50k mailboxes at one level took over three seconds. Measured at about 20 ms
+        // after the fix. A child of the last folder and a repeated entry are included, so the
+        // name index is shown to still nest and update.
+        let folders: any[] = Array.from({ length: 100000 }, (_, i) => ({
+            path: `Folder ${i}`,
+            name: `Folder ${i}`,
+            parent: [],
+            flags: new Set<string>(),
+            delimiter: '/',
+            listed: true,
+            subscribed: false
+        }));
+        folders.push({ ...folders[99999], path: 'Folder 99999/Child', name: 'Child', parent: ['Folder 99999'] });
+        folders.push({ ...folders[5], flags: new Set(['\\Noselect']) });
+
+        let started = Date.now();
+        let tree: any = tools.getFolderTree(folders);
+        let elapsed = Date.now() - started;
+        assert.ok(elapsed < 5000, `building the tree took ${elapsed} ms`);
+        assert.equal(tree.folders.length, 100000);
+        assert.equal(tree.folders[99999].folders.length, 1);
+        assert.equal(tree.folders[99999].folders[0].path, 'Folder 99999/Child');
+        assert.equal(tree.folders[5].disabled, true, 'the repeated entry updated the existing node');
+    });
+    it('Tools: iterateRange walks a sequence set without expanding it', () => {
+        assert.deepEqual([...tools.iterateRange('1:3,5,9:7')], [1, 2, 3, 5, 9, 8, 7]);
+        assert.deepEqual([...tools.iterateRange(false)], []);
+        assert.deepEqual([...tools.iterateRange('x,1:Infinity,0,2')], [2]);
+        assert.deepEqual([...tools.iterateRange('4:4')], [4]);
+        assert.deepEqual([...tools.iterateRange('1:3,7')], tools.expandRange('1:3,7'));
+
+        // The cap applies to the whole set: a single entry past it is cut off there, and an
+        // entry that follows a full set yields nothing
+        let count = 0;
+        let last = 0;
+        for (let value of tools.iterateRange('1:4294967295,1')) {
+            count++;
+            last = value;
+        }
+        assert.equal(count, tools.EXPANDED_RANGE_LIMIT);
+        assert.equal(last, tools.EXPANDED_RANGE_LIMIT);
+    });
+    it('Tools: countRange counts a sequence set without expanding it', () => {
+        assert.equal(tools.countRange('1:3,5,9:7'), 7);
+        assert.equal(tools.countRange(false), 0);
+        assert.equal(tools.countRange('x,2'), 1);
+        assert.equal(tools.countRange('1:4294967295'), tools.EXPANDED_RANGE_LIMIT);
+        assert.equal(tools.countRange('1:16777216,1'), tools.EXPANDED_RANGE_LIMIT);
+    });
 
     // ============================================
     // Security regression tests: hostile server input

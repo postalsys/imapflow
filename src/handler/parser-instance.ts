@@ -19,6 +19,8 @@ export class ParserInstance {
     declare tag?: string | undefined;
     declare command?: string | undefined;
     declare humanReadable?: string | undefined;
+    /** The keys of the FETCH data items the token parser dropped for exceeding the nesting limit */
+    declare truncatedAttributes?: string[] | undefined;
 
     /**
      * Creates a new ParserInstance for parsing an IMAP response line.
@@ -243,6 +245,8 @@ export class ParserInstance {
 
         const tokenParser = new TokenParser(this, this.pos, this.remainder, this.options);
 
-        return await tokenParser.getAttributes();
+        let attributes = await tokenParser.getAttributes();
+        this.truncatedAttributes = tokenParser.truncatedAttributes;
+        return attributes;
     }
 }

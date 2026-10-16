@@ -3,6 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fetchCommand from '../../src/commands/fetch.js';
+import { MAX_COLLECTED_RESPONSES } from '../../src/tools.js';
 import { createMockConnection } from '../fixtures/mock-connection.js';
 
 describe('commands/fetch', () => {
@@ -34,6 +35,70 @@ describe('commands/fetch', () => {
         assert.ok(result);
         assert.equal(result.count, 1);
         assert.ok(Array.isArray(result.list));
+    });
+    it('Commands: fetch fails once a server sends more rows than are kept', async () => {
+        // The rows are the server's to send and the memory holding them is this process's: a
+        // single-message FETCH answered with an endless stream of unsolicited rows used to grow
+        // the list without bound. Past MAX_COLLECTED_RESPONSES the command fails rather than
+        // returning a silently truncated result.
+        let row = {
+            command: '1',
+            attributes: [
+                { type: 'ATOM', value: 'FETCH' },
+                [
+                    { type: 'ATOM', value: 'UID' },
+                    { type: 'ATOM', value: '1' }
+                ]
+            ]
+        };
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                for (let i = 0; i <= MAX_COLLECTED_RESPONSES; i++) {
+                    await opts.untagged.FETCH(row);
+                }
+                return { next: () => {} };
+            }
+        });
+
+        await assert.rejects(fetchCommand(connection, '1', { uid: true }), { code: 'TooManyResponses' });
+    });
+    it('Commands: fetch streams any number of rows to the onUntaggedFetch consumer', async () => {
+        // the bound is on what is kept, a consumer that takes the rows as they come is not limited
+        let delivered = 0;
+        let row = {
+            command: '1',
+            attributes: [
+                { type: 'ATOM', value: 'FETCH' },
+                [
+                    { type: 'ATOM', value: 'UID' },
+                    { type: 'ATOM', value: '1' }
+                ]
+            ]
+        };
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                for (let i = 0; i <= MAX_COLLECTED_RESPONSES; i++) {
+                    await opts.untagged.FETCH(row);
+                }
+                return { next: () => {} };
+            }
+        });
+
+        let result = await fetchCommand(
+            connection,
+            '1',
+            { uid: true },
+            {
+                onUntaggedFetch: (message, next) => {
+                    delivered++;
+                    next();
+                }
+            }
+        );
+        assert.equal(delivered, MAX_COLLECTED_RESPONSES + 1);
+        assert.equal(result!.list.length, 0);
     });
     it('Commands: fetch with UID option', async () => {
         let execCommand = '';

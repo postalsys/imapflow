@@ -7,8 +7,10 @@ import {
     isRev2Active,
     buildStatusQueryAttributes,
     getStringList,
-    getStringValue
+    getStringValue,
+    MAX_COLLECTED_RESPONSES
 } from '../tools.js';
+import { createImapError } from '../errors.js';
 import { parseStatusList } from './status-fields.js';
 import { specialUse, type SpecialUseSource as SpecialUseFlagSource } from '../special-use.js';
 import type { ImapFlow } from '../imap-flow.js';
@@ -204,6 +206,8 @@ export default async function list(
         // namespace prefix was used (INBOX may live outside the namespace).
         let runList = async (reference: string, mailbox: string, returnArgs: ImapCompileNode[]) => {
             const cmdArgs: ImapCompileNode[] = [encodePath(connection, reference), encodePath(connection, mailbox)];
+            // Set once the entry limit is reached, fails the command when it completes
+            let overflow: ImapFlowError | null = null;
 
             if (returnArgs.length) {
                 cmdArgs.push({ type: 'ATOM', value: 'RETURN' }, returnArgs);
@@ -279,6 +283,14 @@ export default async function list(
                             addSpecialUseMatch(entry, specialUseFlag, flagSource as SpecialUseSource);
                         }
 
+                        if (entries.length >= MAX_COLLECTED_RESPONSES) {
+                            // The entries are the server's to send and the memory holding them
+                            // is this process's, see MAX_COLLECTED_RESPONSES. A throw from an
+                            // untagged handler is only logged, so the error is raised below,
+                            // once the command completes
+                            overflow = overflow || createImapError(`LIST returned more than ${MAX_COLLECTED_RESPONSES} mailboxes`, 'TooManyResponses');
+                            return;
+                        }
                         entries.push(entry);
                     },
 
@@ -304,6 +316,9 @@ export default async function list(
                 }
             });
             response.next();
+            if (overflow) {
+                throw overflow;
+            }
         };
 
         let normalizedReference = normalizePath(connection, reference || '');

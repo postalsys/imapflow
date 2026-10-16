@@ -45,6 +45,11 @@ export interface ImapResponse {
     attributes?: ImapAttributeList | undefined;
     /** Number of leading NUL bytes stripped from the line, if any */
     nullBytesRemoved?: number | undefined;
+    /**
+     * Keys of the FETCH data items (e.g. BODYSTRUCTURE) that were replaced by NIL because they
+     * nested deeper than the parser's limit, if any
+     */
+    truncatedAttributes?: string[] | undefined;
 }
 
 /**

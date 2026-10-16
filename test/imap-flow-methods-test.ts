@@ -573,6 +573,30 @@ describe('imap-flow-methods', () => {
         await client.untaggedVanished({ attributes: [{ value: '4:9' }] } as any);
         assert.equal((client.mailbox as any).exists, 0);
     });
+    it('Methods: untaggedVanished walks a huge range without expanding it', async () => {
+        // A single "1:16777216" is a few bytes on the wire but, expanded, a sixteen million entry
+        // array, for every such line a server cares to send. The UIDs are walked lazily now, and
+        // the expansion bound still applies (tools-test pins it on iterateRange and countRange).
+        // Two million UIDs here: measured at about 1.5 s through the test transpiler, the time
+        // bound leaves room for a slow CI runner.
+        let client = makeClient();
+        client.mailbox = { path: 'INBOX', exists: 5 } as any;
+        let count = 0;
+        let last = 0;
+        client.on('expunge', (event: any) => {
+            count++;
+            last = event.uid;
+        });
+
+        let started = Date.now();
+        await client.untaggedVanished({ attributes: [{ value: '1:2000000' }] } as any);
+        let elapsed = Date.now() - started;
+
+        assert.equal(count, 2000000, 'every UID was reported');
+        assert.equal(last, 2000000);
+        assert.equal((client.mailbox as any).exists, 0);
+        assert.ok(elapsed < 20000, `walking the range took ${elapsed} ms`);
+    });
     it('Methods: untaggedVanished routes through expungeHandler', async () => {
         let payloads: any = [];
         let client = makeClient({ expungeHandler: async (p: any) => payloads.push(p) });

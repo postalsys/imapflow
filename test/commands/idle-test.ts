@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import idleCommand from '../../src/commands/idle.js';
 import { createMockConnection } from '../fixtures/mock-connection.js';
+import { withFakeTimers } from '../fixtures/fake-timers.js';
 
 describe('commands/idle', () => {
     it('Commands: idle with IDLE capability', async () => {
@@ -25,6 +26,78 @@ describe('commands/idle', () => {
         await idleCommand(connection as any);
         assert.equal(execCommand, 'IDLE');
         assert.equal(idlingSet, true);
+    });
+    it('Commands: idle fails the connection when the server never acknowledges IDLE', async () => {
+        // The socket watchdog only covers a server that goes quiet. One that keeps sending untagged
+        // lines without ever answering "+" kept the IDLE in flight for good, and every later
+        // command queued behind it. DONE can not be sent before the "+", so the connection is
+        // failed the way the watchdog fails a dead peer, with socketTimeout as the budget.
+        await withFakeTimers(async timers => {
+            let emitted: any[] = [];
+            let rejectExec: any = null;
+            const connection: any = createMockConnection({
+                state: 3,
+                capabilities: new Map([['IDLE', true]]),
+                socketTimeout: 1234,
+                isClosed: false,
+                emitError: (err: any) => {
+                    emitted.push(err);
+                    connection.isClosed = true;
+                    rejectExec(err);
+                },
+                exec: async (cmd: any, attrs: any, opts: any) => {
+                    opts.onSend();
+                    await new Promise((resolve, reject) => {
+                        rejectExec = reject;
+                    });
+                    return { next: () => {} };
+                },
+                write: () => {}
+            });
+
+            let idlePromise = idleCommand(connection);
+            await timers.drain();
+
+            let armed = timers.pending();
+            assert.equal(armed.length, 1, 'the acknowledgement deadline is armed once IDLE is on the wire');
+            assert.equal(armed[0].delay, 1234, 'with the socket timeout as its budget');
+            assert.ok(armed[0].unrefd, 'and does not keep the process alive');
+
+            await timers.fire();
+            await idlePromise;
+
+            assert.equal(emitted.length, 1, 'the connection was failed once');
+            assert.equal(emitted[0].code, 'ETIMEOUT');
+            assert.match(emitted[0].message, /IDLE/);
+            assert.equal(connection.idling, false);
+            assert.equal(timers.count(), 0, 'no timer is left armed');
+        });
+    });
+    it('Commands: the IDLE acknowledgement deadline is cleared by the continuation', async () => {
+        await withFakeTimers(async timers => {
+            const connection: any = createMockConnection({
+                state: 3,
+                capabilities: new Map([['IDLE', true]]),
+                socketTimeout: 1234,
+                isClosed: false,
+                emitError: () => {
+                    throw new Error('the deadline must not fire');
+                },
+                exec: async (cmd: any, attrs: any, opts: any) => {
+                    opts.onSend();
+                    await opts.onPlusTag();
+                    return { next: () => {} };
+                },
+                write: () => {}
+            });
+
+            await idleCommand(connection);
+
+            assert.equal(timers.history().length, 1, 'only the deadline was armed');
+            assert.ok(timers.history()[0].cleared, 'the deadline was cleared by the "+"');
+            assert.equal(timers.count(), 0);
+            await timers.fire();
+        });
     });
     it('Commands: idle uses IDLE on rev2-only servers without the IDLE token', async () => {
         let execCommand = '';

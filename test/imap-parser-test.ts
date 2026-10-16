@@ -1260,15 +1260,23 @@ describe('imap-parser', () => {
     // NB! must not share a name with the deep-BODYSTRUCTURE test above - a duplicate
     // module.exports key silently overwrites the earlier test and it never runs
     it('IMAP Parser, FETCH exceeding max nesting depth', async () => {
-        try {
-            let parsed = await parser('* 1 FETCH (UID 1 (((((((((((((((((((((((((');
-            assert.ok(!parsed);
-        } catch (err: any) {
-            assert.ok(err);
-            if (err.code !== 'MAX_IMAP_NESTING_REACHED') {
-                throw err;
-            }
-        }
+        // 25 nested lists used to exceed the limit and fail the whole row, which dropped the
+        // message from the FETCH result. The limit is 100 now, and a FETCH data item nested past
+        // it is replaced by NIL instead of failing the line (token-parser-test has the details)
+        let parsed = await parser('* 1 FETCH (UID 1 BODYSTRUCTURE ' + '('.repeat(25) + ')'.repeat(25) + ')');
+        assert.equal(parsed.truncatedAttributes, undefined);
+        let items: any = parsed.attributes![1];
+        assert.deepEqual(items[0], { type: 'ATOM', value: 'UID' });
+        assert.ok(Array.isArray(items[3]));
+
+        parsed = await parser('* 1 FETCH (UID 1 BODYSTRUCTURE ' + '('.repeat(101) + ')'.repeat(101) + ')');
+        items = parsed.attributes![1];
+        assert.deepEqual(items[1], { type: 'ATOM', value: '1' });
+        assert.equal(items[3], null);
+        assert.deepEqual(parsed.truncatedAttributes, ['BODYSTRUCTURE']);
+
+        // an unclosed deep list is still a malformed line
+        await assert.rejects(parser('* 1 FETCH (UID 1 ' + '('.repeat(101)), { code: 'ParserError9' });
     });
     it('IMAP Parser, ATOM with <, [, ]', async () => {
         let password = `<[+=</$]`;

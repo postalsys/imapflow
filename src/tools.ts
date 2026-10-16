@@ -39,6 +39,16 @@ const CONNECTION_GONE_CODES = new Set<string>([ImapFlowErrorCode.NoConnection, I
 // ceiling instead of inventing their own.
 export const EXPANDED_RANGE_LIMIT = 0x1000000;
 
+// Upper bound for the untagged responses one command may accumulate in memory: the FETCH rows
+// fetchAll() collects and the mailboxes list() collects. The response size limits bound one
+// response at a time, not how many of them a server sends in reply to one command, so a hostile
+// server answering a single-message FETCH with an endless stream of unsolicited FETCH rows (or a
+// LIST with endless mailboxes) would otherwise grow the process without limit. Generous on
+// purpose: a million rows is far beyond any legitimate listing, and a mailbox that large is read
+// through the streaming fetch() generator, which keeps nothing. Reaching it therefore fails the
+// command (code TooManyResponses) instead of silently truncating its result.
+export const MAX_COLLECTED_RESPONSES = 1000000;
+
 // Digit bounds for untrusted numeric values in server responses. UIDs, UIDVALIDITY and
 // message counts are 32-bit unsigned (nz-number in the RFC 9051 grammar, so at most 10
 // digits); MODSEQ and number64 values are 63-bit unsigned (RFC 7162, RFC 9051), at most
@@ -629,6 +639,24 @@ export function getFolderTree(folders: ListResponse[]): ListTreeResponse {
         folders: []
     };
 
+    // Children of every node indexed by name. Looking a child up with folders.find() made the
+    // tree quadratic in the number of siblings: a listing of 50k mailboxes at one level (a size
+    // the server chooses) took seconds of event loop time. A name is unique among its siblings,
+    // as the loop below updates an existing entry rather than adding a second one.
+    let childIndex = new Map<ListTreeResponse, Map<string, ListTreeResponse>>();
+    let childByName = (node: ListTreeResponse, name: string): ListTreeResponse | undefined => {
+        let index = childIndex.get(node);
+        return index ? index.get(name) : undefined;
+    };
+    let indexChild = (node: ListTreeResponse, child: ListTreeResponse) => {
+        let index = childIndex.get(node);
+        if (!index) {
+            index = new Map();
+            childIndex.set(node, index);
+        }
+        index.set(child.name as string, child);
+    };
+
     let getTreeNode = (parents: string[] | undefined): ListTreeResponse => {
         let node = tree;
         if (!parents || !parents.length) {
@@ -636,7 +664,7 @@ export function getFolderTree(folders: ListResponse[]): ListTreeResponse {
         }
 
         for (let parent of parents) {
-            let cur = node.folders && node.folders.find(folder => folder.name === parent);
+            let cur = childByName(node, parent);
             if (cur) {
                 node = cur;
             }
@@ -654,7 +682,7 @@ export function getFolderTree(folders: ListResponse[]): ListTreeResponse {
     for (let folder of byDepth) {
         let parent = getTreeNode(folder.parent);
         // see if entry already exists
-        let existing = parent.folders && parent.folders.find(existing => existing.name === folder.name);
+        let existing = childByName(parent, folder.name);
         if (existing) {
             // update values
             existing.name = folder.name;
@@ -705,6 +733,7 @@ export function getFolderTree(folders: ListResponse[]): ListTreeResponse {
                 parent.folders = [];
             }
             parent.folders.push(data);
+            indexChild(parent, data);
         }
     }
 
@@ -1720,6 +1749,90 @@ export function parseUintValue(value: unknown, maxDigits?: number): number | fal
 }
 
 /**
+ * Parses an IMAP sequence set string (e.g. "1:3,5,9:7") into its entries, each as the pair of
+ * endpoints in the order written: a reversed "9:7" stays reversed, and iterateRange() walks it
+ * downwards. Entries with an endpoint that is not a valid nz-number are skipped - the input may
+ * come from an untrusted server, and 'Infinity' or similar garbage would otherwise loop without
+ * bound.
+ *
+ * @param range - IMAP sequence set string, or whatever the response parser produced for it
+ * @returns The validated entries
+ */
+function parseRangeEntries(range: unknown): Array<[number, number]> {
+    let entries: Array<[number, number]> = [];
+    // Callers pass whatever the response parser produced for the sequence set, and a
+    // malformed response can leave that as `false` (e.g. a VANISHED response carrying
+    // only the (EARLIER) tag). Nothing to expand then, and throwing here would abort
+    // the handler for the rest of the response.
+    if (typeof range !== 'string') {
+        return entries;
+    }
+    for (let entry of range.split(',')) {
+        entry = entry.trim();
+        let colon = entry.indexOf(':');
+        if (colon < 0) {
+            let value = Number(entry);
+            if (isValidSequenceValue(value)) {
+                entries.push([value, value]);
+            }
+            continue;
+        }
+        let first = Number(entry.substring(0, colon));
+        let second = Number(entry.slice(colon + 1));
+        if (isValidSequenceValue(first) && isValidSequenceValue(second)) {
+            entries.push([first, second]);
+        }
+    }
+    return entries;
+}
+
+/**
+ * Walks an IMAP sequence range string (e.g. "1:3,5,7:9") one number at a time, without
+ * materializing it. A single "1:16777216" is a few bytes on the wire but sixteen million
+ * entries expanded, so a consumer that only needs to visit each number (the VANISHED handler)
+ * iterates instead of calling expandRange().
+ *
+ * The same bound as expandRange() applies: at most EXPANDED_RANGE_LIMIT numbers in total are
+ * produced, over all entries of the set.
+ *
+ * @param range - IMAP sequence range string
+ * @returns The sequence numbers, in the order the set lists them
+ */
+export function* iterateRange(range: unknown): Generator<number, void, undefined> {
+    let count = 0;
+    for (let [first, second] of parseRangeEntries(range)) {
+        let step = first <= second ? 1 : -1;
+        for (let i = first; count < EXPANDED_RANGE_LIMIT; i += step) {
+            yield i;
+            count++;
+            if (i === second) {
+                break;
+            }
+        }
+        if (count >= EXPANDED_RANGE_LIMIT) {
+            break;
+        }
+    }
+}
+
+/**
+ * Counts the numbers iterateRange() produces for a sequence range string, without walking it.
+ *
+ * @param range - IMAP sequence range string
+ * @returns The number of entries, capped at EXPANDED_RANGE_LIMIT like the expansion itself
+ */
+export function countRange(range: unknown): number {
+    let count = 0;
+    for (let [first, second] of parseRangeEntries(range)) {
+        count += Math.abs(second - first) + 1;
+        if (count >= EXPANDED_RANGE_LIMIT) {
+            return EXPANDED_RANGE_LIMIT;
+        }
+    }
+    return count;
+}
+
+/**
  * Expands an IMAP sequence range string (e.g. "1:3,5,7:9") into an array of numbers.
  *
  * Entries with endpoints that are not valid nz-numbers are skipped - the input
@@ -1735,51 +1848,7 @@ export function parseUintValue(value: unknown, maxDigits?: number): number | fal
  * @returns Array of expanded sequence numbers
  */
 export function expandRange(range: unknown): number[] {
-    let result: number[] = [];
-    // Callers pass whatever the response parser produced for the sequence set, and a
-    // malformed response can leave that as `false` (e.g. a VANISHED response carrying
-    // only the (EARLIER) tag). Nothing to expand then, and throwing here would abort
-    // the handler for the rest of the response.
-    if (typeof range !== 'string') {
-        return result;
-    }
-    for (let entry of range.split(',')) {
-        if (result.length >= EXPANDED_RANGE_LIMIT) {
-            break;
-        }
-        entry = entry.trim();
-        let colon = entry.indexOf(':');
-        if (colon < 0) {
-            let value = Number(entry);
-            if (isValidSequenceValue(value)) {
-                result.push(value);
-            }
-            continue;
-        }
-        let first = Number(entry.substring(0, colon));
-        let second = Number(entry.slice(colon + 1));
-        if (!isValidSequenceValue(first) || !isValidSequenceValue(second)) {
-            continue;
-        }
-        if (first === second) {
-            result.push(first);
-            continue;
-        }
-        // Remaining total budget doubles as the per-range bound
-        let remaining = EXPANDED_RANGE_LIMIT - result.length;
-        if (first < second) {
-            let last = Math.min(second, first + remaining - 1);
-            for (let i = first; i <= last; i++) {
-                result.push(i);
-            }
-        } else {
-            let last = Math.max(second, first - remaining + 1);
-            for (let i = first; i >= last; i--) {
-                result.push(i);
-            }
-        }
-    }
-    return result;
+    return Array.from(iterateRange(range));
 }
 
 /**
@@ -1826,22 +1895,22 @@ export function packMessageRange(list: number | number[] | null | undefined): st
     // overlapping/non-canonical tokens (e.g. [1,1,2,3] -> "1:3", not "1,1:3").
     items = Array.from(new Set(items)).sort((a, b) => a - b);
 
-    let last = items[items.length - 1];
-    let result: number[][] = [[last]];
-    for (let i = items.length - 2; i >= 0; i--) {
-        if (items[i] === items[i + 1] - 1) {
-            result[0].unshift(items[i]);
+    // One forward pass: a run of consecutive values is written out as soon as it ends. The runs
+    // used to be built with unshift(), which copies the array on every call, so packing a large
+    // SEARCH result (a server-chosen size) took seconds for 200k UIDs and about a minute for 1M,
+    // all of it on the event loop.
+    let parts: string[] = [];
+    let start = items[0];
+    let prev = start;
+    for (let i = 1; i <= items.length; i++) {
+        let value = items[i];
+        if (i < items.length && value === prev + 1) {
+            prev = value;
             continue;
         }
-        result.unshift([items[i]]);
+        parts.push(start === prev ? String(start) : start + ':' + prev);
+        start = prev = value;
     }
-
-    let parts = result.map(item => {
-        if (item.length === 1) {
-            return item[0];
-        }
-        return item.shift() + ':' + item.pop();
-    });
 
     return parts.join(',');
 }

@@ -94,6 +94,9 @@ export default async function parser(command: Buffer | string, options?: ParserO
         if (parserInstance.remainder.trim().length) {
             await parserInstance.getSpace();
             response.attributes = await parserInstance.getAttributes();
+            if (parserInstance.truncatedAttributes && parserInstance.truncatedAttributes.length) {
+                response.truncatedAttributes = parserInstance.truncatedAttributes;
+            }
         }
 
         if (parserInstance.humanReadable) {

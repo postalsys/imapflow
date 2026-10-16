@@ -15,8 +15,17 @@ const STATE_STRING = 0x006;
 
 const RE_SINGLE_DIGIT = /^\d$/;
 
-// Prevents stack overflow from maliciously crafted deeply-nested IMAP input (e.g., (((((...))))))
-const MAX_NODE_DEPTH = 25;
+// Prevents stack overflow from maliciously crafted deeply-nested IMAP input (e.g., (((((...)))))).
+// The tokenizer itself is iterative; what recurses is the getAttributes() walk and the
+// consumers of its output (the body structure parser, the compiler used for logging), and
+// a hundred frames is nothing to any of them. The old bound of 25 was reached by a message
+// with 22 nested multiparts, which an external sender can produce, and the whole FETCH row
+// then failed to parse and was dropped silently.
+const MAX_NODE_DEPTH = 100;
+
+// The depth at which the data items of a FETCH response sit: TREE (0) > the item list (1) >
+// a key or value (2). See createNode() for what happens when nesting overflows below one.
+const FETCH_DATA_ITEM_DEPTH = 2;
 
 /**
  * A node of the parse tree built by TokenParser. `type` is false for a node that has not
@@ -39,6 +48,8 @@ export interface TokenNode {
     started?: boolean | undefined;
     chBuffer?: Buffer | undefined;
     chPos?: number | undefined;
+    /** Set on a FETCH data item whose nesting exceeded MAX_NODE_DEPTH, see createNode() */
+    truncated?: boolean | undefined;
 }
 
 /**
@@ -53,7 +64,8 @@ export interface TokenParserParent {
  * Handles all IMAP data types: atoms, quoted strings, literals (including literal8),
  * sequences, lists (parenthesized groups), sections (bracketed groups), and partial ranges.
  * Enforces a maximum nesting depth of {@link MAX_NODE_DEPTH} to prevent stack overflow
- * from malicious input.
+ * from malicious input: a FETCH data item that nests deeper is replaced by NIL and listed in
+ * `truncatedAttributes`, any other input that nests deeper fails to parse.
  */
 export class TokenParser {
     str: string;
@@ -64,6 +76,8 @@ export class TokenParser {
     currentNode: TokenNode;
     pos: number;
     state: number;
+    /** The keys of the FETCH data items that were dropped for exceeding MAX_NODE_DEPTH */
+    truncatedAttributes: string[];
     declare expectedLiteralType?: string | false | undefined;
 
     /**
@@ -92,6 +106,7 @@ export class TokenParser {
         // gets the same bound (an explicit 0 means "reject any non-empty inline literal").
         this.maxLiteralSize = normalizeLimit(this.options.maxLiteralSize, MAX_LITERAL_SIZE);
 
+        this.truncatedAttributes = [];
         this.tree = this.currentNode = this.createNode();
         this.pos = startPos || 0;
 
@@ -154,6 +169,17 @@ export class TokenParser {
 
             let type = (node.type || '').toString().toUpperCase();
 
+            if (node.truncated) {
+                // The item nested deeper than MAX_NODE_DEPTH, see createNode(). Its subtree is
+                // not walked (that is what keeps this recursion bounded). A list is replaced by
+                // NIL so the data items keep pairing up as key and value; a section is attached
+                // to the item before it, so it is dropped whole.
+                if (type === 'LIST') {
+                    branch.push(null);
+                }
+                return;
+            }
+
             switch (type) {
                 case 'LITERAL':
                 case 'STRING':
@@ -213,7 +239,7 @@ export class TokenParser {
      * @param parentNode - The parent node to attach this node to. If omitted, creates a root node.
      * @param startPos - The starting position of this node in the original input string.
      * @returns The newly created node with childNodes, type, value, and isClosed properties.
-     * @throws {Error} If the nesting depth exceeds MAX_NODE_DEPTH.
+     * @throws {Error} If the nesting depth exceeds MAX_NODE_DEPTH outside a FETCH data item.
      */
     createNode(parentNode?: TokenNode | undefined, startPos?: number | undefined): TokenNode {
         let node: TokenNode = {
@@ -232,8 +258,20 @@ export class TokenParser {
         }
 
         if (node.depth > MAX_NODE_DEPTH) {
-            // A bounded prefix only, the error travels whole into logs and rejections
-            throw createImapError('Too much nesting in IMAP string', 'MAX_IMAP_NESTING_REACHED', { _imapStr: this.str.slice(0, ERROR_CONTEXT_LENGTH) });
+            if (!this.isFetchResponse()) {
+                // A bounded prefix only, the error travels whole into logs and rejections
+                throw createImapError('Too much nesting in IMAP string', 'MAX_IMAP_NESTING_REACHED', { _imapStr: this.str.slice(0, ERROR_CONTEXT_LENGTH) });
+            }
+            // A FETCH row carries the data of one message, and the item nesting this deep (a
+            // BODYSTRUCTURE of a message with a hundred nested multiparts, which the sender of
+            // that message controls) is one of several. Failing the line would drop the whole
+            // row, and with it the message, from the FETCH result. The data item is marked
+            // instead, which getAttributes() turns into NIL, and the tokenizer carries on: it
+            // keeps no stack, so the depth costs it nothing. Marked on the first crossing only,
+            // every node below that one is already inside a marked item.
+            if (parentNode!.depth === MAX_NODE_DEPTH) {
+                this.truncateFetchDataItem(parentNode!);
+            }
         }
 
         if (typeof startPos === 'number') {
@@ -245,6 +283,49 @@ export class TokenParser {
         }
 
         return node;
+    }
+
+    /**
+     * Whether the line being parsed is a message data response (`* 12 FETCH (...)`): a numeric
+     * command with FETCH as its first attribute. Only those get the per-item nesting fallback.
+     *
+     * @returns True for an untagged FETCH response
+     */
+    isFetchResponse(): boolean {
+        let command = this.parent.command;
+        let first = this.tree.childNodes[0];
+        return (
+            typeof command === 'string' &&
+            /^\d+$/.test(command) &&
+            !!first &&
+            first.type === 'ATOM' &&
+            typeof first.value === 'string' &&
+            first.value.toUpperCase() === 'FETCH'
+        );
+    }
+
+    /**
+     * Marks the FETCH data item a too deeply nested node belongs to as truncated and records
+     * its key (the item before it in the list, e.g. BODYSTRUCTURE) for the caller to report.
+     *
+     * @param node - The node at MAX_NODE_DEPTH whose child would exceed the limit
+     */
+    truncateFetchDataItem(node: TokenNode): void {
+        let item = node;
+        while (item.depth > FETCH_DATA_ITEM_DEPTH && item.parentNode) {
+            item = item.parentNode;
+        }
+        if (item.truncated) {
+            return;
+        }
+        item.truncated = true;
+
+        // The item is the last child of the list while it is being parsed, so its key is the
+        // child before it. A key is an atom (BODYSTRUCTURE, ENVELOPE, BODY); anything else means
+        // the row itself is malformed, and the key is reported as unknown.
+        let siblings = item.parentNode ? item.parentNode.childNodes : [];
+        let key = siblings[siblings.length - 2];
+        this.truncatedAttributes.push(key && key.type === 'ATOM' && typeof key.value === 'string' ? key.value.toUpperCase() : '?');
     }
 
     /**

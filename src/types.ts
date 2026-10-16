@@ -177,7 +177,8 @@ export interface ImapFlowOptions {
      * when the server offers STARTTLS and otherwise continues in cleartext with a warning logged:
      * the capability list that decides this was itself received in cleartext, so an attacker on
      * the path can strip it. Set `doSTARTTLS: true` whenever the credentials must never cross the
-     * wire unencrypted.
+     * wire unencrypted. STARTTLS is only possible before authentication, so a server greeting
+     * with PREAUTH is a connection failure when the upgrade is required.
      */
     doSTARTTLS?: boolean | undefined;
     /** Custom instance ID string for logs */

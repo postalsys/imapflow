@@ -39,6 +39,62 @@ describe('commands/authenticate', () => {
         assert.ok(connection.authCapabilities.has('AUTH=OAUTHBEARER'));
         assert.ok(decodeSaslPayload(execArgs).includes('port=993'), 'the payload should report the connection port');
     });
+    it('Commands: OAUTHBEARER escapes "," and "=" in the GS2 authzid', async () => {
+        // RFC 5801 section 4: the two characters delimit the GS2 header, so a username carrying
+        // them is written as =2C and =3D
+        let execArgs: any = null;
+        const connection = createMockConnection({
+            state: 1,
+            capabilities: new Map([
+                ['AUTH=OAUTHBEARER', true],
+                ['SASL-IR', true]
+            ]),
+            servername: 'imap.example.com',
+            authCapabilities: new Map(),
+            exec: async (cmd: any, args: any) => {
+                execArgs = { cmd, args };
+                return { next: () => {} };
+            },
+            write: () => {}
+        });
+
+        await authenticateCommand(connection, 'a,b=c@example.com', { accessToken: 'token123' });
+
+        const payload = decodeSaslPayload(execArgs);
+        assert.ok(payload.startsWith('n,a=a=2Cb=3Dc@example.com,\x01'), JSON.stringify(payload));
+        assert.ok(payload.endsWith('\x01auth=Bearer token123\x01\x01'), JSON.stringify(payload));
+    });
+    it('Commands: OAuth usernames and tokens may not contain control characters', async () => {
+        // Both payloads are framed with \x01, so a control character in a value would end the
+        // field early and turn the rest of the value into fields of its own (auth= included)
+        for (let capability of ['AUTH=OAUTHBEARER', 'AUTH=XOAUTH2']) {
+            for (let [user, token] of [
+                ['user\x01auth=Bearer evil@example.com', 'token123'],
+                ['user@example.com', 'tok\x01en'],
+                ['user@example.com', 'tok\nen'],
+                ['user\x00@example.com', 'token123']
+            ]) {
+                let execCalled = false;
+                const connection = createMockConnection({
+                    state: 1,
+                    capabilities: new Map([
+                        [capability, true],
+                        ['SASL-IR', true]
+                    ]),
+                    servername: 'imap.example.com',
+                    authCapabilities: new Map(),
+                    exec: async () => {
+                        execCalled = true;
+                        return { next: () => {} };
+                    },
+                    write: () => {}
+                });
+
+                await assert.rejects(authenticateCommand(connection, user, { accessToken: token }), { code: 'InvalidStringValue' });
+                assert.equal(execCalled, false, `nothing was sent for ${capability} ${JSON.stringify([user, token])}`);
+            }
+        }
+    });
     it('Commands: OAUTHBEARER payload reports the port actually in use', async () => {
         // Regression: the port field was hardcoded to 993 - see lib/commands/authenticate.js.
         let execArgs = null;

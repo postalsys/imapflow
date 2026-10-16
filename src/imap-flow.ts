@@ -26,7 +26,8 @@ import {
     mergeFetchRows,
     packMessageRange,
     normalizePath,
-    expandRange,
+    iterateRange,
+    countRange,
     getColorFlags,
     hasCapability,
     isRev2Active,
@@ -1574,6 +1575,17 @@ export class ImapFlow extends EventEmitter {
             return true;
         }
 
+        if (parsed.truncatedAttributes) {
+            // The row is kept with the item missing rather than dropped with the whole line: the
+            // nesting is the message sender's doing, and the message must still reach the caller
+            this.log.warn({
+                msg: 'FETCH data item exceeded the nesting limit and was dropped',
+                seq: parsed.command,
+                attributes: parsed.truncatedAttributes,
+                cid: this.id
+            });
+        }
+
         if (parsed.tag && !['*', '+'].includes(parsed.tag) && parsed.command) {
             let payload: { response: string; code?: string | undefined } = { response: parsed.command };
 
@@ -1745,11 +1757,25 @@ export class ImapFlow extends EventEmitter {
     async settleRequest(request: PendingRequest, parsed: ImapResponse, hasTrailingData: boolean): Promise<void> {
         switch ((parsed.command || '').toUpperCase()) {
             case 'OK':
-            case 'BYE':
                 // hasTrailingData is forwarded so STARTTLS can detect a plaintext
                 // injection (data buffered after the tagged OK, before the handshake).
                 await this.resolveParked(request, parsed, hasTrailingData);
                 break;
+
+            case 'BYE': {
+                // BYE is always untagged (RFC 9051 section 7.1.5), it is never the completion
+                // result of a command. It used to resolve the command like an OK, so a server (or
+                // a cleartext MITM) answering LOGIN with a tagged BYE marked the session
+                // authenticated. The server says it is closing: the command fails as a lost
+                // connection and the connection is closed, which for a LOGOUT is the outcome it
+                // was after anyway.
+                await this.serverBye(parsed);
+                let err = this.createNoConnectionError(this.byeReason, { rejectedFrom: 'taggedBye', command: request.command });
+                err.response = parsed;
+                err.responseStatus = 'BYE';
+                request.reject(err);
+                break;
+            }
 
             case 'NO':
             case 'BAD': {
@@ -2295,6 +2321,14 @@ export class ImapFlow extends EventEmitter {
             return false;
         }
 
+        if (this.state !== this.states.NOT_AUTHENTICATED) {
+            // STARTTLS is only valid in the not-authenticated state (RFC 9051 section 6.2.1),
+            // which a PREAUTH greeting skips, so there is no way left to protect this session.
+            // Required STARTTLS fails here with that reason: the greeting arrived in cleartext,
+            // and a MITM can answer with PREAUTH precisely to keep it that way.
+            return this._failSTARTTLS('STARTTLS is not possible after a PREAUTH greeting');
+        }
+
         if (!this.capabilities.has('STARTTLS')) {
             return this._failSTARTTLS();
         }
@@ -2807,7 +2841,7 @@ export class ImapFlow extends EventEmitter {
         let uids: string | false = false;
 
         // A malformed VANISHED can carry no attributes at all, and one carrying only the
-        // (EARLIER) tag leaves `uids` false - expandRange() handles that and yields nothing
+        // (EARLIER) tag leaves `uids` false - iterateRange() handles that and yields nothing
         if (!untagged.attributes || !untagged.attributes.length) {
             return;
         }
@@ -2821,16 +2855,18 @@ export class ImapFlow extends EventEmitter {
             uids = untagged.attributes[0].value;
         }
 
-        let uidList = expandRange(uids);
         let earlier = tags.includes('EARLIER');
 
         // RFC 7162 section 3.2.10: unlike VANISHED (EARLIER), a plain VANISHED reports messages the
         // client knows about and decrements the message count like the same number of EXPUNGEs would
         if (!earlier) {
-            mailbox.exists = Math.max(0, mailbox.exists - uidList.length);
+            mailbox.exists = Math.max(0, mailbox.exists - countRange(uids));
         }
 
-        for (let uid of uidList) {
+        // The set is walked one UID at a time rather than expanded first: it is the server's to
+        // choose, and a single "1:16777216" is a few bytes on the wire but sixteen million array
+        // entries expanded, for every such line the server cares to send
+        for (let uid of iterateRange(uids)) {
             let payload: ExpungeEvent = {
                 path: mailbox.path,
                 uid,

@@ -1,8 +1,39 @@
 import { getStatusCode, getErrorText, isServerRefusal } from '../tools.js';
 import type { ImapFlow } from '../imap-flow.js';
-import type { ImapFlowError } from '../errors.js';
+import { createImapError, type ImapFlowError } from '../errors.js';
 import type { ImapCompileNode, ImapResponse } from '../handler/types.js';
 import type { AuthOptions } from '../types.js';
+
+// The OAuth SASL payloads are framed with \x01 (RFC 7628 section 3.1, and the XOAUTH2 format
+// copies it), so a control character in a value ends the field early and the rest of the value
+// becomes fields of its own, auth= included. RFC 7628 allows only VCHAR, SP, HTAB, CR and LF in
+// a value, and none of the controls has a place in a username or a bearer token.
+const RE_CONTROL_CHARS = /[\x00-\x1f\x7f]/;
+
+/**
+ * Refuses a username or token that could not be framed as one SASL field.
+ *
+ * @param value - The value about to be placed in the payload
+ * @param what - What the value is, for the error message
+ * @throws If the value contains a control character
+ */
+function assertSaslValue(value: string, what: string): void {
+    if (RE_CONTROL_CHARS.test(value)) {
+        throw createImapError(`The ${what} contains control characters`, 'InvalidStringValue');
+    }
+}
+
+/**
+ * Escapes a value for the authzid of a GS2 header (RFC 5801 section 4): "," and "=" delimit
+ * the header, so they are written as =2C and =3D. "=" goes first, so the "=" the escaping
+ * itself introduces is not escaped again.
+ *
+ * @param value - The saslname
+ * @returns The escaped saslname
+ */
+function escapeSaslName(value: string): string {
+    return value.replace(/[=]/g, '=3D').replace(/,/g, '=2C');
+}
 
 /**
  * Credentials for the AUTHENTICATE command: the auth options, with the password passed as `password`
@@ -49,6 +80,9 @@ async function authOauth(connection: ImapFlow, username: string, accessToken: st
     let command: string | undefined;
     let breaker: string | undefined;
 
+    assertSaslValue(username, 'username');
+    assertSaslValue(accessToken, 'access token');
+
     if (connection.capabilities.has('AUTH=OAUTHBEARER')) {
         // OAUTHBEARER payload per RFC 7628: fields separated by \x01 (SASL GS2 framing).
         // Format: "n,a=<user>," \x01 "host=..." \x01 "port=..." \x01 "auth=Bearer <token>" \x01 \x01
@@ -59,7 +93,7 @@ async function authOauth(connection: ImapFlow, username: string, accessToken: st
         // A server validating either field rejects with status `invalid_request` - a permanent
         // failure that refreshing the access token can never clear.
         oauthbearer = [
-            `n,a=${username},`,
+            `n,a=${escapeSaslName(username)},`,
             `host=${connection.servername || connection.host}`,
             `port=${connection.port}`,
             `auth=Bearer ${accessToken}`,

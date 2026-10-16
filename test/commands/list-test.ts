@@ -3,6 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import listCommand from '../../src/commands/list.js';
+import { MAX_COLLECTED_RESPONSES } from '../../src/tools.js';
 import { createMockConnection } from '../fixtures/mock-connection.js';
 
 // BigInt() is a standard JS function but triggers new-cap rule
@@ -41,6 +42,24 @@ describe('commands/list', () => {
         const result = await listCommand(connection, '', '*');
         assert.equal(execCalled, true);
         assert.ok(Array.isArray(result));
+    });
+    it('Commands: list fails once a server sends more mailboxes than are kept', async () => {
+        // The entries are the server's to send and the memory holding them is this process's, see
+        // MAX_COLLECTED_RESPONSES. The command fails rather than returning a truncated listing.
+        let entry = { attributes: [[{ value: '\\HasNoChildren' }], { value: '/' }, { value: 'Folder' }] };
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                if (cmd === 'LIST') {
+                    for (let i = 0; i <= MAX_COLLECTED_RESPONSES; i++) {
+                        await opts.untagged.LIST(entry);
+                    }
+                }
+                return { next: () => {} };
+            }
+        });
+
+        await assert.rejects(listCommand(connection, '', '*'), { code: 'TooManyResponses' });
     });
     it('Commands: list takes a literal mailbox name, and a literal delimiter stays a string', async () => {
         const connection = createMockConnection({

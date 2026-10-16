@@ -152,15 +152,16 @@ describe('token-parser', () => {
     });
 
     /**
-     * MAX_IMAP_NESTING_REACHED: Nesting depth exceeds MAX_NODE_DEPTH (25).
-     * createNode() throws when node.depth > 25. The root TREE node starts at
-     * depth 0, so depth 1 is the first LIST ('('), and 26 open parens reaches
-     * depth 26 which exceeds the limit.
+     * MAX_IMAP_NESTING_REACHED: Nesting depth exceeds MAX_NODE_DEPTH (100).
+     * createNode() throws when node.depth > 100. The root TREE node starts at
+     * depth 0, so depth 1 is the first LIST ('('), and 101 open parens reaches
+     * depth 101 which exceeds the limit. (A numeric "* 1 FETCH" row is the one
+     * exception, see the FETCH data item tests below.)
      */
     it('Token Parser: MAX_IMAP_NESTING_REACHED: deep nesting throws MAX_IMAP_NESTING_REACHED', async () => {
         let err: any;
         try {
-            const depth = 26;
+            const depth = 101;
             const input = '* FETCH ' + '('.repeat(depth) + 'x' + ')'.repeat(depth);
             await parser(input);
         } catch (e) {
@@ -169,19 +170,84 @@ describe('token-parser', () => {
         if (!err) throw new Error('Expected parser to throw but it did not');
         assert.ok(err, 'expected an error to be thrown');
         assert.equal(err.code, 'MAX_IMAP_NESTING_REACHED');
+        // the same for every other kind of response
+        await assert.rejects(parser('* LIST ' + '('.repeat(101) + ')'.repeat(101)), { code: 'MAX_IMAP_NESTING_REACHED' });
+        await assert.rejects(parser('A1 OK [X ' + '('.repeat(101) + ')'.repeat(101) + '] done'), { code: 'MAX_IMAP_NESTING_REACHED' });
     });
 
     it('Token Parser: nesting exactly at MAX_NODE_DEPTH is accepted', async () => {
-        // the limit is inclusive and counts every node: 25 nested lists parse, while 25 lists
-        // around an atom (26 levels) are refused like the test above
-        let parsed = await parser('* FETCH ' + '('.repeat(25) + ')'.repeat(25));
+        // the limit is inclusive and counts every node: 100 nested lists parse, while 100 lists
+        // around an atom (101 levels) are refused like the test above
+        let parsed = await parser('* FETCH ' + '('.repeat(100) + ')'.repeat(100));
         let node: any = parsed.attributes;
-        for (let i = 0; i < 25; i++) {
+        for (let i = 0; i < 100; i++) {
             assert.equal(node.length, 1);
             node = node[0];
         }
         assert.deepEqual(node, []);
-        await assert.rejects(parser('* FETCH ' + '('.repeat(25) + 'x' + ')'.repeat(25)), { code: 'MAX_IMAP_NESTING_REACHED' });
+        await assert.rejects(parser('* FETCH ' + '('.repeat(100) + 'x' + ')'.repeat(100)), { code: 'MAX_IMAP_NESTING_REACHED' });
+    });
+
+    // A FETCH row carries one message, and a data item nested past the limit (a BODYSTRUCTURE of
+    // a message with that many nested multiparts, which the sender of the message controls) is
+    // one of several. The row used to fail as a whole and was dropped, so the message never
+    // reached the caller. The item is replaced by NIL instead and reported.
+    const nestedPart = (depth: number) => '('.repeat(depth) + '"text" "plain" NIL NIL NIL "7bit" 1 1 NIL NIL NIL' + ')'.repeat(depth);
+
+    it('Token Parser: a FETCH data item nested past MAX_NODE_DEPTH is replaced by NIL and the row kept', async () => {
+        let parsed = await parser(`* 7 FETCH (UID 7 BODYSTRUCTURE ${nestedPart(150)} FLAGS (\\Seen))`);
+        assert.equal(parsed.tag, '*');
+        assert.equal(parsed.command, '7');
+        assert.deepEqual(parsed.attributes![0], { type: 'ATOM', value: 'FETCH' });
+        let items: any = parsed.attributes![1];
+        assert.deepEqual(items[0], { type: 'ATOM', value: 'UID' });
+        assert.deepEqual(items[1], { type: 'ATOM', value: '7' });
+        assert.deepEqual(items[2], { type: 'ATOM', value: 'BODYSTRUCTURE' });
+        assert.equal(items[3], null, 'the item that nested too deep is NIL');
+        assert.deepEqual(items[4], { type: 'ATOM', value: 'FLAGS' });
+        assert.deepEqual(items[5], [{ type: 'ATOM', value: '\\Seen' }]);
+        assert.equal(items.length, 6);
+        assert.deepEqual(parsed.truncatedAttributes, ['BODYSTRUCTURE']);
+    });
+    it('Token Parser: a FETCH data item nested within MAX_NODE_DEPTH is parsed whole', async () => {
+        // 60 levels exceeded the old limit of 25
+        let parsed = await parser(`* 7 FETCH (UID 7 BODYSTRUCTURE ${nestedPart(60)})`);
+        assert.equal(parsed.truncatedAttributes, undefined);
+        let node: any = (parsed.attributes as any)[1][3];
+        for (let i = 0; i < 60; i++) {
+            assert.ok(Array.isArray(node));
+            node = node[0];
+        }
+        assert.deepEqual(node, { type: 'STRING', value: 'text' });
+    });
+    it('Token Parser: every FETCH data item nested too deep is reported', async () => {
+        let parsed = await parser(`* 7 FETCH (ENVELOPE ${nestedPart(101)} UID 7 BODYSTRUCTURE ${nestedPart(101)})`);
+        let items: any = parsed.attributes![1];
+        assert.deepEqual(
+            items.map((item: any) => (item === null ? null : item.value)),
+            ['ENVELOPE', null, 'UID', '7', 'BODYSTRUCTURE', null]
+        );
+        assert.deepEqual(parsed.truncatedAttributes, ['ENVELOPE', 'BODYSTRUCTURE']);
+    });
+    it('Token Parser: a FETCH section nested too deep is dropped from its item', async () => {
+        // A section is attached to the item before it, so there is no value to replace: the item
+        // keeps its key and the section is left out
+        let parsed = await parser(`* 7 FETCH (BODY[HEADER.FIELDS ${'('.repeat(100)}From${')'.repeat(100)}] "x" UID 7)`);
+        let items: any = parsed.attributes![1];
+        assert.deepEqual(items, [
+            { type: 'ATOM', value: 'BODY' },
+            { type: 'STRING', value: 'x' },
+            { type: 'ATOM', value: 'UID' },
+            { type: 'ATOM', value: '7' }
+        ]);
+        assert.deepEqual(parsed.truncatedAttributes, ['BODY']);
+    });
+    it('Token Parser: an unclosed FETCH data item nested too deep still fails the line', async () => {
+        await assert.rejects(parser('* 7 FETCH (UID 7 BODYSTRUCTURE ' + '('.repeat(150) + ' FLAGS (\\Seen))'), { code: 'ParserError9' });
+    });
+    it('Token Parser: a FETCH row without a sequence number gets no nesting fallback', async () => {
+        // only "* <number> FETCH" is a message data row
+        await assert.rejects(parser(`* FETCH (UID 7 BODYSTRUCTURE ${nestedPart(101)})`), { code: 'MAX_IMAP_NESTING_REACHED' });
     });
 
     it('Token Parser: E35: a literal marker without a supplied buffer throws ParserError35', async () => {
@@ -492,7 +558,7 @@ describe('token-parser', () => {
         });
 
         // the nesting error keeps its own copy of the attribute part
-        await assert.rejects(parser('* FETCH ' + '('.repeat(26) + long), (err: any) => {
+        await assert.rejects(parser('* FETCH ' + '('.repeat(101) + long), (err: any) => {
             assert.equal(err.code, 'MAX_IMAP_NESTING_REACHED');
             assert.equal(err._imapStr.length, 1024);
             return true;

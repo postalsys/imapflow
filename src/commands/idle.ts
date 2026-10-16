@@ -73,6 +73,13 @@ async function runIdle(connection: ImapFlow): Promise<void | false> {
     let ownPreCheck: (() => Promise<void>) | null = null;
     let releaseIdling = claimIdling(connection);
 
+    // The deadline for the server's "+" continuation, see the onSend handler below
+    let continuationTimer: NodeJS.Timeout | null = null;
+    let clearContinuationTimer = () => {
+        clearTimer(continuationTimer);
+        continuationTimer = null;
+    };
+
     try {
         // State flags for the IDLE lifecycle:
         // - doneRequested: someone wants to break IDLE (e.g., to run another command)
@@ -147,6 +154,7 @@ async function runIdle(connection: ImapFlow): Promise<void | false> {
             // After this, the server will push untagged responses for mailbox changes.
             // We can now safely send DONE if a break was already requested.
             onPlusTag: async () => {
+                clearContinuationTimer();
                 connection.log.debug({
                     msg: `Initiated IDLE, waiting for server input`,
                     lockId: connection.currentLock ? connection.currentLock.lockId : undefined,
@@ -162,7 +170,33 @@ async function runIdle(connection: ImapFlow): Promise<void | false> {
                     }
                 }
             },
-            onSend: () => {}
+            // The server has socketTimeout from the moment IDLE is on the wire to acknowledge it
+            // with the "+". The socket watchdog only covers a server that goes quiet: one that
+            // keeps sending untagged lines without ever answering "+" kept the IDLE in flight for
+            // good, and every later command queued behind it. DONE can not be sent before the
+            // "+" (RFC 2177 section 3), so there is no way to break such an IDLE and fall back
+            // to polling; the connection is failed the way the watchdog fails a dead peer.
+            onSend: () => {
+                continuationTimer = unrefTimer(
+                    setTimeout(() => {
+                        continuationTimer = null;
+                        if (canEnd || connection.isClosed) {
+                            return;
+                        }
+                        connection.log.error({
+                            msg: 'Server did not acknowledge IDLE, closing the connection',
+                            timeout: connection.socketTimeout,
+                            cid: connection.id
+                        });
+                        connection.emitError(
+                            createImapError('IDLE was not acknowledged within the socket timeout', 'ETIMEOUT', {
+                                command: 'IDLE',
+                                details: { socketTimeout: connection.socketTimeout }
+                            })
+                        );
+                    }, connection.socketTimeout)
+                );
+            }
         });
 
         response.next();
@@ -193,6 +227,7 @@ async function runIdle(connection: ImapFlow): Promise<void | false> {
         // (including a server-terminated IDLE, where preCheck never ran), rejected command,
         // parser failure and connection close. `idling` drives socket-timeout handling, so it
         // must always describe reality rather than being left over from a previous state.
+        clearContinuationTimer();
         releaseIdling();
         if (connection.preCheck === ownPreCheck) {
             connection.preCheck = false;

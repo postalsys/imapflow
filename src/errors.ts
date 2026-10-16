@@ -44,6 +44,8 @@ export const ImapFlowErrorCode = {
     LineTooLarge: 'LineTooLarge',
     LiteralTooLarge: 'LiteralTooLarge',
     ResponseTooLarge: 'ResponseTooLarge',
+    // one command received more untagged responses than are kept, see MAX_COLLECTED_RESPONSES
+    TooManyResponses: 'TooManyResponses',
 
     // invalid values in a command
     InvalidStringValue: 'InvalidStringValue',

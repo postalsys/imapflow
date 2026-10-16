@@ -1,4 +1,5 @@
-import { formatMessageResponse, isRev2Active, getSelectedMailbox } from '../tools.js';
+import { formatMessageResponse, isRev2Active, getSelectedMailbox, MAX_COLLECTED_RESPONSES } from '../tools.js';
+import { createImapError } from '../errors.js';
 import type { ImapFlow, ExecResponse } from '../imap-flow.js';
 import type { ImapAttributeList, ImapAttributeNode, ImapCompileNode, ImapResponse } from '../handler/types.js';
 import type { FetchMessageObject, FetchOptions, FetchQueryObject } from '../types.js';
@@ -70,9 +71,10 @@ export default async function fetch(
             list: []
         };
 
-        // The first error the onUntaggedFetch consumer reported through next(err). Errors thrown
-        // by untagged handlers are only logged by the connection, so it is kept here and fails
-        // the command once the FETCH completes; later messages are no longer handed to the consumer.
+        // The first error the onUntaggedFetch consumer reported through next(err), or the row
+        // limit being reached. Errors thrown by untagged handlers are only logged by the
+        // connection, so it is kept here and fails the command once the FETCH completes; later
+        // messages are no longer handed to the consumer or collected.
         let consumerError: Error | null = null;
 
         let response: ExecResponse;
@@ -283,6 +285,10 @@ export default async function fetch(
                             } catch (err) {
                                 consumerError = err as Error;
                             }
+                        } else if (messages.list.length >= MAX_COLLECTED_RESPONSES) {
+                            // The rows are the server's to send and the memory holding them is
+                            // this process's, see MAX_COLLECTED_RESPONSES
+                            consumerError = createImapError(`FETCH returned more than ${MAX_COLLECTED_RESPONSES} messages`, 'TooManyResponses');
                         } else {
                             messages.list.push(formatted);
                         }
