@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/postalsys/imapflow/compare/v2.5.0...v2.5.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* bound what a hostile server can make the client buffer or wait for, and keep a tagged BYE from passing as success ([9b969a7](https://github.com/postalsys/imapflow/commit/9b969a75090b84e3cbdea408ac4f36035eb2e71b))
+
 ## [2.5.0](https://github.com/postalsys/imapflow/compare/v2.4.3...v2.5.0) (2026-10-16)
 
 
