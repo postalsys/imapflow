@@ -26,7 +26,30 @@ npm install imapflow
 
 ImapFlow requires Node.js 20 or newer. The package ships both an ES module build and a CommonJS build with bundled type declarations, so no separate `@types` package is needed.
 
-The ES module build also runs on [Bun](https://bun.sh/) (tested against the latest release) and on [Cloudflare Workers](https://developers.cloudflare.com/workers/) with the `nodejs_compat` compatibility flag. On Workers connect with implicit TLS (`secure: true`, usually port 993) or in cleartext: the runtime can not upgrade an already connected socket, so a STARTTLS negotiation fails with a TLS error, and it does not allow turning certificate validation off, so `tls: { rejectUnauthorized: false }` is rejected with `ERR_OPTION_NOT_IMPLEMENTED`. COMPRESS=DEFLATE, IDLE and the default pino logger work as on Node.js.
+The ES module build also runs on [Bun](https://bun.sh/) (tested against the latest release) and on [Cloudflare Workers](https://developers.cloudflare.com/workers/) with the `nodejs_compat` compatibility flag. On Workers connect with implicit TLS (`secure: true`, usually port 993) or in cleartext: the runtime can not upgrade an already connected socket, so a STARTTLS negotiation fails with a TLS error, and it does not allow turning certificate validation off, so `tls: { rejectUnauthorized: false }` is rejected with `ERR_OPTION_NOT_IMPLEMENTED`. COMPRESS=DEFLATE, IDLE and the default pino logger work as on Node.js. STARTTLS works on Workers when the connection goes through `createSocketsTransport()` (see below).
+
+[celld](https://celld.dev/), the self-hosted runtime for Cloudflare-style Workers, has no `node:net`, `node:tls` or `node:dns`. Pass the `connect()` of `cloudflare:sockets` through the `transport` option:
+
+```js
+import { connect } from 'cloudflare:sockets';
+import { ImapFlow, createSocketsTransport } from 'imapflow';
+
+const client = new ImapFlow({
+    host: 'imap.example.com',
+    port: 993,
+    secure: true,
+    auth: { user: 'user@example.com', pass: 'secret' },
+    transport: createSocketsTransport(connect)
+});
+```
+
+Implicit TLS, STARTTLS, cleartext, IDLE, `download()` and the default logger work. Not available there:
+
+- The runtime verifies every certificate against its own root store, so `tls.rejectUnauthorized: false`, a custom `tls.ca`, client certificates and a `servername` that differs from `host` are refused with `UnsupportedTransportOption`. A TLS connection to an IP address needs a certificate issued for that address.
+- COMPRESS=DEFLATE is skipped, the runtime has no streaming zlib.
+- The `proxy` option can not be combined with a transport.
+- `client.tls` stays `false`, the runtime reports no cipher details.
+- A socket is closed when the request (or Durable Object event) that opened it ends. Run the whole session inside the handler, or inside `ctx.waitUntil()` to keep it going after the response.
 
 ## Quick Example
 

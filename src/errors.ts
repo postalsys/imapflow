@@ -63,6 +63,9 @@ export const ImapFlowErrorCode = {
     UnsupportedProxyAddress: 'UnsupportedProxyAddress',
     ERR_INVALID_URL: 'ERR_INVALID_URL',
 
+    // the transport option
+    UnsupportedTransportOption: 'UnsupportedTransportOption',
+
     // API misuse
     InstanceReused: 'InstanceReused'
 } as const;

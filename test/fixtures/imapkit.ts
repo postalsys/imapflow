@@ -72,7 +72,7 @@ export const ALL_PLUGINS = [
 ];
 
 // A mailbox tree with the usual special-use folders
-const DEFAULT_STORAGE = {
+export const DEFAULT_STORAGE = {
     INBOX: {},
     '': {
         separator: '/',

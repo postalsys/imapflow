@@ -121,3 +121,6 @@ src/package-info.ts
 
 # wrangler state of the Cloudflare Workers test harness
 .wrangler/
+
+# esbuild download and state of the celld test harness
+.celld/

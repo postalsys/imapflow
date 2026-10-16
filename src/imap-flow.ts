@@ -41,6 +41,7 @@ import {
     buildConnectionError,
     guardedPromise,
     guardedReject,
+    isIpLiteral,
     MAX_UINT32_DIGITS
 } from './tools.js';
 
@@ -86,7 +87,8 @@ import type {
     StatusObject,
     StatusQuery,
     StoreOptions,
-    TlsInfo
+    TlsInfo,
+    ImapTransportOptions
 } from './types.js';
 import type { ImapAttributeList, ImapAttributeNode, ImapCompileNode, ImapResponse, ImapStreamItem, SelectCommand } from './handler/types.js';
 import type { ProxySocket } from './proxy-connection.js';
@@ -94,6 +96,8 @@ import type { ProxySocket } from './proxy-connection.js';
 export type * from './types.js';
 export type { ImapFlowError } from './errors.js';
 export { AuthenticationFailure, ImapFlowErrorCode } from './errors.js';
+export { createSocketsTransport } from './sockets-transport.js';
+export type { SocketsApiReader, SocketsApiSocket, SocketsApiWriter, SocketsConnect } from './sockets-transport.js';
 export type { ImapAttribute, ImapAttributeList, ImapAttributeNode, ImapResponse } from './handler/types.js';
 
 const GREETING_TIMEOUT = 16 * 1000;
@@ -829,7 +833,7 @@ export class ImapFlow extends EventEmitter {
         // which is POP3 - a client created without an explicit port could never connect.
         this.port = Number(this.options.port) || (this.secureConnection ? 993 : 143);
         this.host = this.options.host || 'localhost';
-        this.servername = this.options.servername ? this.options.servername : !net.isIP(this.host) ? this.host : false;
+        this.servername = this.options.servername ? this.options.servername : !isIpLiteral(this.host) ? this.host : false;
 
         if (typeof this.options.secure === 'undefined' && this.port === 993) {
             // if secure option is not set but port is 993, then default to secure
@@ -2109,6 +2113,13 @@ export class ImapFlow extends EventEmitter {
 
     /** @internal */
     async compress(): Promise<void> {
+        if (typeof zlib.createDeflateRaw !== 'function') {
+            // The runtime has no streaming DEFLATE (celld implements only the synchronous zlib
+            // functions), so the session stays uncompressed rather than failing after COMPRESS
+            this.log.debug({ msg: 'Streaming DEFLATE is not available, skipping COMPRESS', cid: this.id });
+            return;
+        }
+
         if (!(await this.run('COMPRESS'))) {
             return; // was not able to negotiate compression
         }
@@ -2286,6 +2297,9 @@ export class ImapFlow extends EventEmitter {
         }
 
         this.expectCapabilityUpdate = true;
+        if (this.options.transport?.prepareUpgrade && this.socket) {
+            this.options.transport.prepareUpgrade(this.socket);
+        }
         let canUpgrade = await this.run('STARTTLS');
         if (!canUpgrade) {
             return this._failSTARTTLS();
@@ -2410,7 +2424,7 @@ export class ImapFlow extends EventEmitter {
             this.upgrading = true;
             let tlsSocket: ImapSocket;
             try {
-                tlsSocket = tls.connect(opts, () => {
+                let onSecure = () => {
                     try {
                         /* c8 ignore start */ // race: connection closed during the TLS handshake window
                         if (this.isClosed) {
@@ -2466,7 +2480,10 @@ export class ImapFlow extends EventEmitter {
                     } catch (ex) {
                         this.emitError(ex as ImapFlowError);
                     }
-                });
+                };
+                tlsSocket = this.options.transport
+                    ? this.options.transport.upgrade(socketPlain, this.transportOptions(), onSecure)
+                    : tls.connect(opts, onSecure);
             } catch (err) {
                 // tls.connect() refused the upgrade before any handshake (an option the runtime
                 // does not implement, a socket it can not wrap). Settled through the same path
@@ -2870,6 +2887,11 @@ export class ImapFlow extends EventEmitter {
         return this.servername ? { servername: this.servername } : {};
     }
 
+    /** @internal */
+    transportOptions(): ImapTransportOptions {
+        return Object.assign({ host: this.host, port: this.port, tls: this.options.tls }, this.tlsServername());
+    }
+
     // Normalizes a message range from various input formats into an IMAP-compatible
     // sequence string (e.g., "1:5,7,10:*"). Handles: numbers, "*", {all:true},
     // {uid:value}, search query objects (resolved via SEARCH), and arrays of numbers.
@@ -3021,6 +3043,11 @@ export class ImapFlow extends EventEmitter {
         this.untaggedHandlers.FETCH = untagged => this.untaggedFetch(untagged);
         this.untaggedHandlers.VANISHED = untagged => this.untaggedVanished(untagged);
 
+        let transport = this.options.transport;
+        if (transport && this.options.proxy) {
+            throw createImapError('The proxy option can not be combined with a custom transport', 'UnsupportedTransportOption');
+        }
+
         let socket: ProxySocket | false | undefined = false;
         if (this.options.proxy) {
             try {
@@ -3151,6 +3178,8 @@ export class ImapFlow extends EventEmitter {
                     this.socket = socket;
                     setImmediate(onConnect);
                 }
+            } else if (transport) {
+                this.socket = transport.connect(this.transportOptions(), this.secureConnection, onConnect);
             } else {
                 this.socket = connector.connect(opts, onConnect);
             }

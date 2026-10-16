@@ -4,6 +4,7 @@
 
 import type { ConnectionOptions, CipherNameAndProtocol } from 'node:tls';
 import type { Readable } from 'node:stream';
+import type { ImapSocket } from './imap-flow.js';
 
 /**
  * Logger interface. Any object with `debug`, `info`, `warn` and `error` methods can be used,
@@ -102,6 +103,13 @@ export interface ImapFlowOptions {
      * Node as-is. Proxy DNS and negotiation run inside `connectionTimeout`.
      */
     proxy?: string | undefined;
+    /**
+     * Opens the connection through this transport instead of `node:net` and `node:tls`, for
+     * runtimes without those modules. `createSocketsTransport()` builds one from the
+     * `connect()` of the `cloudflare:sockets` API (celld, Cloudflare Workers). Can not be
+     * combined with `proxy`.
+     */
+    transport?: ImapTransport | undefined;
     /** If true, then use QRESYNC instead of CONDSTORE. EXPUNGE notifications will include UID instead of sequence number */
     qresync?: boolean | undefined;
     /** If set, then breaks and restarts IDLE every maxIdleTime ms */
@@ -936,4 +944,47 @@ export interface ImapFlowEvents {
     response: [response: ResponseEvent];
     /** The server sent an ALERT: text meant for the user, such as a planned shutdown or an account problem */
     alert: [alert: AlertEvent];
+}
+
+/** Where {@link ImapTransport} connects to, and the `tls` options of the client */
+export interface ImapTransportOptions {
+    host: string;
+    port: number;
+    /** The SNI name, absent for an IP literal host without the `servername` option */
+    servername?: string | undefined;
+    /** The `tls` option of the client */
+    tls?: ConnectionOptions | undefined;
+}
+
+/**
+ * Opens and upgrades the socket carrying the session, see the `transport` option. The returned
+ * socket must behave like a `net.Socket` as far as ImapFlow uses one: a Duplex stream of Buffers
+ * that emits `error`, `end`, `close` and `timeout`, with `setTimeout()` and `destroy()`.
+ */
+export interface ImapTransport {
+    /**
+     * Opens a connection, cleartext or TLS. Errors, including refused options, are emitted on
+     * the returned socket.
+     *
+     * @param options - Destination and TLS options
+     * @param secure - Whether to open a TLS connection
+     * @param onConnect - Called once the connection (and the TLS handshake) is established
+     */
+    connect(options: ImapTransportOptions, secure: boolean, onConnect: () => void): ImapSocket;
+    /**
+     * Called right before the STARTTLS command is sent on the cleartext socket, so a transport
+     * that can only start TLS without a read in flight can stop reading once it is answered.
+     *
+     * @param socket - The cleartext socket returned by connect()
+     */
+    prepareUpgrade?(socket: ImapSocket): void;
+    /**
+     * Starts TLS on a connected cleartext socket after STARTTLS. May throw if the upgrade is
+     * refused before any handshake, handshake errors are emitted on the returned socket.
+     *
+     * @param socket - The cleartext socket returned by connect()
+     * @param options - Destination and TLS options
+     * @param onSecure - Called once the TLS handshake is complete
+     */
+    upgrade(socket: ImapSocket, options: ImapTransportOptions, onSecure: () => void): ImapSocket;
 }

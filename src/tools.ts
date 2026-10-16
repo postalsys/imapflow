@@ -88,6 +88,18 @@ const IMAP4REV2_FOLDED_CAPABILITIES = new Set([
 // Deliberate no-op, used as the observer a guarded promise attaches to its own rejection.
 export const noop = (): void => {};
 
+/**
+ * Tells an IP literal from a hostname without `node:net`, which some runtimes do not implement.
+ * Only used to decide whether a host can be a TLS servername: a dotted quad, or anything with a
+ * colon (an IPv6 literal, a hostname never contains one).
+ *
+ * @param host - Hostname or IP address
+ * @returns true for an IP literal
+ */
+export function isIpLiteral(host: string): boolean {
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+}
+
 // The fields buildConnectionError() stamps to say *where* a connection error was rejected, as
 // opposed to what went wrong. restampConnectionError() clears them, because they belong to the
 // site that built the error rather than to the failure it describes.

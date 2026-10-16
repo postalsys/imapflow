@@ -1,11 +1,11 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import net from 'node:net';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { startMockImapServer, type MockImapServer } from './mock-imap-server.js';
+import { startTourServer, assertTour } from './tour.js';
+import { freePort, createEtherealAccount, reachable, details } from './harness.js';
 import type { Scenario, ScenarioResult } from './worker.js';
 
 // Runs the built ES module output on the Cloudflare Workers runtime. `wrangler dev` starts a
@@ -16,45 +16,11 @@ import type { Scenario, ScenarioResult } from './worker.js';
 //
 // Started by `npm run test:workers`, which builds dist/ first. Not part of `npm test`.
 
-const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
 
 const WRANGLER_STARTUP_TIMEOUT = 120 * 1000;
 const REQUEST_TIMEOUT = 60 * 1000;
-
-const freePort = (): Promise<number> =>
-    new Promise((resolve, reject) => {
-        const probe = net.createServer();
-        probe.once('error', reject);
-        probe.listen(0, '127.0.0.1', () => {
-            const port = (probe.address() as net.AddressInfo).port;
-            probe.close(() => resolve(port));
-        });
-    });
-
-interface EtherealAccount {
-    user: string;
-    pass: string;
-    imap: { host: string; port: number; secure: boolean };
-}
-
-// A throwaway account on Ethereal (https://ethereal.email), the test mail service run by the
-// Nodemailer project: everything sent to it lands in its own inbox and nothing leaves
-const createEtherealAccount = async (): Promise<EtherealAccount | null> => {
-    try {
-        const response = await fetch('https://api.nodemailer.com/user', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ requestor: 'imapflow', version: require(path.join(root, 'package.json')).version }),
-            signal: AbortSignal.timeout(20 * 1000)
-        });
-        const account = (await response.json()) as EtherealAccount & { status?: string };
-        return account && account.status === 'success' && account.imap ? account : null;
-    } catch {
-        return null;
-    }
-};
 
 describe('Cloudflare Workers', { timeout: 10 * 60 * 1000 }, () => {
     let wrangler: ChildProcess | null = null;
@@ -247,6 +213,36 @@ describe('Cloudflare Workers', { timeout: 10 * 60 * 1000 }, () => {
         assert.equal(result.idle?.count, before + 1, 'the EXISTS pushed during IDLE was reported');
         assert.equal(result.idle?.existsAfter, before + 1);
         assert.ok(server.commands.includes('IDLE') && server.commands.includes('DONE'), 'IDLE was entered and broken with DONE');
+    });
+
+    for (const transport of [undefined, 'sockets'] as const) {
+        it(`runs the API tour against ImapKit over ${transport ? 'createSocketsTransport()' : 'node:net'}`, async () => {
+            const tourServer = await startTourServer({ transport });
+            try {
+                const result = await run(tourServer.scenario);
+                assertTour(result);
+                // workerd has streaming zlib, so COMPRESS=DEFLATE is negotiated on either transport
+                assert.equal(result.compressed, true, 'COMPRESS was negotiated');
+                assert.deepEqual(tourServer.bad, [], 'ImapKit answered client input with BAD');
+            } finally {
+                await tourServer.close();
+            }
+        });
+    }
+
+    it('upgrades with STARTTLS through createSocketsTransport()', async t => {
+        // The sockets transport keeps no read in flight once the STARTTLS OK arrived, so the
+        // runtime can start TLS. outlook.office365.com offers STARTTLS on 143 with a publicly
+        // trusted certificate; without credentials connect() stops after the upgrade
+        const host = 'outlook.office365.com';
+        if (!(await reachable(host, 143))) {
+            t.skip(`${host}:143 is not reachable`);
+            return;
+        }
+        const result = await run({ host, port: 143, secure: false, doSTARTTLS: true, transport: 'sockets' });
+        assert.equal(result.secureConnection, true, details(result));
+        assert.equal(result.error?.message, 'Please configure the login');
+        assert.ok(!result.capabilities?.includes('STARTTLS'), 'the capabilities were read again after the upgrade');
     });
 
     it('refuses tls.rejectUnauthorized: false with ERR_OPTION_NOT_IMPLEMENTED', async () => {

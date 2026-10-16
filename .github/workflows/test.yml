@@ -72,6 +72,23 @@ jobs:
             - run: npm install
             - run: npm run test:workers
 
+    # The ES module build on celld (https://celld.dev): `celld dev` runs in Docker with host
+    # networking and test/celld/worker.ts runs sessions through createSocketsTransport(),
+    # since celld has no node:net or node:tls
+    test-celld:
+        name: celld (Docker)
+        timeout-minutes: 15
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - name: Use Node.js 24.x
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24.x
+                  cache: npm
+            - run: npm install
+            - run: npm run test:celld
+
     test-rev2:
         # Live IMAP4rev2 integration tests against a real Dovecot 2.4 server in
         # Docker on linux/amd64 (ubuntu runners are amd64 with Docker preinstalled).
