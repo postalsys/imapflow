@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.3](https://github.com/postalsys/imapflow/compare/v2.5.2...v2.5.3) (2026-10-18)
+
+
+### Bug Fixes
+
+* bump @zone-eu/mailsplit to 5.4.24 ([ab82e4f](https://github.com/postalsys/imapflow/commit/ab82e4f28544111ca3b3ab80a851016576245148))
+
 ## [2.5.2](https://github.com/postalsys/imapflow/compare/v2.5.1...v2.5.2) (2026-10-16)
 
 
