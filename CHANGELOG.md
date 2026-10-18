@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.5](https://github.com/postalsys/imapflow/compare/v2.5.4...v2.5.5) (2026-10-18)
+
+
+### Bug Fixes
+
+* bump libmime to 5.5.1, libqp to 3.0.1, libbase64 to 1.4.1 and @zone-eu/mailsplit to 5.4.26 ([d5dc4b5](https://github.com/postalsys/imapflow/commit/d5dc4b5a2d029cde9276249202e512a57fa9472e))
+
 ## [2.5.4](https://github.com/postalsys/imapflow/compare/v2.5.3...v2.5.4) (2026-10-18)
 
 
