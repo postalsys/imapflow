@@ -78,7 +78,7 @@
         "buffer": "6.0.3",
         "c8": "12.0.0",
         "esbuild": "0.28.2",
-        "eslint": "10.12.0",
+        "eslint": "10.13.0",
         "eslint-config-prettier": "10.1.8",
         "events": "3.3.0",
         "globals": "17.13.0",
@@ -92,15 +92,15 @@
         "types-node-legacy": "npm:@types/node@20.0.0",
         "typescript": "6.0.3",
         "typescript-eslint": "8.71.2",
-        "wrangler": "4.151.0"
+        "wrangler": "4.151.1"
     },
     "dependencies": {
-        "@zone-eu/mailsplit": "5.4.25",
+        "@zone-eu/mailsplit": "5.4.26",
         "encoding-japanese": "2.4.0",
         "iconv-lite": "0.7.3",
-        "libbase64": "1.3.3",
-        "libmime": "5.4.9",
-        "libqp": "2.1.3",
+        "libbase64": "1.4.1",
+        "libmime": "5.5.1",
+        "libqp": "3.0.1",
         "pino": "10.3.1",
         "socks": "2.8.10"
     },
