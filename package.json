@@ -95,7 +95,7 @@
         "wrangler": "4.151.0"
     },
     "dependencies": {
-        "@zone-eu/mailsplit": "5.4.23",
+        "@zone-eu/mailsplit": "5.4.24",
         "encoding-japanese": "2.4.0",
         "iconv-lite": "0.7.3",
         "libbase64": "1.3.3",
