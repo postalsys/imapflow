@@ -43,6 +43,11 @@ export interface ImapResponse {
     command?: string | undefined;
     /** Parsed attributes of the response */
     attributes?: ImapAttributeList | undefined;
+    /**
+     * The numbers of an untagged SEARCH response (`* SEARCH 2 5 9`), set instead of `attributes`
+     * when the line holds nothing else, see parser()
+     */
+    numbers?: number[] | undefined;
     /** Number of leading NUL bytes stripped from the line, if any */
     nullBytesRemoved?: number | undefined;
     /**
@@ -62,6 +67,8 @@ export interface ImapCompileInput {
     tag?: string | undefined;
     command?: string | undefined;
     attributes?: ImapCompileNode | ImapCompileNode[] | undefined;
+    /** The numbers of a parsed SEARCH response, written after the attributes */
+    numbers?: number[] | undefined;
 }
 
 export interface CompilerOptions {

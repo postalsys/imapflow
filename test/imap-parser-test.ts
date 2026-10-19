@@ -48,6 +48,84 @@ describe('imap-parser', () => {
     });
     it('IMAP Parser: Args: allow trailing whitespace and empty arguments', async () =>
         assert.deepEqual(await parser('* SEARCH '), { tag: '*', command: 'SEARCH' }));
+    // A SEARCH answer holds one number per matching message, read into an array instead of one
+    // token each, which took some 30 times the line size in heap on a large mailbox (#443)
+    describe('untagged SEARCH numbers', () => {
+        for (const [line, numbers] of [
+            ['* SEARCH 12 3', [12, 3]],
+            ['* SEARCH 1', [1]],
+            ['* search 7 4294967295', [7, 4294967295]],
+            ['* SEARCH 1 2  ', [1, 2]],
+            // not nz-numbers, the search command discards them, as it does their atoms
+            ['* SEARCH 0 007 9007199254740991', [0, 7, 9007199254740991]]
+        ] as const) {
+            it(`reads ${JSON.stringify(line)} into numbers`, async () => {
+                assert.deepEqual(await parser(line), { tag: '*', command: line.split(' ')[1], numbers });
+            });
+        }
+        it('reads a line after stripped NUL bytes', async () => {
+            assert.deepEqual(await parser(Buffer.from('\x00\x00* SEARCH 5 6')), { tag: '*', command: 'SEARCH', numbers: [5, 6], nullBytesRemoved: 2 });
+        });
+        for (const [line, attributes] of [
+            [
+                '* SEARCH 2 5 (MODSEQ 917162500)',
+                [
+                    { type: 'ATOM', value: '2' },
+                    { type: 'ATOM', value: '5' },
+                    [
+                        { type: 'ATOM', value: 'MODSEQ' },
+                        { type: 'ATOM', value: '917162500' }
+                    ]
+                ]
+            ],
+            [
+                '* SEARCH 2 x',
+                [
+                    { type: 'ATOM', value: '2' },
+                    { type: 'ATOM', value: 'x' }
+                ]
+            ],
+            ['* SEARCH 1:3', [{ type: 'SEQUENCE', value: '1:3' }]],
+            [
+                '* SEARCH 1 9007199254740992',
+                [
+                    { type: 'ATOM', value: '1' },
+                    { type: 'ATOM', value: '9007199254740992' }
+                ]
+            ],
+            [
+                'A1 SEARCH 1 2',
+                [
+                    { type: 'ATOM', value: '1' },
+                    { type: 'ATOM', value: '2' }
+                ]
+            ],
+            [
+                '* 4 SEARCH 1',
+                [
+                    { type: 'ATOM', value: 'SEARCH' },
+                    { type: 'ATOM', value: '1' }
+                ]
+            ]
+        ] as const) {
+            it(`leaves ${JSON.stringify(line)} to the tokenizer`, async () => {
+                const parsed = await parser(line);
+                assert.equal(parsed.numbers, undefined);
+                assert.deepEqual(parsed.attributes, attributes);
+            });
+        }
+        for (const line of ['* SEARCH  1', '* SEARCH 1  2', '* SEARCH 1-2']) {
+            it(`does not accept ${JSON.stringify(line)} as numbers`, async () => {
+                let parsed: any;
+                try {
+                    parsed = await parser(line);
+                } catch {
+                    return;
+                }
+                assert.equal(parsed.numbers, undefined);
+            });
+        }
+    });
     it('IMAP Parser: Attributes: single atom', async () =>
         assert.deepEqual((await parser('TAG1 CMD FED')).attributes, [
             {

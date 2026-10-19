@@ -702,7 +702,7 @@ describe('token-parser: digit-led atoms', () => {
     }
 
     it('keeps a single number an atom', async () => {
-        assert.deepEqual((await parser('* SEARCH 12 3')).attributes, [
+        assert.deepEqual((await parser('* X 12 3')).attributes, [
             { type: 'ATOM', value: '12' },
             { type: 'ATOM', value: '3' }
         ]);

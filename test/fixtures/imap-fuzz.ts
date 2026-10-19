@@ -5,7 +5,7 @@
 // The runs are reproducible: FUZZ_SEED picks the seed and FUZZ_ITERATIONS the number of cases,
 // so a failure reported for one seed reruns as `FUZZ_SEED=<seed> FUZZ_ITERATIONS=1`.
 
-import type { ImapAttribute, ImapResponse } from '../../src/handler/types.js';
+import type { ImapAttribute, ImapAttributeNode, ImapResponse } from '../../src/handler/types.js';
 
 export const FUZZ_SEED = Number(process.env.FUZZ_SEED) || 20261006;
 export const FUZZ_ITERATIONS = Number(process.env.FUZZ_ITERATIONS) || 300;
@@ -292,14 +292,33 @@ export const generateResponse = (rng: Rng): GeneratedResponse => {
     } else {
         command = rng.pick(COMMANDS);
         let count = rng.int(0, 6);
+        // a SEARCH answer is mostly plain numbers, which the parser reads on a path of its own
+        let numbersOnly = command === 'SEARCH' && rng.chance(0.5);
         for (let i = 0; i < count; i++) {
-            parts.push(genAttribute(rng, 0));
+            if (numbersOnly) {
+                let value = numberValue(rng);
+                parts.push({ wire: [ascii(value)], value: { type: 'ATOM', value } });
+            } else {
+                parts.push(genAttribute(rng, 0));
+            }
         }
     }
 
     let wire = Buffer.concat([ascii(`${tag} ${command}`), ...parts.flatMap(part => [ascii(' '), ...part.wire])]);
     let expected: ImapResponse = { tag, command };
-    if (parts.length) {
+    const isNumberAtom = (value: ImapAttribute): boolean =>
+        !!value &&
+        !Array.isArray(value) &&
+        value.type === 'ATOM' &&
+        typeof value.value === 'string' &&
+        /^\d+$/.test(value.value) &&
+        Number(value.value) <= Number.MAX_SAFE_INTEGER &&
+        !value.section &&
+        !value.partial;
+    if (tag === '*' && command === 'SEARCH' && parts.length && parts.every(part => isNumberAtom(part.value))) {
+        // an untagged SEARCH line of plain numbers is read into `numbers`, see parser()
+        expected.numbers = parts.map(part => Number((part.value as ImapAttributeNode).value));
+    } else if (parts.length) {
         expected.attributes = parts.map(part => part.value) as any;
     }
     return { wire, expected };

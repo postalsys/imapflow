@@ -4072,7 +4072,11 @@ export class ImapFlow extends EventEmitter {
      *
      * @param query Query to filter the messages
      * @param options Search options. With `returnOptions` set the result is an ESEARCH result object
-     * @returns An array of sequence or UID numbers, or an ESearchResult when `returnOptions` was used
+     * @returns An array of sequence or UID numbers, or an ESearchResult when `returnOptions` was used.
+     *   `false` when the server rejected the search (a NO or BAD answer, for example an unsupported
+     *   charset or search key), `undefined` when no mailbox is open. Rejects when the command could
+     *   not complete, for example because the connection closed or failed, so a failed search is
+     *   never mistaken for an empty result
      *
      * @example
      * let mailbox = await client.mailboxOpen('INBOX');

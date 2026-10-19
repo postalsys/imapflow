@@ -350,6 +350,12 @@ function compiler(response: ImapCompileInput, options?: CompilerOptions | undefi
         }
     }
 
+    if (response.numbers) {
+        for (let value of response.numbers) {
+            walk(value);
+        }
+    }
+
     if (resp.length) {
         respParts.push(resp);
     }

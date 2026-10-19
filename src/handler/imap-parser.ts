@@ -30,6 +30,55 @@ function asParserError(err: unknown, input: Buffer | string): ImapFlowError {
 }
 
 /**
+ * Reads the numbers of an untagged SEARCH response, the part of the line after the command
+ * (" 2 5 9"), into an array. A SEARCH answer holds one number per matching message, so on a
+ * large mailbox one line carries millions of them, and run through the tokenizer each would
+ * become a parse tree node and an attribute object, some 30 times the size of the line in heap.
+ *
+ * @param str - The rest of the line after the command
+ * @returns The numbers, or null when the line holds anything but a space before every number
+ *   and trailing spaces (a CONDSTORE MODSEQ list, extra spaces, a number past 2^53), which is
+ *   left to the tokenizer
+ */
+function readSearchNumbers(str: string): number[] | null {
+    // trailing spaces are tolerated, as the tokenizer does, some servers end the line with one
+    let end = str.length;
+    while (end > 1 && str.charCodeAt(end - 1) === 0x20) {
+        end--;
+    }
+    if (end < 2 || str.charCodeAt(0) !== 0x20) {
+        return null;
+    }
+    const numbers: number[] = [];
+    // -1 until the first digit of the current number
+    let value = -1;
+    for (let i = 1; i < end; i++) {
+        const c = str.charCodeAt(i);
+        if (c === 0x20) {
+            if (value < 0) {
+                return null;
+            }
+            numbers.push(value);
+            value = -1;
+        } else if (c >= 0x30 && c <= 0x39) {
+            value = (value < 0 ? 0 : value * 10) + (c - 0x30);
+            // past 2^53 the digits no longer add up exactly, a line with such a number is left
+            // to the tokenizer
+            if (value > Number.MAX_SAFE_INTEGER) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+    }
+    if (value < 0) {
+        return null;
+    }
+    numbers.push(value);
+    return numbers;
+}
+
+/**
  * Parses a raw IMAP command or response buffer into a structured object.
  * Handles edge cases such as null-byte-padded responses from buggy servers and
  * multi-word commands like UID and AUTHENTICATE.
@@ -40,8 +89,9 @@ function asParserError(err: unknown, input: Buffer | string): ImapFlowError {
  * @param options.literals - Pre-parsed literal values extracted from the input stream.
  * @returns A promise that resolves to a parsed response object with `tag` (the IMAP tag, e.g. "*",
  *   "+", or a command tag like "A1"), `command` (the IMAP command or response name, e.g. "OK",
- *   "FETCH"), `attributes` (parsed attributes of the response) and `nullBytesRemoved` (number of
- *   leading null bytes removed, if any).
+ *   "FETCH"), `attributes` (parsed attributes of the response), `numbers` (the numbers of an
+ *   untagged SEARCH response that holds nothing else, instead of `attributes`) and
+ *   `nullBytesRemoved` (number of leading null bytes removed, if any).
  */
 export default async function parser(command: Buffer | string, options?: ParserOptions | undefined): Promise<ImapResponse> {
     options = options || {};
@@ -89,6 +139,14 @@ export default async function parser(command: Buffer | string, options?: ParserO
         if (['UID', 'AUTHENTICATE'].includes((response.command || '').toUpperCase())) {
             await parserInstance.getSpace();
             response.command += ' ' + (await parserInstance.getElement(imapFormalSyntax.command()));
+        }
+
+        if (response.tag === '*' && (response.command || '').toUpperCase() === 'SEARCH') {
+            const numbers = readSearchNumbers(parserInstance.remainder);
+            if (numbers) {
+                response.numbers = numbers;
+                return response;
+            }
         }
 
         if (parserInstance.remainder.trim().length) {

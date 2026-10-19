@@ -1,4 +1,4 @@
-import { hasCapability, isValidSequenceValue, EXPANDED_RANGE_LIMIT, reportCommandError, getSelectedMailbox } from '../tools.js';
+import { hasCapability, isValidSequenceValue, isServerRefusal, EXPANDED_RANGE_LIMIT, reportCommandError, getSelectedMailbox } from '../tools.js';
 import { searchCompiler } from '../search-compiler.js';
 import { parseEsearchResponse } from './esearch-parser.js';
 import type { ImapFlow } from '../imap-flow.js';
@@ -21,6 +21,24 @@ const stripEsearchPrefix = (attrs: ImapAttributeList): ImapAttributeList => {
     if (attrs[start] && typeof attrs[start]!.value === 'string' && (attrs[start]!.value as string).toUpperCase() === 'UID') start++;
     return attrs.slice(start);
 };
+
+/**
+ * The failure path of both SEARCH forms. A NO or BAD answer is the server refusing the search,
+ * which resolves false. Any other failure means the command never completed (the connection
+ * closed or failed, the answer could not be read, the server throttled it), and is rethrown:
+ * resolving false would read as "nothing matched" to a caller that treats a non-array result as
+ * an empty one.
+ *
+ * @param connection - IMAP connection instance
+ * @param err - The command error
+ */
+async function searchFailed(connection: ImapFlow, err: ImapFlowError): Promise<false> {
+    await reportCommandError(connection, err);
+    if (isServerRefusal(err)) {
+        return false;
+    }
+    throw err;
+}
 
 /**
  * Searches for messages matching the specified criteria.
@@ -100,46 +118,62 @@ export default async function search(
                 response.next();
                 return esearchResult;
             } catch (err) {
-                await reportCommandError(connection, err as ImapFlowError);
-                return false;
+                return await searchFailed(connection, err as ImapFlowError);
             }
         }
         // returnItems was empty - fall through to legacy SEARCH path below
     }
 
     // Legacy SEARCH path (no returnOptions, or server lacks ESEARCH)
-    // Use a Set to deduplicate sequence numbers/UIDs - servers may return
-    // duplicates across multiple untagged SEARCH responses.
-    let results = new Set<number>();
+    // A plain array, deduplicated once all responses are in: on a large mailbox the result
+    // holds millions of numbers, and a Set costs several times the memory of an array
+    let results: number[] = [];
+    // How many numbers ESEARCH ALL expansions have added, see the budget below
+    let esearchAdded = 0;
     let response;
     try {
         response = await connection.exec(options.uid ? 'UID SEARCH' : 'SEARCH', attributes, {
             untagged: {
                 SEARCH: async (untagged: ImapResponse) => {
-                    if (untagged && untagged.attributes && untagged.attributes.length) {
+                    if (!untagged) {
+                        return;
+                    }
+                    // A line of plain numbers arrives already read into an array (see parser()),
+                    // anything else as attribute tokens
+                    let numbers = untagged.numbers;
+                    let attributes = untagged.attributes || [];
+                    let count = numbers ? numbers.length : attributes.length;
+                    if (count) {
+                        // The first array of numbers becomes the result itself, checked in place,
+                        // so a large answer is not held twice
+                        let target = numbers && !results.length ? numbers : results;
+                        let size = target === results ? results.length : 0;
                         let truncated = false;
                         let discarded = false;
-                        for (let attribute of untagged.attributes) {
+                        for (let i = 0; i < count; i++) {
                             // The result set is server-controlled and accumulated across
                             // responses, so stop at the same absolute ceiling expandRange()
                             // uses - a server streaming SEARCH responses could otherwise
                             // grow the set until the process runs out of memory
                             /* c8 ignore next 4 */ // reaching the ceiling needs 2^24 accumulated results, which no unit test can produce in reasonable time
-                            if (results.size >= EXPANDED_RANGE_LIMIT) {
+                            if (size >= EXPANDED_RANGE_LIMIT) {
                                 truncated = true;
                                 break;
                             }
+                            let attribute = attributes[i];
+                            let value = numbers ? numbers[i] : attribute && typeof attribute.value === 'string' ? Number(attribute.value) : NaN;
                             // Same nz-number check the ESEARCH branch below applies. isNaN()
                             // is not enough: it passes '1e400' (Infinity), '-3' and '2.5', and
                             // a single one of those makes the sequence set compiled from this
                             // result set invalid, failing the caller's whole follow-up command
-                            let value = attribute && typeof attribute.value === 'string' ? Number(attribute.value) : NaN;
                             if (!isValidSequenceValue(value)) {
                                 discarded = true;
                                 continue;
                             }
-                            results.add(value);
+                            target[size++] = value;
                         }
+                        target.length = size;
+                        results = target;
                         if (truncated || discarded) {
                             connection.log.warn({
                                 msg: 'Invalid entries in the SEARCH result',
@@ -160,7 +194,7 @@ export default async function search(
                     }
                     let parsed = parseEsearchResponse(stripEsearchPrefix(untagged.attributes));
                     if (parsed.all) {
-                        // Walk the compact sequence-set directly into the Set - the ALL
+                        // Walk the compact sequence-set directly into the results - the ALL
                         // result may cover the entire mailbox, so expanding it into an
                         // intermediate array first would double the peak memory use.
                         // The set comes from an untrusted server: endpoints must be
@@ -173,11 +207,17 @@ export default async function search(
                         // not contain '*' at all (RFC 9051 section 4.1.1), so UID
                         // parts with '*' are dropped
                         let existsCount = () => mailbox.exists || 0;
-                        // The mailbox EXISTS count is itself server-supplied and can be
-                        // absurdly large, so the budget is additionally capped at the same
-                        // absolute ceiling expandRange() uses - a hostile server cannot
-                        // bypass it by inflating EXISTS first
-                        let overBudget = () => results.size >= existsCount() || results.size >= EXPANDED_RANGE_LIMIT;
+                        // The budget counts what the expansions added, across responses, so
+                        // a server repeating the same range cannot multiply it. The mailbox
+                        // EXISTS count is itself server-supplied and can be absurdly large, so
+                        // the budget is additionally capped at the same absolute ceiling
+                        // expandRange() uses - a hostile server cannot bypass it by inflating
+                        // EXISTS first
+                        let overBudget = () => esearchAdded >= existsCount() || results.length >= EXPANDED_RANGE_LIMIT;
+                        let add = (value: number) => {
+                            results.push(value);
+                            esearchAdded++;
+                        };
                         let resolveId = (part: string) => (part === '*' ? (options.uid ? 0 : existsCount()) : Number(part));
                         let truncated = false;
                         let discarded = false;
@@ -194,7 +234,7 @@ export default async function search(
                                     truncated = true;
                                     break;
                                 }
-                                results.add(value);
+                                add(value);
                                 continue;
                             }
                             let first = resolveId(part.substring(0, colon));
@@ -208,7 +248,7 @@ export default async function search(
                                     truncated = true;
                                     break sequenceSetLoop;
                                 }
-                                results.add(id);
+                                add(id);
                             }
                         }
                         if (truncated || discarded) {
@@ -224,10 +264,18 @@ export default async function search(
             }
         });
         response.next();
-        // Sort numerically for consistent, predictable output order
-        return Array.from(results).sort((a, b) => a - b);
+        // Sort numerically for consistent, predictable output order, then drop the duplicates
+        // in place: servers may repeat numbers across multiple untagged responses
+        results.sort((a, b) => a - b);
+        let unique = 0;
+        for (let i = 0; i < results.length; i++) {
+            if (!unique || results[i] !== results[unique - 1]) {
+                results[unique++] = results[i]!;
+            }
+        }
+        results.length = unique;
+        return results;
     } catch (err) {
-        await reportCommandError(connection, err as ImapFlowError);
-        return false;
+        return await searchFailed(connection, err as ImapFlowError);
     }
 }

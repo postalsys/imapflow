@@ -139,7 +139,9 @@ export interface ImapFlowOptions {
      * accepted. `Infinity` disables the limit. An in-progress line is additionally bounded by
      * whatever is left of `maxResponseSize`, so lowering that also bounds line buffering.
      * Exceeding it is terminal: the connection fails with error code `LineTooLarge` and
-     * no further input is parsed.
+     * no further input is parsed. The limit bounds the bytes of a line, not the memory its parse
+     * takes, which is several times the line size for a line of many small tokens. A SEARCH
+     * answer of plain numbers is read into an array of about the size of the line.
      */
     maxLineLength?: number | undefined;
     /**

@@ -42,6 +42,12 @@ describe('imap-compiler', () => {
         const compiled = (await compiler(parsed)).toString();
         assert.equal(compiled, command);
     });
+    it('IMAP Compiler: writes back the numbers of a parsed SEARCH response', async () => {
+        const parsed = await parser('* SEARCH 4 2 1000000');
+        assert.deepEqual(parsed.numbers, [4, 2, 1000000]);
+        assert.equal(compiler(parsed).toString(), '* SEARCH 4 2 1000000');
+        assert.equal(compiler(parsed, { isLogging: true }).toString(), '* SEARCH 4 2 1000000');
+    });
     it('IMAP Compiler: no attributes', async () =>
         assert.equal(
             (

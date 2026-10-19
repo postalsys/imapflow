@@ -276,12 +276,90 @@ describe('commands/search', () => {
             exec: async () => {
                 const err: any = new Error('Search failed');
                 err.response = { attributes: [] };
+                err.responseStatus = 'NO';
                 throw err;
             }
         });
 
         const result = await searchCommand(connection, { all: true }, {});
         assert.equal(result, false);
+    });
+    it('Commands: search resolves false on a BAD answer', async () => {
+        const connection = createMockConnection({
+            state: 3,
+            exec: async () => {
+                const err: any = new Error('Search failed');
+                err.responseStatus = 'BAD';
+                throw err;
+            }
+        });
+
+        assert.equal(await searchCommand(connection, { all: true }, {}), false);
+    });
+    // A failure without a tagged answer used to resolve false too, which a caller reads as "nothing
+    // matched" and so skips the range (#444)
+    for (const returnOptions of [undefined, ['COUNT']]) {
+        it(`Commands: search rejects when the command did not complete${returnOptions ? ' (ESEARCH)' : ''}`, async () => {
+            const failure: any = new Error('Connection not available');
+            failure.code = 'NoConnection';
+            const connection = createMockConnection({
+                state: 3,
+                capabilities: new Map([['ESEARCH', true]]),
+                exec: async () => {
+                    throw failure;
+                }
+            });
+
+            await assert.rejects(searchCommand(connection, { all: true }, { returnOptions: returnOptions as any }), failure);
+        });
+    }
+    it('Commands: search rejects when the server throttled it', async () => {
+        // Microsoft 365 answers a throttled command with BAD, which asks to try again later
+        const failure: any = new Error('Request is throttled');
+        failure.responseStatus = 'BAD';
+        failure.code = 'ETHROTTLE';
+        const connection = createMockConnection({
+            state: 3,
+            exec: async () => {
+                throw failure;
+            }
+        });
+
+        await assert.rejects(searchCommand(connection, { all: true }, {}), failure);
+    });
+    it('Commands: search reads a SEARCH line of plain numbers and drops duplicates across responses', async () => {
+        const connection = createMockConnection({
+            state: 3,
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                await opts.untagged.SEARCH({ numbers: [9, 2, 0, 4294967296, 5] });
+                await opts.untagged.SEARCH({ attributes: [{ type: 'ATOM', value: '5' }, null, { type: 'ATOM', value: '2' }] });
+                await opts.untagged.SEARCH({ numbers: [9, 1] });
+                return { next: () => {} };
+            }
+        });
+
+        // 0 and 2^32 are not nz-numbers and are discarded
+        assert.deepEqual(await searchCommand(connection, true, {}), [1, 2, 5, 9]);
+    });
+    it('Commands: search keeps an ESEARCH ALL range that overlaps a SEARCH answer whole', async () => {
+        // The ESEARCH budget counts what the expansions added, so numbers already in the result
+        // from a SEARCH response do not cut the range short
+        const connection = createMockConnection({
+            state: 3,
+            mailbox: { path: 'INBOX', exists: 3 },
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                await opts.untagged.SEARCH({ numbers: [1, 2] });
+                await opts.untagged.ESEARCH({
+                    attributes: [
+                        { type: 'ATOM', value: 'ALL' },
+                        { type: 'SEQUENCE', value: '1:3' }
+                    ]
+                });
+                return { next: () => {} };
+            }
+        });
+
+        assert.deepEqual(await searchCommand(connection, true, {}), [1, 2, 3]);
     });
     it('Commands: search returns false for invalid query', async () => {
         const connection = createMockConnection({ state: 3 });
@@ -295,6 +373,7 @@ describe('commands/search', () => {
             state: 3,
             exec: async () => {
                 const err: any = new Error('Search failed');
+                err.responseStatus = 'NO';
                 err.response = {
                     tag: 'A1',
                     command: 'NO',

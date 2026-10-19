@@ -88,6 +88,59 @@ describe('imap-flow-server', () => {
 
         server.close();
     });
+    // search() used to resolve false when the command never completed, which a caller reads as
+    // "nothing matched" (#444). A server refusing the search still resolves false
+    describe('search() failures', () => {
+        const searchWith = async (handler: (ctx: any) => void, overrides = {}) => {
+            let server = createServer({ handlers: { SEARCH: handler, UID: handler } });
+            let port = await listen(server);
+            let client = makeClient(port, overrides);
+            client.on('error', () => {});
+            await client.connect();
+            await client.mailboxOpen('INBOX');
+            try {
+                return await client.search({ all: true }, { uid: true });
+            } finally {
+                client.close();
+                server.close();
+            }
+        };
+
+        it('rejects when the answer exceeds maxLineLength', async () => {
+            await assert.rejects(
+                searchWith(ctx => ctx.write(`* SEARCH ${'1234567 '.repeat(200)}1\r\n`), { maxLineLength: 1024 }),
+                (err: any) => ['LineTooLarge', 'NoConnection'].includes(err.code)
+            );
+        });
+        it('rejects when the connection drops before the tagged answer', async () => {
+            await assert.rejects(
+                searchWith(ctx => {
+                    ctx.write('* SEARCH 1 2\r\n');
+                    ctx.socket.destroy();
+                }),
+                (err: any) => err.code === 'NoConnection'
+            );
+        });
+        it('resolves false on a NO answer', async () => {
+            assert.equal(await searchWith(ctx => ctx.no('[BADCHARSET] unsupported')), false);
+        });
+        it('logs the numbers of a SEARCH answer', async () => {
+            let lines: string[] = [];
+            let log = (entry: any) => entry.src === 's' && lines.push(entry.msg);
+            let logger = { trace() {}, debug: log, info() {}, warn() {}, error() {}, fatal() {} };
+            assert.deepEqual(
+                await searchWith(
+                    ctx => {
+                        ctx.write('* SEARCH 4 2\r\n');
+                        ctx.ok('done');
+                    },
+                    { logger }
+                ),
+                [2, 4]
+            );
+            assert.ok(lines.includes('* SEARCH 4 2'), lines.join('\n'));
+        });
+    });
     it('Server: BYE greeting rejects connect even if the server keeps the socket open', async () => {
         let server = createServer({ greeting: '* BYE Server too busy\r\n' });
         let port = await listen(server);
