@@ -46,6 +46,7 @@ declarations. Both `import { ImapFlow } from 'imapflow'` and
 ```
 npm test              # Build, then run the full suite with the Node.js test runner
 npm run test:coverage # Same suite under c8 (text + html reports, source-mapped back to src/), fails below the thresholds in .c8rc.json; CI runs it on Node 24
+npm run test:cjs      # Build, then require the CommonJS build with require(esm) off (see Platform constraints)
 npm run lint          # tsc --noEmit over src/ and test/, then ESLint (type-aware rules on src/)
 npm run lint:fix      # ESLint with --fix
 npm run typecheck     # tsc --noEmit only
@@ -109,26 +110,28 @@ Single file: `node --import tsx --test test/search-compiler-test.ts`.
 - The API tour (`test/fixtures/api-tour.ts`) is runtime neutral: it only gets a client, so each harness passes one of the build it loads.
 - Keep `src/` free of runtime detection. Portability is achieved by not relying on Node-only ordering or on socket features that other runtimes stub (`setKeepAlive` is a no-op on workerd), and every such spot gets a test in `test/runtime-compat-test.ts`.
 
-## Packaging Constraints (IMPORTANT)
+## Platform constraints (IMPORTANT)
 
 EmailEngine (see "Relationship to EmailEngine" below) bundles ImapFlow and all
 of its transitive dependencies into a single self-contained executable using
 [`@yao-pkg/pkg`](https://github.com/yao-pkg/pkg). `pkg` works by snapshotting a
-CommonJS `require()` graph, so it **cannot bundle pure-ESM packages**.
+CommonJS `require()` graph, so it **cannot load ES modules**. Two rules follow:
 
-Therefore the CommonJS build in `dist/cjs/` and every dependency it pulls in must
-stay CommonJS-compatible:
+- **Node.js 20 is the minimum supported version.** Runtime code, tests and tooling must work on Node 20, 22 and 24 (see "Engine target and module format" above).
+- **The CommonJS build in `dist/cjs/` and every runtime dependency it pulls in must be genuinely CommonJS-loadable**, with `require(esm)` switched off. Node 22+ (and 20.19) load ES modules through `require()` by default, which hides an ESM-only dependency until the pkg binary fails on it. A CommonJS entry that only wraps a dynamic `import()` of ESM code does not count.
+
+What that means in practice:
 
 - Keep the dual build. Never drop the CommonJS output or make the CommonJS entry depend on ESM-only syntax.
-- Do not add a dependency that is pure ESM (`"type": "module"` with only an `import`/ESM entry and no CommonJS export). It must be `require()`-able.
-- When `npm run update` or a new dependency would pull in a pure-ESM package (a common outcome of major-version bumps), pin to the last CommonJS-compatible version instead, or find a CommonJS alternative. Verify with a quick `require()` of the package after updating.
-- After every `npm run update`, run this check to confirm all production dependencies are still CommonJS (it must print `CJS OK` for every dependency and report no pure-ESM packages), then run `npm test`. A `"type": "module"` package with a `require` condition in its `exports` (libmime, libqp, libbase64) is a dual package and passes:
+- Do not add a dependency that is pure ESM (`"type": "module"` with only an `import`/ESM entry and no CommonJS export). A `"type": "module"` package with a `require` condition in its `exports` (libmime, libqp, libbase64) is a dual package and is fine.
+- Never upgrade to an ESM-only major. When `npm run update` or a new dependency would pull one in, pin the last CommonJS major in `.ncurc.cjs` (`reject`, or a `target` of `minor`/`patch`) with a comment giving the reason, or find a CommonJS alternative.
+- **Check with `npm run test:cjs`** after every dependency change. It builds `dist/`, then `test/package/cjs-smoke.cjs` requires the entry `exports.require` points to (and a few deep imports) under `NODE_OPTIONS=--no-experimental-require-module` and runs a short session against an in-process server. It is plain JavaScript on purpose: tsx's loader would transpile an ES module dependency and mask the failure. CI runs it on Node 22.x and 24.x (Node 20 has no such flag). To list pure-ESM production dependencies directly:
 
     ```
-    node -e "Object.keys(require('./package.json').dependencies).forEach(d => { require(d); console.log('CJS OK:', d); })"
     node -e "const fs=require('fs');const bad=Object.keys(require('./package.json').dependencies).filter(d=>{const j=JSON.parse(fs.readFileSync(require.resolve(d+'/package.json'),'utf8'));return j.type==='module'&&!JSON.stringify(j.exports||{}).includes('\"require\"')});console.log(bad.length?'PURE-ESM DEPS FOUND: '+bad.join(', '):'No pure-ESM production dependencies')"
     ```
 
+- pino reaches `real-require`, which does a dynamic `import()`, but only to load pino transports (worker-thread targets set through `transport` or `pino.transport()`). ImapFlow never uses them: the only pino call is `pino({ level: 'info' })` in `src/logger.ts`. Keep it that way, a transport would put an ES module load inside the pkg binary.
 - Keep `require()`/`import` paths static so `pkg` can trace the graph; avoid building module paths at runtime.
 - Dev tooling has its own constraints: typescript-eslint's peer range excludes TypeScript 7, so `typescript` stays on the 6.x line (`.ncurc.cjs` pins it to minor updates).
 
@@ -157,7 +160,7 @@ EmailEngine hits a bug or unhandled promise rejection that originates in
 ImapFlow, the fix belongs here in the ImapFlow source rather than as a
 workaround in EmailEngine. Because EmailEngine packages this library with
 `@yao-pkg/pkg`, never make a change here that breaks CommonJS packaging (see
-Packaging Constraints).
+Platform constraints).
 
 ## Security
 
