@@ -38,7 +38,7 @@ declarations. Both `import { ImapFlow } from 'imapflow'` and
 - **Runtime**: Node.js 20 or newer (`engines.node`), CI tests on 20.x, 22.x and 24.x. The ES module build is also supported on Bun (latest release, full suite in CI) and on Cloudflare Workers with `nodejs_compat` (see "Other runtimes" below)
 - **Language**: TypeScript (`tsconfig.base.json`: strict, `exactOptionalPropertyTypes`, `noImplicitOverride`, `erasableSyntaxOnly`, `isolatedModules`), compiled twice from the same sources
 - **Testing**: Node.js test runner (`node:test`) through `tsx`, coverage with c8
-- **Lint/format**: ESLint with typescript-eslint (`eslint.config.js`, flat config) + Prettier; `npm run lint` runs the type-check first, then ESLint. `src/` is also linted with the type-aware rules (floating and misused promises, unnecessary type assertions, deprecated APIs); a promise that is deliberately left unawaited is marked with `void`
+- **Lint/format**: ESLint with typescript-eslint (`eslint.config.js`, flat config) + Prettier; `npm run lint` runs the type-check first, then ESLint. `src/` is also linted with the type-aware rules (floating and misused promises, unnecessary type assertions, deprecated APIs); a promise that is deliberately left unawaited is marked with `void`. The rule set is the shared one (`../nodemailer/eslint.config.js` is the canonical form); repo-specific overrides go in the "Repo-specific" block near the end, each with a one-line reason (`no-await-in-loop` is off there because commands on one connection are awaited in sequence on purpose)
 - **Key dependencies**: `@zone-eu/mailsplit`, `libmime`, `libqp`, `libbase64`, `iconv-lite`, `encoding-japanese`, `pino`, `socks`
 
 ## Development Commands
@@ -139,7 +139,7 @@ stay CommonJS-compatible:
 - Every options object a method reads has an exported interface in `src/types.ts` (or next to the code that reads it, for internal ones), and every optional property carries `| undefined`.
 - Coded errors are built with `createImapError(message, code, props?)` from `src/errors.ts`, which returns an `ImapFlowError` and type-checks `code` against `ImapFlowErrorCode` (or a numbered `ParserErrorN`). A new code gets an entry in `ImapFlowErrorCode`. Do not invent new ad-hoc error properties without adding them to `ImapFlowError`.
 - Prefer small, surgical diffs. The codebase is mature and load-bearing - avoid drive-by refactors or comment churn outside the scope of the change.
-- When composing git commit messages, do not include Claude as a co-contributor.
+- When composing git commit messages, do not include Claude or any AI assistant as a co-contributor (no `Co-Authored-By` trailer).
 - Use Conventional Commit prefixes (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `ci:`, ...). Versioning and the changelog are driven by these prefixes via release-please.
 - For commits that do not change published runtime behavior (docs, comments, CI/workflow tweaks, formatting), append `[skip ci]` to the commit message to avoid triggering the GitHub Actions workflows. Exception: do not add `[skip ci]` to commits using a `fix:` or `feat:` prefix - those must run so the release action is triggered.
 - After making code changes:
