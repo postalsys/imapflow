@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.8](https://github.com/postalsys/imapflow/compare/v2.5.7...v2.5.8) (2026-10-19)
+
+
+### Bug Fixes
+
+* use the bundled libmime, libqp, libbase64 and encoding-japanese types ([c1e2e32](https://github.com/postalsys/imapflow/commit/c1e2e328cf0f7926895a83f08640f1b0a4619997))
+
 ## [2.5.7](https://github.com/postalsys/imapflow/compare/v2.5.6...v2.5.7) (2026-10-19)
 
 
