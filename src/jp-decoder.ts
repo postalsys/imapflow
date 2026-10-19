@@ -1,6 +1,47 @@
 import { Transform, type TransformCallback } from 'node:stream';
-import encodingJapanese from 'encoding-japanese';
+import encodingJapanese, { type Encoding } from 'encoding-japanese';
 import { normalizeByteLimit } from './limited-passthrough.js';
+
+const ENCODING_NAMES: ReadonlySet<string> = new Set<Encoding>([
+    'UTF32',
+    'UTF16',
+    'UTF16BE',
+    'UTF16LE',
+    'BINARY',
+    'ASCII',
+    'JIS',
+    'UTF8',
+    'EUCJP',
+    'SJIS',
+    'UNICODE'
+]);
+
+/**
+ * Maps a MIME charset label onto the encoding name encoding-japanese expects.
+ *
+ * getDecoder() routes the ISO-2022-JP, JIS and EUC-JP families here, including variant labels such
+ * as "iso-2022-jp-2" or "euc-jp-ms", and each family maps to the one decoder the library has for it.
+ * Shift_JIS labels are mapped too, so the class stays usable on its own. Anything else is left for
+ * the library to detect from the bytes.
+ *
+ * @internal
+ */
+export function toJapaneseEncoding(charset: string): Encoding {
+    const name = charset.toUpperCase().replace(/[^A-Z0-9]+/g, '');
+    if (ENCODING_NAMES.has(name)) {
+        return name as Encoding;
+    }
+    if (/^EUC/.test(name)) {
+        return 'EUCJP';
+    }
+    if (/^(JIS|ISO2022JP)/.test(name)) {
+        return 'JIS';
+    }
+    if (/^(SHIFTJIS|XSJIS|CP932|MSKANJI|WINDOWS31J)/.test(name)) {
+        return 'SJIS';
+    }
+    return 'AUTO';
+}
 
 // A Transform stream for decoding Japanese character sets (Shift_JIS, EUC-JP, ISO-2022-JP).
 // Unlike iconv-lite which can decode incrementally, encoding-japanese requires the complete
@@ -66,13 +107,10 @@ export class JPDecoder extends Transform {
         try {
             let output = encodingJapanese.convert(input, {
                 to: 'UNICODE', // to_encoding
-                from: this.charset, // from_encoding
+                from: toJapaneseEncoding(this.charset), // from_encoding
                 type: 'string'
             });
-            if (typeof output === 'string') {
-                output = Buffer.from(output);
-            }
-            this.push(output);
+            this.push(Buffer.from(output));
         } catch {
             // keep as is on errors
             this.push(input);

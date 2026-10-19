@@ -1181,7 +1181,7 @@ export function parseEnvelope(entry: ImapAttributeList): MessageEnvelopeObject {
     }
 
     if (entry[1] && entry[1].value) {
-        envelope.subject = libmime.decodeWords(getStrValue(entry[1]) as string);
+        envelope.subject = libmime.decodeWords(getStrValue(entry[1]));
     }
 
     if (Array.isArray(entry[2]) && entry[2].length) {

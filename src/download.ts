@@ -425,7 +425,7 @@ export async function downloadMessage(
             /* c8 ignore next */ // a parsed disposition value is never all-whitespace, so the `false` fallback is unreachable
             meta.disposition = disposition.value.toLowerCase().trim() || false;
             try {
-                meta.disposition = libmime.decodeWords(meta.disposition as string);
+                meta.disposition = libmime.decodeWords(meta.disposition);
             } catch {
                 // failed to parse disposition, keep as is (most probably an unknown charset is used)
             }
@@ -832,7 +832,7 @@ export async function downloadMessageParts(
                 /* c8 ignore next */ // a parsed disposition value is never all-whitespace, so the `false` fallback is unreachable
                 meta.disposition = disposition.value.toLowerCase().trim() || false;
                 try {
-                    meta.disposition = libmime.decodeWords(meta.disposition as string);
+                    meta.disposition = libmime.decodeWords(meta.disposition);
                 } catch {
                     // failed to parse disposition, keep as is (most probably an unknown charset is used)
                 }

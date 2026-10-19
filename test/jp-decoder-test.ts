@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { JPDecoder } from '../src/jp-decoder.js';
+import { JPDecoder, toJapaneseEncoding } from '../src/jp-decoder.js';
 import { PassThrough, Transform } from 'node:stream';
 import encodingJapanese from 'encoding-japanese';
 
@@ -139,21 +139,45 @@ describe('jp-decoder', () => {
             encodingJapanese.convert = originalConvert;
         }
     });
-    it('JPDecoder: _flush converts non-string convert output to buffer', async () => {
-        // When convert returns a non-string (e.g. an array of code units), it must be
-        // pushed as-is without the Buffer.from(string) branch.
+    it('toJapaneseEncoding: maps charset labels onto encoding-japanese names', () => {
+        const cases: Array<[string, string]> = [
+            ['iso-2022-jp', 'JIS'],
+            ['ISO-2022-JP-2', 'JIS'],
+            ['iso2022jp', 'JIS'],
+            ['jis', 'JIS'],
+            ['jis_x0208', 'JIS'],
+            ['euc-jp', 'EUCJP'],
+            ['eucjp-ms', 'EUCJP'],
+            ['euc-jis-2004', 'EUCJP'],
+            ['shift_jis', 'SJIS'],
+            ['windows-31j', 'SJIS'],
+            ['cp932', 'SJIS'],
+            ['sjis', 'SJIS'],
+            ['utf-8', 'UTF8'],
+            ['invalid-charset-xyz', 'AUTO']
+        ];
+        for (const [label, expected] of cases) {
+            assert.equal(toJapaneseEncoding(label), expected, label);
+        }
+    });
+    it('JPDecoder: passes the mapped encoding name to encoding-japanese', async () => {
         let originalConvert = encodingJapanese.convert;
-        encodingJapanese.convert = () => Buffer.from('converted buffer');
+        let seen: unknown;
+        encodingJapanese.convert = ((data: any, options: any) => {
+            seen = options.from;
+            return originalConvert(data, options);
+        }) as typeof encodingJapanese.convert;
 
         try {
-            let decoder = new JPDecoder('iso-2022-jp');
+            let decoder = new JPDecoder('iso-2022-jp-2');
             let output = collectStream(decoder);
 
-            decoder.write(Buffer.from('whatever'));
+            decoder.write(Buffer.from('plain'));
             decoder.end();
 
             let result: any = await output;
-            assert.equal(result.toString(), 'converted buffer');
+            assert.equal(result.toString(), 'plain');
+            assert.equal(seen, 'JIS');
         } finally {
             encodingJapanese.convert = originalConvert;
         }
