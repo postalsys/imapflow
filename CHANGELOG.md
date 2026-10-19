@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.6](https://github.com/postalsys/imapflow/compare/v2.5.5...v2.5.6) (2026-10-19)
+
+
+### Bug Fixes
+
+* read SEARCH answers into a number array and reject search() when the command did not complete ([78bfccf](https://github.com/postalsys/imapflow/commit/78bfccfeabd1c4c636f34513154b5de85dbec2fd)), closes [#443](https://github.com/postalsys/imapflow/issues/443) [#444](https://github.com/postalsys/imapflow/issues/444)
+
 ## [2.5.5](https://github.com/postalsys/imapflow/compare/v2.5.4...v2.5.5) (2026-10-18)
 
 
