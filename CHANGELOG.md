@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.7](https://github.com/postalsys/imapflow/compare/v2.5.6...v2.5.7) (2026-10-19)
+
+
+### Bug Fixes
+
+* bump libmime to 5.5.2 ([8f0f6f7](https://github.com/postalsys/imapflow/commit/8f0f6f7818c0afd601f5e86e8d8b510733162a42))
+
 ## [2.5.6](https://github.com/postalsys/imapflow/compare/v2.5.5...v2.5.6) (2026-10-19)
 
 
