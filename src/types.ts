@@ -717,9 +717,12 @@ export type DownloadManyResult = { [part: string]: DownloadManyPart };
 export interface AppendResponseObject {
     /** Full mailbox path where the message was uploaded to */
     destination: string;
-    /** Mailbox UIDVALIDITY if server has UIDPLUS extension enabled */
+    /** Mailbox UIDVALIDITY if server has UIDPLUS extension enabled, only set together with the `uid` it reported */
     uidValidity?: bigint | undefined;
-    /** UID of the uploaded message if server has UIDPLUS extension enabled */
+    /**
+     * UID of the uploaded message if server has UIDPLUS extension enabled. Without a usable APPENDUID,
+     * an append to the selected mailbox looks it up by sequence number instead, and `uidValidity` is not set
+     */
     uid?: number | undefined;
     /** Sequence number of the uploaded message if path is currently selected mailbox */
     seq?: number | undefined;
