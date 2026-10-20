@@ -193,11 +193,14 @@ export default async function append(
                 // message was already stored and a retrying caller would duplicate it.
                 let uidValidity = parseBigIntValue(section[1] && section[1].value, MAX_UINT32_DIGITS);
                 let uid = parseUintValue(section[2] && section[2].value, MAX_UINT32_DIGITS);
-                if (uidValidity !== false) {
-                    map.uidValidity = uidValidity;
-                }
+                // UIDVALIDITY is only reported next to the UID it was sent with: kept without one,
+                // it would end up paired with the UID the SEARCH fallback below guesses from the
+                // sequence number, and the pair would pass for a server-confirmed identity.
                 if (uid) {
                     map.uid = uid;
+                    if (uidValidity) {
+                        map.uidValidity = uidValidity;
+                    }
                 }
             }
         }

@@ -550,6 +550,58 @@ describe('commands/append', () => {
         assert.equal(result.uidValidity, undefined);
         assert.equal(result.uid, undefined);
     });
+    // Sent-folder dedupe and draft handles treat uid + uidValidity as a server-confirmed identity
+    const appendToSelected = (appendUid: string[] | false) => {
+        let searchCalled = false;
+        const connection = createMockConnection({
+            state: 3,
+            mailbox: { path: 'Sent', exists: 2 },
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                if (cmd === 'APPEND' && opts && opts.untagged && opts.untagged.EXISTS) {
+                    await opts.untagged.EXISTS({ command: '3' });
+                }
+                return {
+                    next: () => {},
+                    response: {
+                        attributes: appendUid ? [{ type: 'ATOM', section: ['APPENDUID', ...appendUid].map(value => ({ type: 'ATOM', value })) }] : []
+                    }
+                };
+            },
+            emit: () => {},
+            search: async () => {
+                searchCalled = true;
+                return [902];
+            }
+        });
+        return appendCommand(connection, 'Sent', 'content').then(result => ({ result, searchCalled }));
+    };
+    for (const [label, appendUid] of [
+        ['a zero UID', ['1000', '0']],
+        ['a non-numeric UID', ['1000', 'abc']],
+        ['a UID set', ['1000', '902:903']],
+        ['a missing UID', ['1000']]
+    ] as const) {
+        it(`Commands: append drops the UIDVALIDITY of an APPENDUID with ${label} and leaves the looked up UID unconfirmed`, async () => {
+            const { result, searchCalled } = await appendToSelected([...appendUid]);
+            assert.equal(searchCalled, true);
+            assert.deepEqual(result, { destination: 'Sent', path: 'Sent', seq: 3, uid: 902 });
+        });
+    }
+    it('Commands: append drops a zero UIDVALIDITY from APPENDUID and keeps the reported UID', async () => {
+        const { result, searchCalled } = await appendToSelected(['0', '902']);
+        assert.equal(searchCalled, false);
+        assert.deepEqual(result, { destination: 'Sent', path: 'Sent', seq: 3, uid: 902 });
+    });
+    it('Commands: append keeps a valid APPENDUID without looking up the UID', async () => {
+        const { result, searchCalled } = await appendToSelected(['1000', '902']);
+        assert.equal(searchCalled, false);
+        assert.deepEqual(result, { destination: 'Sent', path: 'Sent', seq: 3, uidValidity: BigInt(1000), uid: 902 });
+    });
+    it('Commands: append without UIDPLUS looks up the UID but reports no UIDVALIDITY', async () => {
+        const { result, searchCalled } = await appendToSelected(false);
+        assert.equal(searchCalled, true);
+        assert.deepEqual(result, { destination: 'Sent', path: 'Sent', seq: 3, uid: 902 });
+    });
     it('Commands: append NOOP error is caught', async () => {
         let noopCalled = false;
         const connection = createMockConnection({
