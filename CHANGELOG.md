@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.5.9](https://github.com/postalsys/imapflow/compare/v2.5.8...v2.5.9) (2026-10-20)
+
+
+### Bug Fixes
+
+* bound the parse cost of responses with many literals or tokens ([cb2124f](https://github.com/postalsys/imapflow/commit/cb2124f7a4db4a4c3ec0f15bffa6e8d6e81c2426))
+* do not report APPENDUID UIDVALIDITY next to a looked up UID ([#448](https://github.com/postalsys/imapflow/issues/448)) ([b5aadd3](https://github.com/postalsys/imapflow/commit/b5aadd399599f600009bb4db8ce16fdc574d7ce6))
+
 ## [2.5.8](https://github.com/postalsys/imapflow/compare/v2.5.7...v2.5.8) (2026-10-19)
 
 
