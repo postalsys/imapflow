@@ -44,8 +44,9 @@ export interface ImapResponse {
     /** Parsed attributes of the response */
     attributes?: ImapAttributeList | undefined;
     /**
-     * The numbers of an untagged SEARCH response (`* SEARCH 2 5 9`), set instead of `attributes`
-     * when the line holds nothing else, see parser()
+     * The numbers of an untagged SEARCH response (`* SEARCH 2 5 9`), set when the line holds
+     * nothing else but a CONDSTORE `(MODSEQ n)` list, which is then the only entry of
+     * `attributes`, see parser()
      */
     numbers?: number[] | undefined;
     /** Number of leading NUL bytes stripped from the line, if any */
@@ -89,6 +90,8 @@ export interface ParserOptions {
     literals?: Buffer[] | undefined;
     /** Maximum size in bytes of a literal parsed inline from the input */
     maxLiteralSize?: number | undefined;
+    /** Maximum number of tokens in the response, see MAX_RESPONSE_TOKENS */
+    maxResponseTokens?: number | undefined;
 }
 
 /**

@@ -2,11 +2,11 @@ import imapFormalSyntax from './imap-formal-syntax.js';
 import { ParserInstance } from './parser-instance.js';
 import { createImapError, type ImapFlowError } from '../errors.js';
 import { boundedInput } from './limits.js';
-import type { ImapResponse, ParserOptions } from './types.js';
+import type { ImapAttributeList, ImapResponse, ParserOptions } from './types.js';
 
 // The codes the parser raises on purpose: the numbered ParserErrorN codes, ParserErrorExchange,
-// the nesting limit and the inline literal size limit
-const PARSER_ERROR_CODES = /^(?:ParserError\d+|ParserErrorExchange|MAX_IMAP_NESTING_REACHED|LiteralTooLarge)$/;
+// the nesting limit, the inline literal size limit and the token limit
+const PARSER_ERROR_CODES = /^(?:ParserError\d+|ParserErrorExchange|MAX_IMAP_NESTING_REACHED|LiteralTooLarge|TooManyTokens)$/;
 
 /**
  * Anything the parser throws other than one of its own coded errors - a TypeError from a parser
@@ -78,6 +78,43 @@ function readSearchNumbers(str: string): number[] | null {
     return numbers;
 }
 
+// The CONDSTORE list that ends a SEARCH answer to a MODSEQ query (RFC 7162 section 3.1.5)
+const RE_SEARCH_MODSEQ = /^ \(MODSEQ (\d{1,19})\) *$/i;
+
+/**
+ * Reads an untagged SEARCH response without the tokenizer, see readSearchNumbers(): the numbers,
+ * and the MODSEQ value of a trailing CONDSTORE list. A MODSEQ query on a large mailbox matches as
+ * many messages as any other, so its answer must not fall back to the tokenizer either.
+ *
+ * @param str - The rest of the line after the command
+ * @returns The numbers, with the MODSEQ list as the attributes the tokenizer would have made of
+ *   it, or null when the line is left to the tokenizer
+ */
+function readSearchResponse(str: string): { numbers: number[]; attributes?: ImapAttributeList | undefined } | null {
+    // the last character tells whether there is a list to look for, without scanning the line
+    if (!str.trimEnd().endsWith(')')) {
+        const numbers = readSearchNumbers(str);
+        return numbers && { numbers };
+    }
+    const open = str.lastIndexOf(' (');
+    const match = open < 0 ? null : RE_SEARCH_MODSEQ.exec(str.slice(open));
+    if (!match) {
+        return null;
+    }
+    const numbers = readSearchNumbers(str.slice(0, open));
+    return (
+        numbers && {
+            numbers,
+            attributes: [
+                [
+                    { type: 'ATOM', value: 'MODSEQ' },
+                    { type: 'ATOM', value: match[1] }
+                ]
+            ]
+        }
+    );
+}
+
 /**
  * Parses a raw IMAP command or response buffer into a structured object.
  * Handles edge cases such as null-byte-padded responses from buggy servers and
@@ -142,10 +179,9 @@ export default async function parser(command: Buffer | string, options?: ParserO
         }
 
         if (response.tag === '*' && (response.command || '').toUpperCase() === 'SEARCH') {
-            const numbers = readSearchNumbers(parserInstance.remainder);
-            if (numbers) {
-                response.numbers = numbers;
-                return response;
+            const search = readSearchResponse(parserInstance.remainder);
+            if (search) {
+                return Object.assign(response, search);
             }
         }
 

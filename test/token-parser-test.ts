@@ -315,6 +315,23 @@ describe('token-parser', () => {
     });
 
     /**
+     * Quoted strings and atoms are taken from the input in one piece rather than grown a character
+     * at a time. Escapes at either end, an escaped backslash and an escaped ordinary character must
+     * read as before, and long values must come through whole.
+     */
+    it('Token Parser: quoted strings and atoms are read whole, escapes removed', async () => {
+        const long = 'x'.repeat(100000);
+        const result = await parser(`* FETCH "\\"a\\\\b\\c\\"" "${long}" ${long} "" "\\\\"`);
+        assert.deepEqual(result.attributes, [
+            { type: 'STRING', value: '"a\\bc"' },
+            { type: 'STRING', value: long },
+            { type: 'ATOM', value: long },
+            { type: 'STRING', value: '' },
+            { type: 'STRING', value: '\\' }
+        ]);
+    });
+
+    /**
      * Empty quoted string results in a STRING attribute with an empty value.
      */
     it('Token Parser: empty quoted string produces STRING with empty value', async () => {

@@ -44,6 +44,7 @@ export const ImapFlowErrorCode = {
     LineTooLarge: 'LineTooLarge',
     LiteralTooLarge: 'LiteralTooLarge',
     ResponseTooLarge: 'ResponseTooLarge',
+    TooManyTokens: 'TooManyTokens',
     // one command received more untagged responses than are kept, see MAX_COLLECTED_RESPONSES
     TooManyResponses: 'TooManyResponses',
 
@@ -136,7 +137,7 @@ export interface ImapFlowError extends Error {
     lineLength?: number | undefined;
     /** The size of a rejected response */
     responseSize?: number | undefined;
-    /** The bound that was exceeded */
+    /** The bound that was exceeded (bytes, or tokens for TooManyTokens) */
     maxSize?: number | undefined;
     /** OAuth error details from the server, for XOAUTH2 authentication failures */
     oauthError?: any;

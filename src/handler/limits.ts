@@ -23,6 +23,14 @@ export const MAX_LINE_SIZE = MAX_LITERAL_SIZE;
 // the same headroom - set maxResponseSize above maxLiteralSize, not equal to it.
 export const MAX_RESPONSE_SIZE = 2 * MAX_LITERAL_SIZE;
 
+// Default maximum number of tokens (atoms, strings, literals, lists and the other parse tree
+// nodes) in a single response. The byte limits bound what a server sends, not what parsing it
+// costs: every token becomes a tree node and an attribute object, around a hundred bytes of heap
+// for a two-byte "1 ", so a line of many small tokens costs fifty times its size. A legitimate
+// response stays far below this (the long one, a SEARCH answer of plain numbers, is read without
+// the tokenizer, see parser()), so the bound only stops a server that floods one response.
+export const MAX_RESPONSE_TOKENS = 1000000;
+
 // How much of the offending input a parse error carries along. The error travels whole into log
 // entries (pino copies every property of a logged error) and into the rejection of the command
 // the line belonged to, and the line can be as long as the configured line cap.

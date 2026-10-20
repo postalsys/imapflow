@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ImapStream } from '../src/handler/imap-stream.js';
 import { parser } from '../src/handler/imap-handler.js';
-import { MAX_LINE_SIZE, MAX_LITERAL_SIZE, MAX_RESPONSE_SIZE } from '../src/handler/limits.js';
+import { MAX_LINE_SIZE, MAX_LITERAL_SIZE, MAX_RESPONSE_SIZE, MAX_RESPONSE_TOKENS } from '../src/handler/limits.js';
+import { TokenParser } from '../src/handler/token-parser.js';
 
 // Response line and literal limits must be terminal, complete, and non-parsing:
 //   * every line is measured, including the one whose LF arrives in the same chunk,
@@ -247,6 +248,47 @@ describe('parser-limits', () => {
         assert.equal(err.code, 'LiteralTooLarge');
         assert.equal(err.maxSize, 0);
     });
+    // Every token costs a tree node and an attribute object, so a line of many small tokens takes
+    // far more heap than its byte size; the token count is bounded on its own
+    it('Parser limits: a response exactly at maxResponseTokens is accepted', async () => {
+        const parsed = await parser('* CAPABILITY A B C', { maxResponseTokens: 3 });
+        assert.equal(parsed.attributes!.length, 3);
+    });
+    it('Parser limits: a response one token over maxResponseTokens is rejected', async () => {
+        await assert.rejects(parser('* CAPABILITY A B C', { maxResponseTokens: 2 }), (err: any) => {
+            assert.equal(err.code, 'TooManyTokens');
+            assert.equal(err.maxSize, 2);
+            assert.equal(err.parserContext.input, 'A B C');
+            return true;
+        });
+    });
+    it('Parser limits: lists and literals count as tokens', async () => {
+        // the list, its atom and the literal
+        await assert.rejects(parser('* 1 FETCH (X {1}\r\n)', { literals: [Buffer.from('x')], maxResponseTokens: 3 }), {
+            code: 'TooManyTokens'
+        });
+        const parsed = await parser('* 1 FETCH (X {1}\r\n)', { literals: [Buffer.from('x')], maxResponseTokens: 4 });
+        assert.deepEqual(parsed.attributes![1], [
+            { type: 'ATOM', value: 'X' },
+            { type: 'LITERAL', value: Buffer.from('x') }
+        ]);
+    });
+    it('Parser limits: the default token limit applies, Infinity disables it', async () => {
+        const line = `* CAPABILITY ${'A '.repeat(MAX_RESPONSE_TOKENS)}A`;
+        await assert.rejects(parser(line), { code: 'TooManyTokens', maxSize: MAX_RESPONSE_TOKENS });
+        assert.equal((await parser(line, { maxResponseTokens: Infinity })).attributes!.length, MAX_RESPONSE_TOKENS + 1);
+    });
+    // Literals used to be taken with shift(), which moves every remaining buffer, so a response
+    // of 160k one-byte literals (1 MB) took over 8 seconds to parse
+    it('Parser limits: a response of many literals parses in linear time', async () => {
+        const count = 200000;
+        const line = `* 1 FETCH (X${' {1}\r\n'.repeat(count)})`;
+        const literals = Array.from({ length: count }, () => Buffer.from('x'));
+        const started = performance.now();
+        const parsed = await parser(line, { literals });
+        assert.ok(performance.now() - started < 3000, 'parsed in under 3 seconds');
+        assert.equal((parsed.attributes![1] as any[]).length, count + 1);
+    });
     it('Parser limits: a junk limit falls back to the default', () => {
         // Without validation an unusable value is honored as-is, and every comparison against it is
         // false - so a caller who mistypes a limit silently gets no bound at all, or (for a negative
@@ -256,6 +298,11 @@ describe('parser-limits', () => {
             assert.equal(stream.maxLineLength, MAX_LINE_SIZE, `maxLineLength ${JSON.stringify(junk)} must fall back`);
             assert.equal(stream.maxLiteralSize, MAX_LITERAL_SIZE, `maxLiteralSize ${JSON.stringify(junk)} must fall back`);
             assert.equal(stream.maxResponseSize, MAX_RESPONSE_SIZE, `maxResponseSize ${JSON.stringify(junk)} must fall back`);
+        }
+
+        for (let junk of ['4096', 'abc', 1.5, -1, null, NaN]) {
+            const tokenParser = new TokenParser({}, 0, '', { maxResponseTokens: junk } as any);
+            assert.equal(tokenParser.maxResponseTokens, MAX_RESPONSE_TOKENS, `maxResponseTokens ${JSON.stringify(junk)} must fall back`);
         }
 
         // an explicit 0 is a real limit, not a missing one, and must not be swallowed

@@ -1556,8 +1556,16 @@ export class ImapFlow extends EventEmitter {
         let parsed: ImapResponse;
 
         try {
-            parsed = await parser(data.payload, { literals: data.literals });
+            parsed = await parser(data.payload, { literals: data.literals, maxResponseTokens: this.options.maxResponseTokens });
         } catch (err) {
+            if ((err as ImapFlowError).code === 'TooManyTokens') {
+                // A size limit, so as terminal as the ones ImapStream enforces: the server is
+                // flooding responses, and skipping the line would only invite the next one
+                this.log.error({ msg: 'Response exceeded the token limit', payloadBytes: data.payload.length, err, cid: this.id });
+                this.rejectCurrentRequest(err as ImapFlowError);
+                this.failProtocol(err as ImapFlowError);
+                return false;
+            }
             // can not make sense of this. The payload can be up to the configured line
             // cap (1GB by default), so log only a bounded prefix: a server looping
             // unparseable garbage would otherwise turn this error log into a disk filler.

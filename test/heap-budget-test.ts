@@ -122,4 +122,95 @@ describe('heap budgets', { skip: process.versions.bun ? '--max-old-space-size is
         );
         assert.deepEqual(result, { length: 1000000, first: 1000000, last: 1000000 + 2 * 999999 });
     });
+    // The answer to a MODSEQ query ends with a CONDSTORE list, which used to send the whole line
+    // through the tokenizer
+    it('a SEARCH answer of 1M UIDs with a MODSEQ list fits in a 64 MB heap', () => {
+        const result = runCapped(
+            64,
+            `
+            const COUNT = 1000000;
+            globalThis.handlers = {
+                SEARCH({ socket, ok }) {
+                    let uid = 1;
+                    for (let sent = 0; sent < COUNT; ) {
+                        const parts = [];
+                        for (let i = 0; i < 50000 && sent < COUNT; i++, sent++) {
+                            parts.push(uid++);
+                        }
+                        socket.write((sent === parts.length ? '* SEARCH ' : ' ') + parts.join(' '));
+                    }
+                    socket.write(' (MODSEQ 917162500)\\r\\n');
+                    ok();
+                }
+            };
+            globalThis.scenario = async client => {
+                await client.mailboxOpen('INBOX');
+                const uids = await client.search({ all: true }, { uid: true });
+                return { length: uids.length, last: uids[uids.length - 1] };
+            };
+            `
+        );
+        assert.deepEqual(result, { length: 1000000, last: 1000000 });
+    });
+    // A long token used to be grown one character at a time, each step a cons string of some
+    // twenty bytes, so an 8 MB quoted string or atom took over 100 MB while it was parsed
+    it('8 MB quoted strings and atoms fit in a 96 MB heap', () => {
+        const result = runCapped(
+            96,
+            `
+            const SIZE = 8 * 1024 * 1024;
+            globalThis.handlers = {
+                NOOP({ socket, ok }) {
+                    const chunk = 'a'.repeat(1024 * 1024);
+                    socket.write('* OK [X "');
+                    for (let i = 0; i < SIZE / chunk.length; i++) {
+                        socket.write(chunk);
+                    }
+                    socket.write('\\\\"b"] ok\\r\\n* OK [X ');
+                    for (let i = 0; i < SIZE / chunk.length; i++) {
+                        socket.write(chunk);
+                    }
+                    socket.write('] ok\\r\\n');
+                    ok();
+                }
+            };
+            globalThis.scenario = async client => {
+                await client.noop();
+                return { usable: client.usable };
+            };
+            `
+        );
+        assert.deepEqual(result, { usable: true });
+    });
+    // A line of "1 1 1 ..." is two bytes per token on the wire and around a hundred in heap, so a
+    // 4 MB response took 2M tokens, several hundred MB. The default token limit fails the
+    // connection before that
+    it('a response of 2M small tokens fails the connection within a 192 MB heap', () => {
+        const result = runCapped(
+            192,
+            `
+            globalThis.handlers = {
+                NOOP({ socket, ok }) {
+                    socket.write('* OK [X');
+                    const chunk = ' 1'.repeat(100000);
+                    for (let i = 0; i < 20; i++) {
+                        socket.write(chunk);
+                    }
+                    socket.write('] ok\\r\\n');
+                    ok();
+                }
+            };
+            globalThis.scenario = async client => {
+                let error = null;
+                client.on('error', err => (error = error || err.code));
+                const closed = new Promise(resolve => client.once('close', resolve));
+                // noop() does not reject on a failure, the error event carries the code
+                await client.noop();
+                await closed;
+                return { error };
+            };
+            `
+        );
+        assert.deepEqual(result, { error: 'TooManyTokens' });
+    });
 });

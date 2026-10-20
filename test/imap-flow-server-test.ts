@@ -112,6 +112,53 @@ describe('imap-flow-server', () => {
                 (err: any) => ['LineTooLarge', 'NoConnection'].includes(err.code)
             );
         });
+        // A line of many small tokens costs far more heap than its size, so the token count is
+        // bounded as terminally as the byte size
+        it('rejects when the answer exceeds maxResponseTokens', async () => {
+            let server = createServer({ handlers: { SEARCH: (ctx: any) => ctx.write(`* SEARCH ${'1 x '.repeat(100)}1\r\n`) } });
+            let port = await listen(server);
+            let client = makeClient(port, { maxResponseTokens: 100 });
+            let errors: any[] = [];
+            client.on('error', (err: any) => errors.push(err));
+            let closed = new Promise(resolve => client.once('close', resolve));
+            try {
+                await client.connect();
+                await client.mailboxOpen('INBOX');
+                await assert.rejects(client.search({ all: true }), (err: any) => err.code === 'TooManyTokens' && err.maxSize === 100);
+                await closed;
+                assert.equal(errors[0]?.code, 'TooManyTokens');
+            } finally {
+                client.close();
+                server.close();
+            }
+        });
+        it('fails connect() on a greeting over maxResponseTokens', async () => {
+            let server = createServer({ greeting: `* OK [X ${'1 '.repeat(200)}] ready\r\n` });
+            let port = await listen(server);
+            let client = makeClient(port, { maxResponseTokens: 100 });
+            client.on('error', () => {});
+            try {
+                await assert.rejects(client.connect(), (err: any) => err.code === 'TooManyTokens');
+            } finally {
+                client.close();
+                server.close();
+            }
+        });
+        it('reads an answer with a MODSEQ list without the tokenizer', async () => {
+            // The token limit would refuse these numbers if they were tokenized
+            let expected = Array.from({ length: 500 }, (_, i) => i + 1);
+            let numbers = expected.join(' ');
+            assert.deepEqual(
+                await searchWith(
+                    ctx => {
+                        ctx.write(`* SEARCH ${numbers} (MODSEQ 917162500)\r\n`);
+                        ctx.ok();
+                    },
+                    { maxResponseTokens: 100 }
+                ),
+                expected
+            );
+        });
         it('rejects when the connection drops before the tagged answer', async () => {
             await assert.rejects(
                 searchWith(ctx => {

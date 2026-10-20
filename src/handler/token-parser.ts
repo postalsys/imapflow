@@ -1,7 +1,7 @@
 /* eslint new-cap: 0 */
 
 import imapFormalSyntax from './imap-formal-syntax.js';
-import { MAX_LITERAL_SIZE, ERROR_CONTEXT_LENGTH, boundedInput, normalizeLimit, createLiteralTooLargeError } from './limits.js';
+import { MAX_LITERAL_SIZE, MAX_RESPONSE_TOKENS, ERROR_CONTEXT_LENGTH, boundedInput, normalizeLimit, createLiteralTooLargeError } from './limits.js';
 import { createImapError, type ImapFlowError, type ParserErrorCode } from '../errors.js';
 import type { ImapAttributeList, ImapAttributeNode, ParserOptions } from './types.js';
 import type { ParserInstance } from './parser-instance.js';
@@ -33,7 +33,8 @@ const FETCH_DATA_ITEM_DEPTH = 2;
  * (ATOM, string, LITERAL, SEQUENCE, LIST, SECTION, PARTIAL).
  */
 export interface TokenNode {
-    childNodes: TokenNode[];
+    /** Created with the first child, a leaf token does not carry an empty array */
+    childNodes?: TokenNode[] | undefined;
     type: string | false;
     value: string | Buffer;
     isClosed: boolean;
@@ -72,6 +73,9 @@ export class TokenParser {
     options: ParserOptions;
     parent: TokenParserParent | ParserInstance;
     maxLiteralSize: number;
+    maxResponseTokens: number;
+    /** Nodes created so far, checked against maxResponseTokens */
+    tokenCount: number;
     tree: TokenNode;
     currentNode: TokenNode;
     pos: number;
@@ -91,6 +95,7 @@ export class TokenParser {
      * @param options.literals - Pre-parsed literal values from the input stream.
      * @param options.maxLiteralSize - Maximum size (in bytes) of a literal parsed inline
      *   from the input, i.e. when no pre-parsed literal buffers were supplied. Defaults to 1GB.
+     * @param options.maxResponseTokens - Maximum number of parse tree nodes, see MAX_RESPONSE_TOKENS.
      */
     constructor(
         parent: TokenParserParent | ParserInstance,
@@ -105,6 +110,8 @@ export class TokenParser {
         // Same normalization and default as the streaming parser, so a direct user of this parser
         // gets the same bound (an explicit 0 means "reject any non-empty inline literal").
         this.maxLiteralSize = normalizeLimit(this.options.maxLiteralSize, MAX_LITERAL_SIZE);
+        this.maxResponseTokens = normalizeLimit(this.options.maxResponseTokens, MAX_RESPONSE_TOKENS);
+        this.tokenCount = 0;
 
         this.truncatedAttributes = [];
         this.tree = this.currentNode = this.createNode();
@@ -148,7 +155,9 @@ export class TokenParser {
         const attributes: ImapAttributeList = [];
         let branch: ImapAttributeList = attributes;
 
-        let walk = async (node: TokenNode): Promise<void> => {
+        // Synchronous on purpose: the recursion is bounded by MAX_NODE_DEPTH, and an async walk
+        // allocated a promise per token, which a line of many small tokens multiplies
+        let walk = (node: TokenNode): void => {
             let curBranch = branch;
             let elm: ImapAttributeNode | ImapAttributeList;
             let partial: number[];
@@ -219,14 +228,18 @@ export class TokenParser {
                     break;
             }
 
-            for (let childNode of node.childNodes) {
-                await walk(childNode);
+            // Each child is released once it is converted, so the tree and the attributes built
+            // from it are not both held whole at the peak of a line of many tokens
+            let childNodes = node.childNodes;
+            for (let i = 0; childNodes && i < childNodes.length; i++) {
+                walk(childNodes[i]);
+                (childNodes as (TokenNode | null)[])[i] = null;
             }
 
             branch = curBranch;
         };
 
-        await walk(this.tree);
+        walk(this.tree);
 
         return attributes;
     }
@@ -239,11 +252,21 @@ export class TokenParser {
      * @param parentNode - The parent node to attach this node to. If omitted, creates a root node.
      * @param startPos - The starting position of this node in the original input string.
      * @returns The newly created node with childNodes, type, value, and isClosed properties.
-     * @throws {Error} If the nesting depth exceeds MAX_NODE_DEPTH outside a FETCH data item.
+     * @throws {Error} If the nesting depth exceeds MAX_NODE_DEPTH outside a FETCH data item, or
+     *   the response has more than maxResponseTokens nodes.
      */
     createNode(parentNode?: TokenNode | undefined, startPos?: number | undefined): TokenNode {
+        // The root node is not a token of the response
+        if (parentNode && ++this.tokenCount > this.maxResponseTokens) {
+            throw createImapError(`Response has more than ${this.maxResponseTokens} tokens`, 'TooManyTokens', {
+                maxSize: this.maxResponseTokens,
+                parserContext: { ...boundedInput(this.str), pos: startPos }
+            });
+        }
+
         let node: TokenNode = {
-            childNodes: [],
+            // declared up front, so a node keeps one shape when its first child arrives
+            childNodes: undefined,
             type: false,
             value: '',
             isClosed: true,
@@ -279,7 +302,7 @@ export class TokenParser {
         }
 
         if (parentNode) {
-            parentNode.childNodes.push(node);
+            (parentNode.childNodes ||= []).push(node);
         }
 
         return node;
@@ -293,7 +316,7 @@ export class TokenParser {
      */
     isFetchResponse(): boolean {
         let command = this.parent.command;
-        let first = this.tree.childNodes[0];
+        let first = this.tree.childNodes?.[0];
         return (
             typeof command === 'string' &&
             /^\d+$/.test(command) &&
@@ -323,7 +346,7 @@ export class TokenParser {
         // The item is the last child of the list while it is being parsed, so its key is the
         // child before it. A key is an atom (BODYSTRUCTURE, ENVELOPE, BODY); anything else means
         // the row itself is malformed, and the key is reported as unknown.
-        let siblings = item.parentNode ? item.parentNode.childNodes : [];
+        let siblings = item.parentNode?.childNodes || [];
         let key = siblings[siblings.length - 2];
         this.truncatedAttributes.push(key && key.type === 'ATOM' && typeof key.value === 'string' ? key.value.toUpperCase() : '?');
     }
@@ -356,6 +379,15 @@ export class TokenParser {
         // character, which is quadratic in the token length, and the server decides that length:
         // a 600 KB ESEARCH result took seconds of event loop time
         let tokenLength = 0;
+        // Where the token starts in the input, and whether its value still is that run of the
+        // input. A token is read as a run of characters, so its value is sliced from the input
+        // instead of grown with +=: each += of a long token adds a cons string of some twenty
+        // bytes per character, which the server multiplies with a long token
+        let tokenStart = 0;
+        let tokenSliced = true;
+        // Where the quoted string being read starts, and whether it holds an escape
+        let stringStart = 0;
+        let stringEscaped = false;
         let tokenLast = '';
         let tokenPrev = '';
         let tokenDigitsOnly = true;
@@ -363,7 +395,11 @@ export class TokenParser {
         let tokenHasDot = false;
 
         const appendToToken = (c: string): void => {
-            this.currentNode.value += c;
+            if (!tokenLength) {
+                tokenStart = i;
+            }
+            tokenSliced = tokenSliced && i === tokenStart + tokenLength && this.str.charAt(i) === c;
+            this.currentNode.value = tokenSliced ? this.str.slice(tokenStart, i + 1) : this.currentNode.value + c;
             tokenLength++;
             tokenPrev = tokenLast;
             tokenLast = c;
@@ -389,6 +425,7 @@ export class TokenParser {
         const startToken = (first?: string): void => {
             this.currentNode.value = '';
             tokenLength = 0;
+            tokenSliced = true;
             tokenLast = tokenPrev = '';
             tokenDigitsOnly = true;
             tokenHasStar = tokenHasDot = false;
@@ -400,11 +437,14 @@ export class TokenParser {
         // ImapStream supplies one buffer per literal marker it framed, {0} included. A marker
         // without a buffer means the line and its literals do not match up, so fail with a parser
         // error instead of reading a missing buffer or shifting every later literal by one
+        // Read by index: shift() moves every remaining buffer, which made a response of many
+        // literals quadratic to parse
+        let literalIndex = 0;
         const takeLiteral = (literals: Buffer[]): Buffer => {
-            if (!literals.length) {
+            if (literalIndex >= literals.length) {
                 throw this.parserError(`Literal without data at position ${this.pos + i} [E35]`, 'ParserError35', this.pos + i, chr);
             }
-            return literals.shift()!;
+            return literals[literalIndex++];
         };
 
         // Any ATOM supported char starts a new Atom sequence, otherwise throw an error
@@ -435,6 +475,8 @@ export class TokenParser {
                             this.currentNode = this.createNode(this.currentNode, this.pos + i);
                             this.currentNode.type = 'string';
                             this.state = STATE_STRING;
+                            stringStart = i + 1;
+                            stringEscaped = false;
                             this.currentNode.isClosed = false;
                             break;
 
@@ -704,8 +746,11 @@ export class TokenParser {
                     break;
 
                 case STATE_STRING:
-                    // DQUOTE ends the string sequence
+                    // DQUOTE ends the string sequence. Its value is taken from the input in one
+                    // piece, for the same reason tokens are sliced, see appendToToken()
                     if (chr === '"') {
+                        let value = this.str.slice(stringStart, i);
+                        this.currentNode.value = stringEscaped ? value.replace(/\\([\s\S])/g, '$1') : value;
                         this.currentNode.endPos = this.pos + i;
                         this.currentNode.isClosed = true;
                         this.currentNode = this.currentNode.parentNode!;
@@ -715,16 +760,14 @@ export class TokenParser {
                         break;
                     }
 
-                    // \ Escapes the following char
+                    // \ Escapes the following char, which is skipped here so it can not end the string
                     if (chr === '\\') {
                         i++;
                         if (i >= len) {
                             throw this.parserError(`Unexpected end of input at position ${this.pos + i} [E18]`, 'ParserError18', this.pos + i);
                         }
-                        chr = this.str.charAt(i);
+                        stringEscaped = true;
                     }
-
-                    this.currentNode.value += chr;
                     break;
 
                 case STATE_PARTIAL:

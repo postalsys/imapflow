@@ -63,18 +63,61 @@ describe('imap-parser', () => {
                 assert.deepEqual(await parser(line), { tag: '*', command: line.split(' ')[1], numbers });
             });
         }
+        // A CONDSTORE MODSEQ list ends the answer to a MODSEQ query, which matches as many
+        // messages as any other, so the numbers before it are read the same way
+        for (const [line, numbers, modseq] of [
+            ['* SEARCH 2 5 (MODSEQ 917162500)', [2, 5], '917162500'],
+            ['* SEARCH 2 5 (modseq 1)  ', [2, 5], '1'],
+            ['* SEARCH 7  (MODSEQ 9223372036854775807)', [7], '9223372036854775807']
+        ] as const) {
+            it(`reads ${JSON.stringify(line)} into numbers and a MODSEQ list`, async () => {
+                assert.deepEqual(await parser(line), {
+                    tag: '*',
+                    command: 'SEARCH',
+                    numbers,
+                    attributes: [
+                        [
+                            { type: 'ATOM', value: 'MODSEQ' },
+                            { type: 'ATOM', value: modseq }
+                        ]
+                    ]
+                });
+            });
+        }
         it('reads a line after stripped NUL bytes', async () => {
             assert.deepEqual(await parser(Buffer.from('\x00\x00* SEARCH 5 6')), { tag: '*', command: 'SEARCH', numbers: [5, 6], nullBytesRemoved: 2 });
         });
         for (const [line, attributes] of [
             [
-                '* SEARCH 2 5 (MODSEQ 917162500)',
+                '* SEARCH (MODSEQ 917162500)',
                 [
-                    { type: 'ATOM', value: '2' },
-                    { type: 'ATOM', value: '5' },
                     [
                         { type: 'ATOM', value: 'MODSEQ' },
                         { type: 'ATOM', value: '917162500' }
+                    ]
+                ]
+            ],
+            [
+                '* SEARCH 2 (MODSEQ 12345678901234567890)',
+                [
+                    { type: 'ATOM', value: '2' },
+                    [
+                        { type: 'ATOM', value: 'MODSEQ' },
+                        { type: 'ATOM', value: '12345678901234567890' }
+                    ]
+                ]
+            ],
+            [
+                '* SEARCH 2 (X 1) (MODSEQ 5)',
+                [
+                    { type: 'ATOM', value: '2' },
+                    [
+                        { type: 'ATOM', value: 'X' },
+                        { type: 'ATOM', value: '1' }
+                    ],
+                    [
+                        { type: 'ATOM', value: 'MODSEQ' },
+                        { type: 'ATOM', value: '5' }
                     ]
                 ]
             ],
