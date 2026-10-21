@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/postalsys/imapflow/compare/v2.6.0...v2.7.0) (2026-10-21)
+
+
+### Features
+
+* expose idlingAtClose so a consumer can tell a session dropped in IDLE ([eb5ac6c](https://github.com/postalsys/imapflow/commit/eb5ac6c5307a735d4f2526c8e8a266e488dbe17f))
+
 ## [2.6.0](https://github.com/postalsys/imapflow/compare/v2.5.9...v2.6.0) (2026-10-21)
 
 
