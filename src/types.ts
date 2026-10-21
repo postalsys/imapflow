@@ -786,6 +786,17 @@ export interface MailboxOpenOptions {
     uidValidity?: bigint | number | string | undefined;
 }
 
+export interface IdleOptions {
+    /**
+     * Wait until the connection is free before starting IDLE: no mailbox lock held or queued, no
+     * command running or queued, no download open. Use it from code that does not hold a mailbox
+     * lock, so IDLE does not land between another caller's commands. A lock holder must not set it,
+     * it would wait for its own release. The returned promise rejects with `NoConnection` when the
+     * connection closes while waiting.
+     */
+    whenFree?: boolean | undefined;
+}
+
 export interface MailboxLockOptions extends MailboxOpenOptions {
     /**
      * Optional timeout in milliseconds to wait for the lock to be granted.

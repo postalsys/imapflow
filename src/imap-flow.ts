@@ -72,6 +72,7 @@ import type {
     MailboxDeleteResponse,
     MailboxLockObject,
     MailboxLockOptions,
+    IdleOptions,
     MailboxObject,
     MailboxOpenOptions,
     MailboxRenameResponse,
@@ -654,6 +655,10 @@ export class ImapFlow extends EventEmitter {
      */
     lastClientWrite: number | null;
 
+    // idle({ whenFree: true }) calls waiting for the connection to be free, woken by autoidle(), rejected by close()
+    /** @internal */
+    _idleWaiters: { resolve: () => void; reject: (err: Error) => void }[];
+
     /**
      * Whether the connection was in IDLE (or the polling fallback) when it closed, `false` while it
      * is open. `idling` itself is already cleared by the time the 'close' event fires, so this is
@@ -956,6 +961,7 @@ export class ImapFlow extends EventEmitter {
         this.context = this.options.context;
         this.connectedAt = null;
         this.lastClientWrite = null;
+        this._idleWaiters = [];
         this.idlingAtClose = false;
 
         this.emitLogs = !!this.options.emitLogs;
@@ -3077,6 +3083,15 @@ export class ImapFlow extends EventEmitter {
         return !!(this.currentLock || this.locks.length || this.currentRequest || this.requestQueue.length || this._openDownloads);
     }
 
+    /** @internal */
+    wakeIdleWaiters(): void {
+        if (this._idleWaiters.length) {
+            for (let { resolve } of this._idleWaiters.splice(0)) {
+                resolve();
+            }
+        }
+    }
+
     // Timer process-liveness policy: connection establishment and greeting deadlines keep the
     // process alive, because a caller is waiting on connect() to settle. Background timers
     // (auto-IDLE, IDLE restart, fallback polling, throttle back-off, the held-lock diagnostic) are
@@ -3084,6 +3099,9 @@ export class ImapFlow extends EventEmitter {
     // explicitly on close().
     /** @internal */
     autoidle(): void {
+        // every place the connection may have become free calls this, so it is where waiting
+        // idle({ whenFree: true }) calls re-check it, also with auto-IDLE turned off
+        this.wakeIdleWaiters();
         clearTimer(this.idleStartTimer);
         if (this.options.disableAutoIdle || !this.usable || this.state !== this.states.SELECTED) {
             return;
@@ -3436,6 +3454,12 @@ export class ImapFlow extends EventEmitter {
 
             this.closeRequests();
             this.closeLocks();
+            if (this._idleWaiters.length) {
+                let waiterError = this.createNoConnectionError(this.byeReason, { rejectedFrom: 'idleWait', command: 'IDLE' });
+                for (let { reject } of this._idleWaiters.splice(0)) {
+                    reject(waiterError);
+                }
+            }
             this.closeStreams();
 
             // clear socket handlers
@@ -3911,8 +3935,10 @@ export class ImapFlow extends EventEmitter {
      * return until IDLE is finished which means you would have to call some other command out of scope.
      *
      * Unlike auto-IDLE, a direct call does not wait for the connection to be free: a mailbox lock
-     * holder may idle inside its own lock, and idle() can not tell it from another caller.
+     * holder may idle inside its own lock, and idle() can not tell it from another caller. Code that
+     * holds no lock passes `{ whenFree: true }` to wait for the connection to be free first.
      *
+     * @param options IDLE options
      * @returns `false` if IDLE failed, `undefined` otherwise
      *
      * @example
@@ -3920,7 +3946,13 @@ export class ImapFlow extends EventEmitter {
      *
      * await client.idle();
      */
-    async idle(): Promise<boolean | undefined> {
+    async idle(options?: IdleOptions | undefined): Promise<boolean | undefined> {
+        // Re-checked on every wake, as another IDLE may have started meanwhile
+        while (options?.whenFree && !this.idling && this.usable && this.connectionBusy()) {
+            await new Promise<void>((resolve, reject) => {
+                this._idleWaiters.push({ resolve, reject });
+            });
+        }
         if (!this.idling) {
             return await this.run('IDLE', this.maxIdleTime);
         }
