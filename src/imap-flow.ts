@@ -4794,16 +4794,13 @@ export class ImapFlow extends EventEmitter {
         } finally {
             this.processingLock = false;
 
-            // New locks may have been queued while we were processing (e.g.,
-            // a lock that failed immediately and the next getMailboxLock call
-            // arrived before we finished). Schedule another run if needed.
-            /* c8 ignore start */ // requires a lock to be enqueued during an in-flight processLocks pass; not reproducible deterministically
+            // A pass that ended with locks queued and none held (it threw out of its loop) would
+            // leave them waiting with nothing to start another pass. Schedule one.
             if (this.locks.length && !this.currentLock) {
                 setImmediate(() => {
                     this.processLocks().catch(err => this.log.error({ err, cid: this.id }));
                 });
             }
-            /* c8 ignore stop */
         }
     }
 

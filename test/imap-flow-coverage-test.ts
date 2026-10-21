@@ -149,6 +149,46 @@ describe('imap-flow-coverage', () => {
         await client.processLocks();
         assert.equal(rejects, 6);
     });
+    it('Coverage: processLocks reschedules itself when a pass ends with locks queued and none held', async t => {
+        // A pass that throws out of its loop (here the trace log of a grant) leaves the rest of
+        // the queue behind with no lock held, and nothing else would start another pass
+        let client = makeClient();
+        client.mailbox = { path: 'INBOX', readOnly: false };
+        let failure = new Error('trace failed');
+        let traceFailed = false;
+        client.log.trace = (entry: any) => {
+            if (!traceFailed && entry && entry.msg === 'Mailbox lock acquired [existing]') {
+                traceFailed = true;
+                throw failure;
+            }
+        };
+        let granted: any[] = [];
+        for (let lockId of [1, 2]) {
+            client.locks.push({ resolve: (value: any) => granted.push([lockId, value]), reject: () => {}, path: 'INBOX', options: {}, lockId });
+        }
+
+        let scheduled: any[] = [];
+        t.mock.method(globalThis, 'setImmediate', (fn: any) => {
+            scheduled.push(fn);
+            return {};
+        });
+
+        await assert.rejects(client.processLocks(), failure);
+        assert.equal(client.processingLock, false, 'the failed pass released the processor');
+        assert.equal(client.currentLock, false, 'no lock is held');
+        assert.equal(client.locks.length, 1, 'the second lock is still queued');
+        assert.equal(scheduled.length, 1, 'another pass was scheduled');
+        assert.deepEqual(granted, []);
+
+        // the rescheduled pass grants the queued lock
+        scheduled.shift()();
+        await new Promise(resolve => process.nextTick(resolve));
+        assert.equal(client.locks.length, 0);
+        assert.equal(granted.length, 1);
+        assert.equal(granted[0][0], 2);
+        assert.equal(client.currentLock.lockId, 2);
+        assert.equal((granted[0][1] as any).path, 'INBOX');
+    });
     it('Coverage: getMailboxLock includes description in trace logs', async () => {
         let client = makeClient();
         client.mailbox = { path: 'INBOX', readOnly: false };
