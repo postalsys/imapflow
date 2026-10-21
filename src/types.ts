@@ -834,6 +834,23 @@ export interface ExistsEvent {
     prevCount: number;
 }
 
+/**
+ * Payload of the `highestModseq` event: the HIGHESTMODSEQ of the selected mailbox changed (RFC
+ * 7162), so flags or other message metadata changed on the server. Emitted when a poll on a
+ * server without IDLE (`missingIdleCommand` STATUS or SELECT) or a STATUS or re-SELECT of the
+ * open mailbox reports a new value, which is when the changes themselves are not delivered as
+ * `flags` events. A consumer resynchronizes with `fetch(range, { flags: true }, { changedSince:
+ * prevHighestModseq })`.
+ */
+export interface HighestModseqEvent {
+    /** Mailbox path */
+    path: string;
+    /** The new HIGHESTMODSEQ value */
+    highestModseq: bigint;
+    /** The value before this update, undefined when none was known */
+    prevHighestModseq?: bigint | undefined;
+}
+
 export interface FlagsEvent {
     /** Mailbox path */
     path: string;
@@ -954,7 +971,13 @@ export interface ImapFlowEvents {
     expunge: [data: ExpungeEvent];
     /** Flags were updated for a message */
     flags: [data: FlagsEvent];
-    /** Mailbox was opened */
+    /** The HIGHESTMODSEQ of the selected mailbox changed without the changes being reported, see {@link HighestModseqEvent} */
+    highestModseq: [data: HighestModseqEvent];
+    /**
+     * Mailbox was opened. Also emitted, after `mailboxClose` for the old mailbox object, when the
+     * open mailbox turned out to have a new UIDVALIDITY (a re-SELECT, or a STATUS poll on a server
+     * without IDLE, which then selects the mailbox again): every cached UID of it is invalid
+     */
     mailboxOpen: [mailbox: MailboxObject];
     /** Mailbox was closed, either explicitly or because the connection went away while a mailbox was still selected */
     mailboxClose: [mailbox: MailboxObject];

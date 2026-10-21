@@ -404,7 +404,7 @@ void code;
 const emitterConsumer = `
 import { EventEmitter } from 'node:events';
 import { ImapFlow } from 'imapflow';
-import type { ExistsEvent } from 'imapflow';
+import type { ExistsEvent, HighestModseqEvent } from 'imapflow';
 
 const client = new ImapFlow({ host: 'localhost' });
 
@@ -420,6 +420,11 @@ client.prependOnceListener('mailboxClose', mailbox => mailbox.exists);
 client.on('exists', listener).off('exists', listener).removeListener('exists', listener);
 client.emit('exists', { path: 'INBOX', count: 1, prevCount: 0 });
 client.emit('close');
+client.on('highestModseq', (data: HighestModseqEvent) => {
+    const since: bigint | undefined = data.prevHighestModseq;
+    const now: bigint = data.highestModseq;
+    void [since, now, data.path];
+});
 
 client.on('custom', (...args) => args.length);
 client.emit('custom', 1, 'two');

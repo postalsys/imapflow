@@ -263,6 +263,7 @@ async function pollOnce(connection: ImapFlow, session: PollingSession): Promise<
             // HIGHESTMODSEQ is filtered out again unless the server advertises CONDSTORE, so a
             // CONDSTORE session keeps mailbox.highestModseq current without asking a plain
             // server for an item it does not know.
+            let polled = connection.mailbox;
             let status = await connection.runInternal('STATUS', path, {
                 messages: true,
                 uidNext: true,
@@ -272,6 +273,12 @@ async function pollOnce(connection: ImapFlow, session: PollingSession): Promise<
             });
             if (!status) {
                 throw createImapError('STATUS poll failed', 'PollFailed');
+            }
+            // STATUS can only tell that the UIDs changed, the selected view is stale then: select
+            // the mailbox again, which reports it as closed and opened anew with the new state
+            if (polled && connection.mailbox === polled && status.uidValidity && polled.uidValidity && status.uidValidity !== polled.uidValidity) {
+                connection.log.info({ msg: 'UIDVALIDITY changed, selecting the mailbox again', path, cid: connection.id });
+                await connection.runInternal('SELECT', path, { readOnly: session.selectCommand.command === 'EXAMINE' });
             }
             break;
         }

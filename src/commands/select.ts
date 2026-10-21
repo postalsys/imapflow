@@ -275,8 +275,14 @@ export default async function select(
         connection.mailbox = false;
 
         // Emit mailboxClose if we're switching from a different mailbox.
-        // Re-selecting the same mailbox (e.g., for resync) does not trigger close/open.
-        if (currentMailbox && currentMailbox.path !== path) {
+        // Re-selecting the same mailbox (e.g., for resync) does not trigger close/open, unless
+        // it came back with a new UIDVALIDITY: the old view and every UID in it are gone then,
+        // which is reported the way a fresh mailboxOpen() of another mailbox would be.
+        let reopened =
+            !currentMailbox ||
+            currentMailbox.path !== path ||
+            (!!currentMailbox.uidValidity && !!map.uidValidity && currentMailbox.uidValidity !== map.uidValidity);
+        if (currentMailbox && reopened) {
             emitSafe(connection, 'mailboxClose', currentMailbox);
         }
 
@@ -286,12 +292,18 @@ export default async function select(
         connection.currentSelectCommand = selectCommand;
         connection.state = connection.states.SELECTED;
 
-        if (!currentMailbox || currentMailbox.path !== path) {
+        if (reopened || !currentMailbox) {
             emitSafe(connection, 'mailboxOpen', connection.mailbox);
-        } else if (typeof map.exists === 'number' && map.exists !== currentMailbox.exists) {
+        } else {
             // A re-SELECT of the open mailbox (the SELECT polling fallback) gets its EXISTS here
-            // instead of in the global handler, so it is reported the same way
-            emitSafe(connection, 'exists', { path, count: map.exists, prevCount: currentMailbox.exists });
+            // instead of in the global handler, so it is reported the same way. Flag changes are
+            // not reported by SELECT, a new HIGHESTMODSEQ is the cue to resync them.
+            if (typeof map.exists === 'number' && map.exists !== currentMailbox.exists) {
+                emitSafe(connection, 'exists', { path, count: map.exists, prevCount: currentMailbox.exists });
+            }
+            if (map.highestModseq && map.highestModseq !== currentMailbox.highestModseq) {
+                emitSafe(connection, 'highestModseq', { path, highestModseq: map.highestModseq, prevHighestModseq: currentMailbox.highestModseq });
+            }
         }
 
         response.next();

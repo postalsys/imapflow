@@ -27,8 +27,13 @@ const MAILBOX_UPDATERS: { [key: string]: ((value: any, mailbox: MailboxObject, c
     uidNext: (value: number, mailbox: MailboxObject) => {
         mailbox.uidNext = value;
     },
-    highestModseq: (value: bigint, mailbox: MailboxObject) => {
-        mailbox.highestModseq = value;
+    highestModseq: (value: bigint, mailbox: MailboxObject, connection: ImapFlow, path: string) => {
+        let prevHighestModseq = mailbox.highestModseq;
+        if (prevHighestModseq !== value) {
+            mailbox.highestModseq = value;
+            // the changes behind it are not reported by STATUS, the event is the cue to resync
+            emitSafe(connection, 'highestModseq', { path, highestModseq: value, prevHighestModseq });
+        }
     }
 };
 
@@ -87,14 +92,23 @@ export default async function status(connection: ImapFlow, path: string | string
                     if (!list) {
                         return;
                     }
+                    let updates: [string, unknown][] = [];
                     parseStatusList(list, (key, value) => {
                         map[key] = value;
-
-                        let updater = MAILBOX_UPDATERS[key];
-                        if (currentMailbox && updater) {
-                            updater(value, currentMailbox, connection, path);
+                        if (currentMailbox && MAILBOX_UPDATERS[key]) {
+                            updates.push([key, value]);
                         }
                     });
+
+                    // Under a new UIDVALIDITY the counts describe a mailbox the selected view no
+                    // longer matches, so they are not applied to it; the STATUS poll selects the
+                    // mailbox again instead, which reports it as opened anew
+                    if (currentMailbox && map.uidValidity && currentMailbox.uidValidity && map.uidValidity !== currentMailbox.uidValidity) {
+                        return;
+                    }
+                    for (let [key, value] of updates) {
+                        MAILBOX_UPDATERS[key]!(value, currentMailbox as MailboxObject, connection, path);
+                    }
                 }
             }
         });

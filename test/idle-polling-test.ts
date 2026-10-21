@@ -8,6 +8,9 @@ import { withFakeTimers } from './fixtures/fake-timers.js';
 // that cannot run or reschedule after cancellation, reuses the real STATUS/SELECT state
 // handling, and always leaves `idling` describing reality.
 
+// Feeds an untagged response to the handler a command registered for it
+const untagged = (options: any, name: string, response: any) => options.untagged[name](response);
+
 const createConnection = (overrides = {}) => {
     const states: any = { NOT_AUTHENTICATED: 1, AUTHENTICATED: 2, SELECTED: 3, LOGOUT: 4 };
 
@@ -228,17 +231,164 @@ describe('idle-polling', () => {
                 assert.deepEqual(connection.commands, ['STATUS'], 'STATUS was used for polling');
                 assert.equal(connection.mailbox.uidNext, 11, 'uidNext updated from the poll');
                 assert.equal(connection.mailbox.highestModseq, BigInt(42), 'highestModseq updated on a CONDSTORE session');
-                assert.deepEqual(connection.events, [], 'an unchanged message count emits no event');
+                assert.deepEqual(
+                    connection.events,
+                    [{ event: 'highestModseq', payload: { path: 'INBOX', highestModseq: 42n, prevHighestModseq: 1n } }],
+                    'an unchanged message count emits no event, the new HIGHESTMODSEQ does'
+                );
+                connection.events = [];
 
                 // Second poll reports a new count -> exactly one exists event
                 messages = 5;
                 await timers.fire();
 
                 assert.equal(connection.mailbox.exists, 5, 'exists updated from the poll');
-                assert.equal(connection.events.length, 1, 'one event for the changed count');
+                assert.equal(connection.events.length, 1, 'one event for the changed count, none for the unchanged HIGHESTMODSEQ');
                 assert.equal((connection.events[0] as any).event, 'exists');
                 assert.equal((connection.events[0] as any).payload.count, 5);
                 assert.equal((connection.events[0] as any).payload.prevCount, 3);
+
+                await (connection.preCheck as any)();
+                await idlePromise;
+                done();
+            });
+        })().catch(done);
+    });
+    it('Polling: a new UIDVALIDITY from a STATUS poll selects the mailbox again and reports it as reopened', (t, done) => {
+        (async () => {
+            await withFakeTimers(async timers => {
+                let uidValidity = '1';
+                let messages = '3';
+                let connection: any = createConnection({
+                    capabilities: [['CONDSTORE', true]],
+                    missingIdleCommand: 'STATUS',
+                    respond: async (command: any, attributes: any, options: any) => {
+                        if (command === 'STATUS') {
+                            await untagged(options, 'STATUS', {
+                                attributes: [
+                                    { type: 'STRING', value: 'INBOX' },
+                                    [
+                                        { type: 'ATOM', value: 'MESSAGES' },
+                                        { type: 'ATOM', value: messages },
+                                        { type: 'ATOM', value: 'UIDVALIDITY' },
+                                        { type: 'ATOM', value: uidValidity },
+                                        { type: 'ATOM', value: 'HIGHESTMODSEQ' },
+                                        { type: 'ATOM', value: '99' }
+                                    ]
+                                ]
+                            });
+                        }
+                        if (command === 'SELECT') {
+                            await untagged(options, 'EXISTS', { command: '7', attributes: [] });
+                            await untagged(options, 'OK', {
+                                attributes: [
+                                    {
+                                        section: [
+                                            { type: 'ATOM', value: 'UIDVALIDITY' },
+                                            { type: 'ATOM', value: uidValidity }
+                                        ]
+                                    }
+                                ]
+                            });
+                            await untagged(options, 'OK', {
+                                attributes: [
+                                    {
+                                        section: [
+                                            { type: 'ATOM', value: 'HIGHESTMODSEQ' },
+                                            { type: 'ATOM', value: '99' }
+                                        ]
+                                    }
+                                ]
+                            });
+                            return { next: () => {}, response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] } };
+                        }
+                        return { next: () => {}, response: { attributes: [{ value: 'OK' }] } };
+                    }
+                });
+                let oldMailbox = connection.mailbox;
+
+                let idlePromise = idleCommand(connection, 60000);
+                await timers.drain();
+                assert.deepEqual(connection.commands, ['STATUS'], 'an unchanged UIDVALIDITY needs no SELECT');
+                connection.events = [];
+
+                uidValidity = '2';
+                messages = '7';
+                await timers.fire();
+
+                assert.deepEqual(connection.commands, ['STATUS', 'STATUS', 'SELECT'], 'the changed UIDVALIDITY made the poll select the mailbox');
+                assert.deepEqual(
+                    connection.events.map((entry: any) => entry.event),
+                    ['mailboxClose', 'mailboxOpen'],
+                    'reported as a fresh open, without exists or highestModseq events for the stale view'
+                );
+                assert.equal(connection.events[0].payload, oldMailbox, 'the old mailbox object is closed');
+                assert.equal(oldMailbox.exists, 3, 'the STATUS counts were not applied to the stale view');
+                assert.equal(connection.events[1].payload, connection.mailbox);
+                assert.equal(connection.mailbox.uidValidity, 2n);
+                assert.equal(connection.mailbox.exists, 7);
+                assert.equal(connection.mailbox.highestModseq, 99n);
+                assert.equal(connection.state, connection.states.SELECTED);
+
+                await (connection.preCheck as any)();
+                await idlePromise;
+                done();
+            });
+        })().catch(done);
+    });
+    it('Polling: a SELECT poll reports a new UIDVALIDITY as reopened and a new HIGHESTMODSEQ as an event', (t, done) => {
+        (async () => {
+            await withFakeTimers(async timers => {
+                let uidValidity = '1';
+                let modseq = '1';
+                let connection: any = createConnection({
+                    missingIdleCommand: 'SELECT',
+                    respond: async (command: any, attributes: any, options: any) => {
+                        if (command === 'SELECT') {
+                            await untagged(options, 'EXISTS', { command: '3', attributes: [] });
+                            await untagged(options, 'OK', {
+                                attributes: [
+                                    {
+                                        section: [
+                                            { type: 'ATOM', value: 'UIDVALIDITY' },
+                                            { type: 'ATOM', value: uidValidity }
+                                        ]
+                                    }
+                                ]
+                            });
+                            await untagged(options, 'OK', {
+                                attributes: [
+                                    {
+                                        section: [
+                                            { type: 'ATOM', value: 'HIGHESTMODSEQ' },
+                                            { type: 'ATOM', value: modseq }
+                                        ]
+                                    }
+                                ]
+                            });
+                        }
+                        return { next: () => {}, response: { attributes: [{ section: [{ type: 'ATOM', value: 'READ-WRITE' }] }] } };
+                    }
+                });
+
+                let idlePromise = idleCommand(connection, 60000);
+                await timers.drain();
+                assert.deepEqual(connection.events, [], 'nothing changed');
+
+                modseq = '17';
+                await timers.fire();
+                assert.deepEqual(connection.events, [{ event: 'highestModseq', payload: { path: 'INBOX', highestModseq: 17n, prevHighestModseq: 1n } }]);
+                connection.events = [];
+
+                let before = connection.mailbox;
+                uidValidity = '5';
+                await timers.fire();
+                assert.deepEqual(
+                    connection.events.map((entry: any) => entry.event),
+                    ['mailboxClose', 'mailboxOpen']
+                );
+                assert.equal(connection.events[0].payload, before);
+                assert.equal(connection.events[1].payload.uidValidity, 5n);
 
                 await (connection.preCheck as any)();
                 await idlePromise;
