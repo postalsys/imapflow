@@ -4645,6 +4645,10 @@ export class ImapFlow extends EventEmitter {
         }
         this.processingLock = true;
 
+        // The lock taken off the queue and not settled yet. A pass that throws out of its loop
+        // rejects it, its caller would wait forever otherwise: it is in the queue no longer.
+        let unsettled: MailboxLockEntry | null = null;
+
         try {
             // Process all locks in queue until empty
             let processedCount = 0;
@@ -4663,6 +4667,7 @@ export class ImapFlow extends EventEmitter {
                 }
 
                 const lock = this.locks.shift() as MailboxLockEntry;
+                unsettled = lock;
                 const { resolve, reject, path, options, lockId } = lock;
 
                 // From here on the grant/reject path owns the outcome; the acquire
@@ -4731,6 +4736,7 @@ export class ImapFlow extends EventEmitter {
 
                 if (!this.usable || !this.socket || this.socket.destroyed) {
                     this.log.trace({ msg: 'Failed to acquire mailbox lock', path, lockId, idling: this.idling });
+                    unsettled = null;
                     reject(this.createNoConnectionError(false, { rejectedFrom: 'mailboxLock', path }));
                     continue; // Process next lock in queue
                 }
@@ -4744,6 +4750,7 @@ export class ImapFlow extends EventEmitter {
                     this.currentLock = lock;
                     armHeldTimer();
                     this.autoidle();
+                    unsettled = null;
                     resolve({ path, release });
                 };
 
@@ -4787,10 +4794,24 @@ export class ImapFlow extends EventEmitter {
                         ...(options.description && { description: options.description }),
                         err
                     });
+                    unsettled = null;
                     reject(err as Error);
                     // Continue to next lock in queue
                 }
             }
+        } catch (err) {
+            if (unsettled) {
+                let lock = unsettled;
+                unsettled = null;
+                // granted but not handed out (the grant itself failed): nobody can release it
+                if (this.currentLock === lock) {
+                    clearTimer(lock.heldWarnTimer);
+                    lock.heldWarnTimer = null;
+                    this.currentLock = false;
+                }
+                lock.reject(err as Error);
+            }
+            throw err;
         } finally {
             this.processingLock = false;
 

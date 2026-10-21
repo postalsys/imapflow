@@ -163,8 +163,15 @@ describe('imap-flow-coverage', () => {
             }
         };
         let granted: any[] = [];
+        let rejected: any[] = [];
         for (let lockId of [1, 2]) {
-            client.locks.push({ resolve: (value: any) => granted.push([lockId, value]), reject: () => {}, path: 'INBOX', options: {}, lockId });
+            client.locks.push({
+                resolve: (value: any) => granted.push([lockId, value]),
+                reject: (err: any) => rejected.push([lockId, err]),
+                path: 'INBOX',
+                options: {},
+                lockId
+            });
         }
 
         let scheduled: any[] = [];
@@ -178,6 +185,7 @@ describe('imap-flow-coverage', () => {
         assert.equal(client.currentLock, false, 'no lock is held');
         assert.equal(client.locks.length, 1, 'the second lock is still queued');
         assert.equal(scheduled.length, 1, 'another pass was scheduled');
+        assert.deepEqual(rejected, [[1, failure]], 'the lock the failed pass took off the queue was rejected');
         assert.deepEqual(granted, []);
 
         // the rescheduled pass grants the queued lock
@@ -188,6 +196,58 @@ describe('imap-flow-coverage', () => {
         assert.equal(granted[0][0], 2);
         assert.equal(client.currentLock.lockId, 2);
         assert.equal((granted[0][1] as any).path, 'INBOX');
+    });
+    it('Coverage: a queued lock whose grant throws is rejected instead of left unsettled', async () => {
+        // A pass started by release() has no caller to report to, and the lock is off the queue
+        // once the pass takes it, so a throw before it was settled left getMailboxLock() pending
+        // forever
+        let client = makeClient();
+        client.mailbox = { path: 'INBOX', readOnly: false };
+        let first = await client.getMailboxLock('INBOX');
+        let queued = client.getMailboxLock('INBOX').then(
+            () => 'resolved',
+            (err: any) => err
+        );
+        await drain();
+        assert.equal(client.locks.length, 1, 'the second lock waits for the first');
+
+        let failure = new Error('trace failed');
+        client.log.trace = (entry: any) => {
+            if (entry && entry.msg === 'Mailbox lock acquired [existing]') {
+                throw failure;
+            }
+        };
+        first.release();
+        let timer: any;
+        let outcome = await Promise.race([
+            queued,
+            new Promise(resolve => {
+                timer = setTimeout(() => resolve('pending'), 500);
+            })
+        ]);
+        clearTimeout(timer);
+        assert.equal(outcome, failure);
+        assert.equal(client.currentLock, false);
+        assert.equal(client.processingLock, false);
+    });
+    it('Coverage: a lock granted but not handed out is released when the grant throws', async () => {
+        let client = makeClient();
+        client.mailbox = { path: 'INBOX', readOnly: false };
+        let failure = new Error('autoidle failed');
+        let realAutoidle = client.autoidle.bind(client);
+        client.autoidle = () => {
+            if (client.currentLock) {
+                throw failure;
+            }
+            realAutoidle();
+        };
+        await assert.rejects(client.getMailboxLock('INBOX', { maxLockHoldTime: 60000 }), failure);
+        assert.equal(client.currentLock, false, 'a lock nobody holds is not left in place');
+        client.autoidle = realAutoidle;
+        let lock = await client.getMailboxLock('INBOX');
+        assert.ok(lock, 'the next lock is granted');
+        lock.release();
+        await drain();
     });
     it('Coverage: getMailboxLock includes description in trace logs', async () => {
         let client = makeClient();
