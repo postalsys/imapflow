@@ -113,11 +113,20 @@ describe('commands/fetch', () => {
         await fetchCommand(connection, '1:*', { uid: true }, { uid: true });
         assert.equal(execCommand, 'UID FETCH');
     });
-    it('Commands: fetch skips when not selected', async () => {
-        const connection = createMockConnection({ state: 2 }); // AUTHENTICATED, not SELECTED
+    it('Commands: fetch rejects with NoMailboxSelected when not selected', async () => {
+        // A FETCH queued behind a CLOSE used to resolve undefined, which fetch() turned into an
+        // empty result as if the mailbox had no messages
+        let execCalled = false;
+        const connection = createMockConnection({
+            state: 2, // AUTHENTICATED, not SELECTED
+            exec: async () => {
+                execCalled = true;
+                return { next: () => {} };
+            }
+        });
 
-        const result = await fetchCommand(connection, '1:*', { uid: true });
-        assert.equal(result, undefined);
+        await assert.rejects(fetchCommand(connection, '1:*', { uid: true }), (err: any) => err.code === 'NoMailboxSelected' && err.command === 'FETCH');
+        assert.equal(execCalled, false, 'nothing is sent');
     });
     it('Commands: fetch skips when no range', async () => {
         const connection = createMockConnection({ state: 3 });

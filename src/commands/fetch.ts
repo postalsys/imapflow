@@ -31,7 +31,8 @@ export interface FetchCommandResult {
  * @param range - Message sequence number or UID range
  * @param query - Fetch query specifying which data to retrieve (e.g., flags, envelope, bodyStructure, headers, source, bodyParts)
  * @param options - Fetch options
- * @returns Object with message count and list, or undefined if not in SELECTED state
+ * @returns Object with message count and list, or undefined when the range is empty
+ * @throws NoMailboxSelected when not in SELECTED state (NoConnection once the connection is gone)
  */
 export default async function fetch(
     connection: ImapFlow,
@@ -40,7 +41,12 @@ export default async function fetch(
     options?: FetchCommandOptions | undefined
 ): Promise<FetchCommandResult | undefined> {
     let mailbox = getSelectedMailbox(connection);
-    if (!mailbox || !range) {
+    if (!mailbox) {
+        // queued behind a CLOSE or a failed SELECT: rejecting keeps fetch() from yielding
+        // nothing as if the mailbox were empty
+        throw connection.createNoMailboxError('FETCH');
+    }
+    if (!range) {
         // nothing to do here
         return;
     }

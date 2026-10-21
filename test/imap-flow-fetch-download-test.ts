@@ -58,14 +58,32 @@ describe('imap-flow-fetch-download', () => {
     // ============================================================================
     // fetch() generator
     // ============================================================================
-    it('Fetch: generator returns nothing without mailbox', async () => {
+    it('Fetch: generator throws NoMailboxSelected without mailbox', async () => {
+        // yielding nothing looked like an empty mailbox, for example right after mailboxClose()
         let client = makeClient();
         client.mailbox = false;
         let results = [];
-        for await (let msg of client.fetch('1:*', { uid: true })) {
-            results.push(msg);
-        }
+        await assert.rejects(
+            async () => {
+                for await (let msg of client.fetch('1:*', { uid: true })) {
+                    results.push(msg);
+                }
+            },
+            (err: any) => err.code === 'NoMailboxSelected' && err.command === 'FETCH'
+        );
         assert.equal(results.length, 0);
+    });
+    it('Fetch: fetchAll throws NoMailboxSelected without mailbox', async () => {
+        let client = makeClient();
+        client.mailbox = false;
+        await assert.rejects(client.fetchAll('1:*', { uid: true }), (err: any) => err.code === 'NoMailboxSelected');
+    });
+    it('Fetch: without a mailbox on a closed connection the error is NoConnection', async () => {
+        let client = makeClient();
+        client.mailbox = false;
+        client.usable = false;
+        await assert.rejects(client.fetchOne('1', {}), (err: any) => err.code === 'NoConnection');
+        await assert.rejects(client.fetchAll('1:*', {}), (err: any) => err.code === 'NoConnection');
     });
     it('Fetch: generator returns when range resolves empty', async () => {
         let client = makeClient();
@@ -152,11 +170,10 @@ describe('imap-flow-fetch-download', () => {
     // ============================================================================
     // fetchOne() / fetchAll()
     // ============================================================================
-    it('Fetch: fetchOne returns undefined without mailbox', async () => {
+    it('Fetch: fetchOne throws NoMailboxSelected without mailbox', async () => {
         let client = makeClient();
         client.mailbox = false;
-        let res = await client.fetchOne('1', {});
-        assert.equal(res, undefined);
+        await assert.rejects(client.fetchOne('1', {}), (err: any) => err.code === 'NoMailboxSelected');
     });
     it('Fetch: fetchOne star returns false on empty mailbox', async () => {
         let client = makeClient();
@@ -585,7 +602,7 @@ describe('imap-flow-fetch-download', () => {
             if (calls === 1) {
                 return { uid: 1, size: 100, source: Buffer.from('ABCD') };
             }
-            // what close() leaves behind; the real fetchOne() returns undefined without a mailbox
+            // what close() leaves behind, answered empty
             client.usable = false;
             client.mailbox = false;
             return undefined;

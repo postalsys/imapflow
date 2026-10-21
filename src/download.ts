@@ -316,9 +316,9 @@ export async function downloadMessage(
         let response = await fetchExpected(client, range, query, downloadOptions, expected);
 
         if (!response) {
-            // An empty answer also comes from a connection that closed while the consumer was
-            // paused between chunks (fetchOne() finds no mailbox then), and that is not a
-            // missing message: a caller that retries would skip it
+            // An empty answer from a connection that closed while the consumer was paused
+            // between chunks is not a missing message: a caller that retries would skip it
+            // (fetchOne() itself rejects with NoConnection when it finds no mailbox then)
             if (!client.usable) {
                 throw client.createNoConnectionError(false, { rejectedFrom: 'download' });
             }

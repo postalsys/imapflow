@@ -3300,6 +3300,16 @@ export class ImapFlow extends EventEmitter {
         return error;
     }
 
+    // What a message command called without a selected mailbox rejects with: NoMailboxSelected,
+    // or NoConnection once the connection is gone, as that is why the mailbox is missing then
+    /** @internal */
+    createNoMailboxError(command: string): ImapFlowError {
+        if (!this.usable) {
+            return this.createNoConnectionError(this.byeReason, { rejectedFrom: 'noMailbox', command });
+        }
+        return createImapError('No mailbox is selected', 'NoMailboxSelected', { command });
+    }
+
     /**
      * Closes TCP connection without notifying the server.
      *
@@ -4155,6 +4165,9 @@ export class ImapFlow extends EventEmitter {
      * @param query Fetch query
      * @param options Fetch options
      * @yields Message data object
+     * @throws An error with the code `NoMailboxSelected` when no mailbox is selected (for example
+     *   after `mailboxClose()` or a failed `mailboxOpen()`), or `NoConnection` once the connection
+     *   is gone. Earlier releases yielded nothing in that case, as for an empty mailbox
      *
      * @example
      * let mailbox = await client.mailboxOpen('INBOX');
@@ -4173,8 +4186,8 @@ export class ImapFlow extends EventEmitter {
         options = options || {};
 
         if (!this.mailbox) {
-            // no mailbox selected, nothing to do
-            return;
+            // an empty result would look like an empty mailbox, for example right after close()
+            throw this.createNoMailboxError('FETCH');
         }
 
         let resolved = await this.resolveRange(range, options);
@@ -4294,6 +4307,7 @@ export class ImapFlow extends EventEmitter {
      * @param query Fetch query
      * @param options Fetch options
      * @returns Array of Message data object
+     * @throws An error with the code `NoMailboxSelected` when no mailbox is selected, see fetch()
      *
      * @example
      * let mailbox = await client.mailboxOpen('INBOX');
@@ -4318,7 +4332,9 @@ export class ImapFlow extends EventEmitter {
      * @param seq Single UID or sequence number of the message to fetch for
      * @param query Fetch query
      * @param options Fetch options
-     * @returns Message data object
+     * @returns Message data object, `false` when the message was not found
+     * @throws An error with the code `NoMailboxSelected` when no mailbox is selected, see fetch().
+     *   Earlier releases resolved `undefined` then
      *
      * @example
      * let mailbox = await client.mailboxOpen('INBOX');
@@ -4326,10 +4342,11 @@ export class ImapFlow extends EventEmitter {
      * let lastMsg = await client.fetchOne('*', {uid: true})
      * console.log(lastMsg.uid);
      */
-    async fetchOne(seq: SequenceString, query: FetchQueryObject, options?: FetchOptions | undefined): Promise<FetchMessageObject | false | undefined> {
+    async fetchOne(seq: SequenceString, query: FetchQueryObject, options?: FetchOptions | undefined): Promise<FetchMessageObject | false> {
         if (!this.mailbox) {
-            // no mailbox selected, nothing to do
-            return;
+            // undefined used to be returned here, indistinguishable from a missing message for a
+            // caller that only tests the result
+            throw this.createNoMailboxError('FETCH');
         }
 
         if (seq === '*') {

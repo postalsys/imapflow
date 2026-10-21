@@ -210,3 +210,32 @@ describe('imapkit: namespaces', () => {
         await client.logout();
     });
 });
+
+describe('imapkit: no mailbox selected', () => {
+    it('fetch after mailboxClose() rejects with NoMailboxSelected instead of an empty result', async t => {
+        const kit = await startImapKit(t, {
+            server: {
+                plugins: PLUGINS,
+                storage: { INBOX: { messages: [{ raw: rfc822('one') }, { raw: rfc822('two') }] } }
+            }
+        });
+        const client = await kit.connect();
+        await client.mailboxOpen('INBOX');
+        assert.equal((await client.fetchAll('1:*', { uid: true })).length, 2);
+        await client.mailboxClose();
+
+        const noMailbox = (err: any) => err.code === 'NoMailboxSelected' && err.command === 'FETCH';
+        await assert.rejects(client.fetchAll('1:*', { uid: true }), noMailbox);
+        await assert.rejects(client.fetchOne('1', { uid: true }), noMailbox);
+        await assert.rejects(async () => {
+            for await (const message of client.fetch('1:*', { uid: true })) {
+                assert.fail(`no message was expected, got ${message.uid}`);
+            }
+        }, noMailbox);
+
+        // the connection stays usable
+        await client.mailboxOpen('INBOX');
+        assert.equal((await client.fetchAll('1:*', { uid: true })).length, 2);
+        await client.logout();
+    });
+});

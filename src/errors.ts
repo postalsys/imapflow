@@ -70,7 +70,9 @@ export const ImapFlowErrorCode = {
     UnsupportedTransportOption: 'UnsupportedTransportOption',
 
     // API misuse
-    InstanceReused: 'InstanceReused'
+    InstanceReused: 'InstanceReused',
+    // a message command (FETCH) was called while no mailbox was selected
+    NoMailboxSelected: 'NoMailboxSelected'
 } as const;
 
 /** One of the {@link ImapFlowErrorCode} values */

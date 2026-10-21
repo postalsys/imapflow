@@ -81,6 +81,7 @@ export const createMockConnection = (overrides: Record<string, unknown> = {}): M
         // aborted the wait. The mock resolves immediately so throttle retries stay fast.
         throttleWait: async () => false,
         createNoConnectionError: () => Object.assign(new Error('Connection not available'), { code: 'NoConnection' }),
+        createNoMailboxError: (command: string) => Object.assign(new Error('No mailbox is selected'), { code: 'NoMailboxSelected', command }),
         run: async () => {},
         // Mirrors ImapFlow.runInternal(): dispatch through the command registry without the
         // preCheck/auto-IDLE handshake that run() performs, so a fallback poll runs the real
