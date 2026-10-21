@@ -83,8 +83,13 @@ export interface ImapFlowOptions {
     emitLogs?: boolean | undefined;
     /** If true, then logs out automatically after successful authentication */
     verifyOnly?: boolean | undefined;
-    /** If true and verifyOnly is set, lists mailboxes */
+    /** If true and verifyOnly is set, lists mailboxes. The listing is in `client.mailboxList` once `connect()` resolved */
     includeMailboxes?: boolean | undefined;
+    /**
+     * Data of the application's own to keep with the client, such as the account the connection
+     * belongs to. ImapFlow never reads it, it is the initial value of `client.context`
+     */
+    context?: unknown;
     /**
      * Proxy URL. Supports HTTP CONNECT (http:, https:) and SOCKS (socks:, socks4:, socks4a:,
      * socks5:) proxies. IPv6 proxy endpoints are given in URL form, e.g. `socks5://[2001:db8::1]:1080`.

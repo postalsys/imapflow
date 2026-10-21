@@ -128,6 +128,15 @@ main().catch(console.error);
 
 An `ImapFlow` instance holds a single connection and cannot reconnect. Once the connection has closed, or after `connect()` has been called once, create a new instance to connect again. Calling `connect()` a second time on the same instance throws an error with the code `InstanceReused`.
 
+### Connection state
+
+Besides `mailbox`, `usable`, `authenticated` and `capabilities`, a client exposes:
+
+- `client.context` - data of the application's own, never read by ImapFlow. It starts as the `context` option (`new ImapFlow({ ..., context: { account: 'a1' } })`) and can be replaced at any time. Its type is `unknown`, cast it to what you store there.
+- `client.connectedAt` - when the TCP or TLS connection was established, in milliseconds since the epoch, `null` before that.
+- `client.lastClientWrite` - when the client last wrote to the server (a command, a literal, the `DONE` that ends IDLE), in milliseconds since the epoch, `null` before the first write. Useful for staying ahead of server inactivity timers.
+- `client.mailboxList` - with `verifyOnly` and `includeMailboxes`, the mailboxes listed before the connection logged out; `undefined` otherwise.
+
 See the [Quick Start guide](https://imapflow.com/docs/getting-started/quick-start) for more examples, including Gmail, Outlook, and Yahoo configuration.
 
 ## Documentation

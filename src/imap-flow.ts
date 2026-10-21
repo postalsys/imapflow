@@ -634,6 +634,26 @@ export class ImapFlow extends EventEmitter {
      */
     idling: boolean;
 
+    /**
+     * Data of the application's own, kept with the client and never read by ImapFlow. Starts as
+     * the `context` option; cast it to the type the application stores there
+     */
+    context: unknown;
+
+    /**
+     * When the TCP (or TLS) connection to the server was established, in milliseconds since the
+     * epoch, `null` before that. Kept after the connection closed
+     */
+    connectedAt: number | null;
+
+    /**
+     * When the client last wrote to the server (a command, a literal, the DONE that ends IDLE, an
+     * authentication response), in milliseconds since the epoch, `null` before the first write.
+     * Servers drop sessions that have not sent anything for a while, the IDLE ones included
+     * (RFC 9051 allows 30 minutes), and this is what their timer measures
+     */
+    lastClientWrite: number | null;
+
     /** Whether log entries are also emitted as 'log' events, see the `emitLogs` option */
     emitLogs: boolean;
     // ordering number for emitted logs
@@ -803,6 +823,19 @@ export class ImapFlow extends EventEmitter {
     declare _mailboxList: ListResponse[] | undefined;
 
     /**
+     * The mailboxes a `verifyOnly` connection with `includeMailboxes` listed before it logged out,
+     * `undefined` otherwise
+     *
+     * @example
+     * let client = new ImapFlow({ ..., verifyOnly: true, includeMailboxes: true });
+     * await client.connect();
+     * console.log(client.mailboxList.map(mailbox => mailbox.path));
+     */
+    get mailboxList(): ListResponse[] | undefined {
+        return this._mailboxList;
+    }
+
+    /**
      * Creates a client for one IMAP connection. Nothing is sent before `connect()` is called
      */
     constructor(options?: ImapFlowOptions | undefined) {
@@ -912,6 +945,10 @@ export class ImapFlow extends EventEmitter {
         this.currentSelectCommand = false;
 
         this.idling = false;
+
+        this.context = this.options.context;
+        this.connectedAt = null;
+        this.lastClientWrite = null;
 
         this.emitLogs = !!this.options.emitLogs;
         this.lo = 0;
@@ -1072,6 +1109,7 @@ export class ImapFlow extends EventEmitter {
             return false;
         }
 
+        this.lastClientWrite = Date.now();
         for (let data of frames) {
             if (this.logRaw) {
                 // Client frames of an authentication exchange carry credentials: the LOGIN
@@ -3180,6 +3218,7 @@ export class ImapFlow extends EventEmitter {
                 }
                 try {
                     clearTimer(this.connectTimeout);
+                    this.connectedAt = Date.now();
 
                     // ImapFlow now owns the socket; drop the proxy's early error handler
                     // (its "before connection setup" message no longer applies).

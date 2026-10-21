@@ -67,7 +67,8 @@ const options: ImapFlowOptions = {
     clientInfo: { name: 'consumer', version: '1.0.0' },
     expungeHandler: async (event: ExpungeEvent) => {
         event.path;
-    }
+    },
+    context: { account: 'account-1' }
 };
 
 const client = new ImapFlow(options);
@@ -92,6 +93,13 @@ export async function run(): Promise<void> {
     const enabled: Set<string> = client.enabled;
     const authenticated: string | boolean = client.authenticated;
     void [mailbox, capabilities, enabled, authenticated, version, viaDefault];
+
+    const context = client.context as { account: string } | undefined;
+    client.context = { account: context?.account ?? 'account-2' };
+    const connectedAt: number | null = client.connectedAt;
+    const lastClientWrite: number | null = client.lastClientWrite;
+    const listed: ListResponse[] | undefined = client.mailboxList;
+    void [connectedAt, lastClientWrite, listed];
 
     const lock: MailboxLockObject = await client.getMailboxLock('INBOX', { readOnly: true, acquireTimeout: 1000 });
     try {
