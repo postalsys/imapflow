@@ -654,6 +654,13 @@ export class ImapFlow extends EventEmitter {
      */
     lastClientWrite: number | null;
 
+    /**
+     * Whether the connection was in IDLE (or the polling fallback) when it closed, `false` while it
+     * is open. `idling` itself is already cleared by the time the 'close' event fires, so this is
+     * what tells a server dropping an idle session from one dropping a session mid-command
+     */
+    idlingAtClose: boolean;
+
     /** Whether log entries are also emitted as 'log' events, see the `emitLogs` option */
     emitLogs: boolean;
     // ordering number for emitted logs
@@ -949,6 +956,7 @@ export class ImapFlow extends EventEmitter {
         this.context = this.options.context;
         this.connectedAt = null;
         this.lastClientWrite = null;
+        this.idlingAtClose = false;
 
         this.emitLogs = !!this.options.emitLogs;
         this.lo = 0;
@@ -3388,6 +3396,8 @@ export class ImapFlow extends EventEmitter {
             // poll or IDLE that unwinds after this point sees that it no longer owns the flag and
             // leaves it alone (see claimIdling() in commands/idle.ts).
             this._idleSession = null;
+            // a later close() finds idling already cleared and keeps what the first one saw
+            this.idlingAtClose = this.idlingAtClose || this.idling;
             this.idling = false;
 
             this.closeConnectSteps();

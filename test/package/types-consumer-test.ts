@@ -98,8 +98,9 @@ export async function run(): Promise<void> {
     client.context = { account: context?.account ?? 'account-2' };
     const connectedAt: number | null = client.connectedAt;
     const lastClientWrite: number | null = client.lastClientWrite;
+    const idlingAtClose: boolean = client.idlingAtClose;
     const listed: ListResponse[] | undefined = client.mailboxList;
-    void [connectedAt, lastClientWrite, listed];
+    void [connectedAt, lastClientWrite, idlingAtClose, listed];
 
     const lock: MailboxLockObject = await client.getMailboxLock('INBOX', { readOnly: true, acquireTimeout: 1000 });
     try {

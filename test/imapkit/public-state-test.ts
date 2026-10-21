@@ -84,6 +84,29 @@ describe('imapkit: public connection state', () => {
         await client.logout();
     });
 
+    it('idlingAtClose tells a session dropped in IDLE from one dropped otherwise', async t => {
+        const kit = await startImapKit(t, { server: { plugins: PLUGINS } });
+
+        // dropped by the server while idling
+        const idler = await kit.connect();
+        assert.equal(idler.idlingAtClose, false);
+        await idler.mailboxOpen('INBOX');
+        const waiting = kit.serverEvent('session', (event: any) => event.type === 'waiting' && event.command === 'IDLE');
+        idler.idle().catch(() => false);
+        await waiting;
+        const idlerClosed = new Promise<boolean>(resolve => idler.once('close', () => resolve(idler.idlingAtClose)));
+        kit.control.disconnect({ user: 'testuser' });
+        assert.equal(await idlerClosed, true, 'idling is already cleared when close fires, this is not');
+        assert.equal(idler.idling, false);
+
+        // closed while not idling
+        const other = await kit.connect();
+        await other.mailboxOpen('INBOX');
+        const otherClosed = new Promise<boolean>(resolve => other.once('close', () => resolve(other.idlingAtClose)));
+        await other.logout();
+        assert.equal(await otherClosed, false);
+    });
+
     it('idle() called by the holder of a mailbox lock starts IDLE inside that lock', async t => {
         // The Workers, celld and browser harnesses idle this way. idle() can not tell the holder
         // from another caller, so waiting for a free connection there hung the holder forever

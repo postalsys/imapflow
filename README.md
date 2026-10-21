@@ -135,6 +135,7 @@ Besides `mailbox`, `usable`, `authenticated` and `capabilities`, a client expose
 - `client.context` - data of the application's own, never read by ImapFlow. It starts as the `context` option (`new ImapFlow({ ..., context: { account: 'a1' } })`) and can be replaced at any time. Its type is `unknown`, cast it to what you store there.
 - `client.connectedAt` - when the TCP or TLS connection was established, in milliseconds since the epoch, `null` before that.
 - `client.lastClientWrite` - when the client last wrote to the server (a command, a literal, the `DONE` that ends IDLE), in milliseconds since the epoch, `null` before the first write. Useful for staying ahead of server inactivity timers.
+- `client.idlingAtClose` - whether the connection was in IDLE (or the polling fallback) when it closed. `idling` is already cleared when the `close` event fires, so this tells a server dropping an idle session from one dropping a session mid-command.
 - `client.mailboxList` - with `verifyOnly` and `includeMailboxes`, the mailboxes listed before the connection logged out; `undefined` otherwise.
 
 See the [Quick Start guide](https://imapflow.com/docs/getting-started/quick-start) for more examples, including Gmail, Outlook, and Yahoo configuration.
