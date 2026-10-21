@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/postalsys/imapflow/compare/v2.7.0...v2.8.0) (2026-10-21)
+
+
+### Features
+
+* idle({ whenFree: true }) waits for the connection to be free before starting IDLE ([791c24c](https://github.com/postalsys/imapflow/commit/791c24ca607b60585ef619269abb0aa1f400f525))
+
 ## [2.7.0](https://github.com/postalsys/imapflow/compare/v2.6.0...v2.7.0) (2026-10-21)
 
 
