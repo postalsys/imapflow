@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.6.0](https://github.com/postalsys/imapflow/compare/v2.5.9...v2.6.0) (2026-10-21)
+
+
+### Features
+
+* expose mailboxList, context, connectedAt and lastClientWrite on the client ([c054bd3](https://github.com/postalsys/imapflow/commit/c054bd33ab0068531c64d613718233d3a1eff9e6))
+
+
+### Bug Fixes
+
+* emit the error event at most once per connection ([434e6eb](https://github.com/postalsys/imapflow/commit/434e6eb84021892703d02a63dc28da4a8bf086d6))
+* let idle() wait for a free connection before starting IDLE ([4a3d7df](https://github.com/postalsys/imapflow/commit/4a3d7df2116321997a966e0856d7035ed2b60992))
+* reject a mailbox lock when the processLocks pass handling it throws ([a207cd0](https://github.com/postalsys/imapflow/commit/a207cd093535025524ff6066aed092779b0ff569))
+* reject fetch() without a selected mailbox instead of returning nothing ([78036b8](https://github.com/postalsys/imapflow/commit/78036b806b9f70e70a78fa2bc668e340e63297af))
+* report UIDVALIDITY and HIGHESTMODSEQ changes found by the polling fallback ([0f4c306](https://github.com/postalsys/imapflow/commit/0f4c306259ffc9bb973d4cb54f790707c100cc94))
+* require an exact LIST match before treating a failed SELECT mailbox as existing ([99a5db0](https://github.com/postalsys/imapflow/commit/99a5db09a02da721b230fd56bb7d1b240cbb2a0f))
+* start IDLE right away again when idle() is called inside a mailbox lock ([018967d](https://github.com/postalsys/imapflow/commit/018967ded2d6e44801c4af8e211b10870e0f2f44))
+
 ## [2.5.9](https://github.com/postalsys/imapflow/compare/v2.5.8...v2.5.9) (2026-10-20)
 
 
