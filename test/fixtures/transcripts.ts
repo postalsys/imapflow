@@ -152,6 +152,105 @@ export const transcripts: QuirkTranscript[] = [
         }
     },
     {
+        name: 'a failed SELECT of a name with LIST wildcards is not confirmed by the other mailboxes the pattern matches',
+        origin: 'src/imap-flow.ts, mailboxOpen() mailboxMissing check',
+        transcript: `
+            S: * OK [CAPABILITY IMAP4rev1 NAMESPACE] ready
+            C: LOGIN
+            S: TAG OK LOGIN completed
+            C: CAPABILITY
+            S: * CAPABILITY IMAP4rev1 NAMESPACE
+            S: TAG OK CAPABILITY completed
+            C: NAMESPACE
+            S: * NAMESPACE (("" "/")) NIL NIL
+            S: TAG OK NAMESPACE completed
+            C: LIST "" "Work%"
+            S: * LIST (\\HasNoChildren) "/" Work
+            S: * LIST (\\HasNoChildren) "/" Workshop
+            S: TAG OK LIST completed
+            C: LSUB "" "Work%"
+            S: TAG OK LSUB completed
+            C: SELECT "Work%"
+            S: TAG NO Mailbox does not exist
+            # the pattern matches Work% and everything else that starts with Work, but not Work% itself
+            C: LIST "" "Work%"
+            S: * LIST (\\HasNoChildren) "/" Work
+            S: * LIST (\\HasNoChildren) "/" Workshop
+            S: TAG OK LIST completed
+            C: LIST "" "Projects/*"
+            S: * LIST (\\HasNoChildren) "/" Projects/Alpha
+            S: * LIST (\\HasNoChildren) "/" Projects/Beta/Old
+            S: TAG OK LIST completed
+            C: LSUB "" "Projects/*"
+            S: TAG OK LSUB completed
+            C: SELECT "Projects/*"
+            S: TAG NO Mailbox does not exist
+            C: LIST "" "Projects/*"
+            S: * LIST (\\HasNoChildren) "/" Projects/Alpha
+            S: * LIST (\\HasNoChildren) "/" Projects/Beta/Old
+            S: TAG OK LIST completed
+            C: LIST "" "Done%"
+            S: * LIST (\\HasNoChildren) "/" Done2024
+            S: * LIST (\\HasNoChildren) "/" "Done%"
+            S: TAG OK LIST completed
+            C: LSUB "" "Done%"
+            S: TAG OK LSUB completed
+            C: SELECT "Done%"
+            S: TAG NO [NOPERM] Access denied
+            # a literal match among the wildcard matches does exist
+            C: LIST "" "Done%"
+            S: * LIST (\\HasNoChildren) "/" Done2024
+            S: * LIST (\\HasNoChildren) "/" "Done%"
+            S: TAG OK LIST completed
+        `,
+        async run(client) {
+            await assert.rejects(client.mailboxOpen('Work%'), (err: any) => err.responseStatus === 'NO' && err.mailboxMissing === true);
+            await assert.rejects(client.mailboxOpen('Projects/*'), (err: any) => err.responseStatus === 'NO' && err.mailboxMissing === true);
+            await assert.rejects(client.mailboxOpen('Done%'), (err: any) => err.responseStatus === 'NO' && !err.mailboxMissing);
+        }
+    },
+    {
+        name: 'a mailbox LIST reports as \\NonExistent (RFC 5258) counts as missing after a failed SELECT',
+        origin: 'src/imap-flow.ts, mailboxOpen() mailboxMissing check',
+        transcript: `
+            S: * OK [CAPABILITY IMAP4rev1 NAMESPACE] ready
+            C: LOGIN
+            S: TAG OK LOGIN completed
+            C: CAPABILITY
+            S: * CAPABILITY IMAP4rev1 NAMESPACE
+            S: TAG OK CAPABILITY completed
+            C: NAMESPACE
+            S: * NAMESPACE (("" "/")) NIL NIL
+            S: TAG OK NAMESPACE completed
+            C: LIST "" "Ghost"
+            S: * LIST (\\NonExistent \\HasChildren) "/" Ghost
+            S: TAG OK LIST completed
+            C: LSUB "" "Ghost"
+            S: TAG OK LSUB completed
+            C: SELECT Ghost
+            S: TAG NO Mailbox does not exist
+            # a phantom folder, e.g. a subscribed or a parent-only name the server still lists
+            C: LIST "" "Ghost"
+            S: * LIST (\\NonExistent \\HasChildren) "/" Ghost
+            S: TAG OK LIST completed
+            C: LIST "" "INBOX"
+            S: * LIST (\\HasNoChildren) "/" inbox
+            S: TAG OK LIST completed
+            C: LSUB "" "INBOX"
+            S: TAG OK LSUB completed
+            C: SELECT INBOX
+            S: TAG NO [UNAVAILABLE] Try again later
+            # INBOX is matched case-insensitively
+            C: LIST "" "INBOX"
+            S: * LIST (\\HasNoChildren) "/" inbox
+            S: TAG OK LIST completed
+        `,
+        async run(client) {
+            await assert.rejects(client.mailboxOpen('Ghost'), (err: any) => err.responseStatus === 'NO' && err.mailboxMissing === true);
+            await assert.rejects(client.mailboxOpen('inbox'), (err: any) => err.responseStatus === 'NO' && !err.mailboxMissing);
+        }
+    },
+    {
         name: 'COPYUID arrives in an untagged OK before the tagged MOVE completion',
         origin: 'src/commands/move.ts',
         transcript: `

@@ -3805,8 +3805,18 @@ export class ImapFlow extends EventEmitter {
                 // LIST. This sets mailboxMissing on the error so the caller can distinguish
                 // "doesn't exist" from other failures, for getMailboxLock() callers as well.
                 try {
-                    let folders = await this.run('LIST', '', normalizePath(this, path), { listOnly: true });
-                    if (!folders || !folders.length) {
+                    let normalized = normalizePath(this, path);
+                    let folders: ListResponse[] | false = await this.run('LIST', '', normalized, { listOnly: true });
+                    // The path is the LIST pattern, so a % or * in a name also matches other
+                    // mailboxes, and an entry marked \NonExistent (RFC 5258) does not exist either
+                    let exists =
+                        Array.isArray(folders) &&
+                        folders.some(
+                            entry =>
+                                comparePaths(this, entry.path, normalized) &&
+                                ![...(entry.flags || [])].some(flag => typeof flag === 'string' && flag.toUpperCase() === '\\NONEXISTENT')
+                        );
+                    if (!exists) {
                         (err as ImapFlowError).mailboxMissing = true;
                     }
                 } catch (E) {
