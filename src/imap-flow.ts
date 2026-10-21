@@ -3083,10 +3083,14 @@ export class ImapFlow extends EventEmitter {
         return !!(this.currentLock || this.locks.length || this.currentRequest || this.requestQueue.length || this._openDownloads);
     }
 
+    // Settles every idle({ whenFree: true }) call waiting for the connection: resolved to re-check
+    // it, or rejected when the connection is gone
     /** @internal */
-    wakeIdleWaiters(): void {
-        if (this._idleWaiters.length) {
-            for (let { resolve } of this._idleWaiters.splice(0)) {
+    settleIdleWaiters(err?: Error): void {
+        for (let { resolve, reject } of this._idleWaiters.splice(0)) {
+            if (err) {
+                reject(err);
+            } else {
                 resolve();
             }
         }
@@ -3101,7 +3105,7 @@ export class ImapFlow extends EventEmitter {
     autoidle(): void {
         // every place the connection may have become free calls this, so it is where waiting
         // idle({ whenFree: true }) calls re-check it, also with auto-IDLE turned off
-        this.wakeIdleWaiters();
+        this.settleIdleWaiters();
         clearTimer(this.idleStartTimer);
         if (this.options.disableAutoIdle || !this.usable || this.state !== this.states.SELECTED) {
             return;
@@ -3455,10 +3459,7 @@ export class ImapFlow extends EventEmitter {
             this.closeRequests();
             this.closeLocks();
             if (this._idleWaiters.length) {
-                let waiterError = this.createNoConnectionError(this.byeReason, { rejectedFrom: 'idleWait', command: 'IDLE' });
-                for (let { reject } of this._idleWaiters.splice(0)) {
-                    reject(waiterError);
-                }
+                this.settleIdleWaiters(this.createNoConnectionError(this.byeReason, { rejectedFrom: 'idleWait', command: 'IDLE' }));
             }
             this.closeStreams();
 
