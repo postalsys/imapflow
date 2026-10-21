@@ -5,7 +5,7 @@ import { startImapKit } from '../fixtures/imapkit.js';
 
 // Public connection state an application reads instead of reaching into internals: the listing
 // of a verifyOnly connection, an application context, when the connection was made and when the
-// client last wrote to the server.
+// client last wrote to the server, and idle() waiting for the connection to be free.
 
 const PLUGINS = ['IDLE', 'NAMESPACE', 'UIDPLUS', 'ENABLE', 'CONDSTORE'];
 
@@ -82,5 +82,41 @@ describe('imapkit: public connection state', () => {
             assert.ok(value > idleWrite, 'each write moved lastClientWrite');
         }
         await client.logout();
+    });
+
+    it('idle() waits while another caller holds a mailbox lock and starts once it is released', async t => {
+        const kit = await startImapKit(t, { server: { plugins: PLUGINS } });
+        const client = await kit.connect();
+        const lock = await client.getMailboxLock('INBOX');
+
+        let settled = false;
+        const idling = client.idle().finally(() => {
+            settled = true;
+        });
+        // a lock holder's commands run without IDLE in between
+        await client.noop();
+        await client.status('INBOX', { messages: true });
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.equal(client.idling, false, 'IDLE did not start inside the lock');
+        assert.equal(kit.sent(/^\S+ IDLE$/), false, 'IDLE was not sent');
+        assert.equal(settled, false);
+
+        const waiting = kit.serverEvent('session', (event: any) => event.type === 'waiting' && event.command === 'IDLE');
+        lock.release();
+        await waiting;
+        assert.equal(client.idling, true, 'IDLE started once the lock was released');
+
+        await client.noop();
+        await idling;
+        await client.logout();
+    });
+
+    it('idle() waiting for a free connection rejects when the connection closes', async t => {
+        const kit = await startImapKit(t, { server: { plugins: PLUGINS } });
+        const client = await kit.connect();
+        await client.getMailboxLock('INBOX');
+        const idling = client.idle();
+        client.close();
+        await assert.rejects(idling, (err: any) => err.code === 'NoConnection');
     });
 });
