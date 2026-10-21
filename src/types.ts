@@ -943,7 +943,10 @@ export interface TlsInfo extends CipherNameAndProtocol {
 export interface ImapFlowEvents {
     /** Connection close event */
     close: [];
-    /** Error event */
+    /**
+     * Error event. Emitted at most once per connection, the connection closes after it. An error
+     * while `connect()` is pending rejects `connect()` instead and is not emitted
+     */
     error: [error: Error];
     /** Message count in currently opened mailbox changed */
     exists: [data: ExistsEvent];

@@ -520,6 +520,11 @@ export class ImapFlow extends EventEmitter {
     /** Set once `close()` has run */
     isClosed: boolean;
 
+    // Set once emitError() reported an error, through the 'error' event or a pending connect()
+    // or STARTTLS rejection. The connection is closing then, and later errors are only logged.
+    /** @internal */
+    _errorReported: boolean;
+
     /** Connection state constants */
     states: ConnectionStates;
 
@@ -866,6 +871,7 @@ export class ImapFlow extends EventEmitter {
         this._upgradeReject = null;
 
         this.isClosed = false;
+        this._errorReported = false;
 
         this.states = states;
         this.state = this.states.NOT_AUTHENTICATED;
@@ -967,6 +973,16 @@ export class ImapFlow extends EventEmitter {
         }
         err._connId = err._connId || this.id;
 
+        // One error per connection: emitError() closes the connection, and until the deferred
+        // close() runs a second socket, deflate or parser error may still arrive. Emitting it as
+        // well would reach a consumer that removed its listener after the first one, or one that
+        // only awaited connect(), as an unhandled 'error' that throws.
+        if (this._errorReported) {
+            this.log.debug({ msg: 'Suppressed error after the connection already reported one', err, cid: this.id });
+            this.closeAfter();
+            return;
+        }
+
         // During a STARTTLS handshake the upgrade owns the single error path (its settle()
         // helper). Route the error there so a streamer-originated failure is surfaced with its
         // real code (instead of a generic ClosedAfterConnect*) and cannot hang a verifyOnly
@@ -977,6 +993,7 @@ export class ImapFlow extends EventEmitter {
             this._upgradeReject = null;
             if (typeof reject === 'function') {
                 // settle() clears the upgrade timer and flags, and closes the connection
+                this._errorReported = true;
                 reject(err);
                 return;
             }
@@ -992,11 +1009,13 @@ export class ImapFlow extends EventEmitter {
             let reject = this.initialReject;
             this.initialResolve = false;
             this.initialReject = false;
+            this._errorReported = true;
             this.closeAfter();
             reject(err);
             return;
         }
 
+        this._errorReported = true;
         this.closeAfter();
         this.emit('error', err);
     }
@@ -2023,7 +2042,9 @@ export class ImapFlow extends EventEmitter {
             });
 
         const socket = this.socket as ImapSocket;
-        socket.once('error', this._socketError);
+        // on(), not once(): with compression the deflate and writeSocket errors are forwarded
+        // onto this socket, and a second one before close() must not find it without a listener
+        socket.on('error', this._socketError);
         socket.once('close', this._socketClose);
         socket.once('end', this._socketEnd);
 
@@ -4912,7 +4933,8 @@ export class ImapFlow extends EventEmitter {
 
 /**
  * Error event. In most cases getting an error event also means that connection is closed
- * and pending operations should return with a failure.
+ * and pending operations should return with a failure. Emitted at most once per connection,
+ * later errors while the connection is closing are only logged.
  *
  * @event ImapFlow#error
  * @example
