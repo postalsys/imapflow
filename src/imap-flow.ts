@@ -654,10 +654,6 @@ export class ImapFlow extends EventEmitter {
      */
     lastClientWrite: number | null;
 
-    // idle() calls waiting for the connection to be free, woken by autoidle(), rejected by close()
-    /** @internal */
-    _idleWaiters: { resolve: () => void; reject: (err: Error) => void }[];
-
     /** Whether log entries are also emitted as 'log' events, see the `emitLogs` option */
     emitLogs: boolean;
     // ordering number for emitted logs
@@ -953,7 +949,6 @@ export class ImapFlow extends EventEmitter {
         this.context = this.options.context;
         this.connectedAt = null;
         this.lastClientWrite = null;
-        this._idleWaiters = [];
 
         this.emitLogs = !!this.options.emitLogs;
         this.lo = 0;
@@ -3074,15 +3069,6 @@ export class ImapFlow extends EventEmitter {
         return !!(this.currentLock || this.locks.length || this.currentRequest || this.requestQueue.length || this._openDownloads);
     }
 
-    /** @internal */
-    wakeIdleWaiters(): void {
-        if (this._idleWaiters.length) {
-            for (let { resolve } of this._idleWaiters.splice(0)) {
-                resolve();
-            }
-        }
-    }
-
     // Timer process-liveness policy: connection establishment and greeting deadlines keep the
     // process alive, because a caller is waiting on connect() to settle. Background timers
     // (auto-IDLE, IDLE restart, fallback polling, throttle back-off, the held-lock diagnostic) are
@@ -3090,9 +3076,6 @@ export class ImapFlow extends EventEmitter {
     // explicitly on close().
     /** @internal */
     autoidle(): void {
-        // every place the connection may have become free calls this, so it is where waiting
-        // idle() calls re-check it, also with auto-IDLE turned off
-        this.wakeIdleWaiters();
         clearTimer(this.idleStartTimer);
         if (this.options.disableAutoIdle || !this.usable || this.state !== this.states.SELECTED) {
             return;
@@ -3443,12 +3426,6 @@ export class ImapFlow extends EventEmitter {
 
             this.closeRequests();
             this.closeLocks();
-            if (this._idleWaiters.length) {
-                let waiterError = this.createNoConnectionError(this.byeReason, { rejectedFrom: 'idleWait', command: 'IDLE' });
-                for (let { reject } of this._idleWaiters.splice(0)) {
-                    reject(waiterError);
-                }
-            }
             this.closeStreams();
 
             // clear socket handlers
@@ -3923,10 +3900,8 @@ export class ImapFlow extends EventEmitter {
      * otherwise IDLE is started by default on connection inactivity. NB! If `idle()` is called manually then it does not
      * return until IDLE is finished which means you would have to call some other command out of scope.
      *
-     * IDLE starts only once the connection is free: while a mailbox lock is held or queued, a
-     * command is running or queued, or a download is open, `idle()` waits for that to end. Do not
-     * await it while holding a mailbox lock, it would wait for the lock to be released. Rejects
-     * with `NoConnection` when the connection closes while waiting.
+     * Unlike auto-IDLE, a direct call does not wait for the connection to be free: a mailbox lock
+     * holder may idle inside its own lock, and idle() can not tell it from another caller.
      *
      * @returns `false` if IDLE failed, `undefined` otherwise
      *
@@ -3936,14 +3911,6 @@ export class ImapFlow extends EventEmitter {
      * await client.idle();
      */
     async idle(): Promise<boolean | undefined> {
-        // Like auto-IDLE, IDLE only starts on a free connection (see connectionBusy()): started
-        // while another caller holds a mailbox lock or has commands queued, it would run between
-        // that caller's commands. Re-checked on every wake, as another IDLE may have started.
-        while (!this.idling && this.usable && this.connectionBusy()) {
-            await new Promise<void>((resolve, reject) => {
-                this._idleWaiters.push({ resolve, reject });
-            });
-        }
         if (!this.idling) {
             return await this.run('IDLE', this.maxIdleTime);
         }
