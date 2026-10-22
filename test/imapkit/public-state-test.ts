@@ -197,8 +197,17 @@ describe('imapkit: public connection state', () => {
 
         const loggedOut = await kit.connect();
         const loggedOutEvent = new Promise<boolean>(resolve => loggedOut.once('close', () => resolve(loggedOut.closedByClient)));
-        await loggedOut.logout();
+        const loggingOut = loggedOut.logout();
+        // marked before the exchange, so it holds even when the server drops the socket first
+        assert.equal(loggedOut.closedByClient, true);
+        await loggingOut;
         assert.equal(await loggedOutEvent, true, 'so is logout()');
+
+        const deferred = await kit.connect();
+        const deferredEvent = new Promise<boolean>(resolve => deferred.once('close', () => resolve(deferred.closedByClient)));
+        deferred.closeAfter();
+        assert.equal(deferred.closedByClient, true, 'set as soon as closeAfter() is called');
+        assert.equal(await deferredEvent, true, 'closeAfter() is the application closing too');
 
         // and a close() after the server already ended it does not rewrite what happened
         dropped.close();

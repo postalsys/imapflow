@@ -3378,6 +3378,9 @@ export class ImapFlow extends EventEmitter {
      * await client.logout();
      */
     async logout(): Promise<void> {
+        // marked before the exchange: a server may answer with BYE and drop the socket before the
+        // tagged OK, which closes the connection from the socket's side first
+        this.markClosedByClient();
         return await this.run('LOGOUT');
     }
 
