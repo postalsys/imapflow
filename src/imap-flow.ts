@@ -666,6 +666,16 @@ export class ImapFlow extends EventEmitter {
      */
     idlingAtClose: boolean;
 
+    /**
+     * Whether the application ended the connection (`close()`, `closeAfter()`, `logout()`, disposing
+     * the client), `false` while it is open and when the server, the network or an error ended it.
+     * Tells a session the server dropped from one the application closed, also for an application
+     * that closes a connection only to open a new one
+     */
+    closedByClient: boolean;
+    /** @internal */
+    _closePending: boolean;
+
     /** Whether log entries are also emitted as 'log' events, see the `emitLogs` option */
     emitLogs: boolean;
     // ordering number for emitted logs
@@ -694,7 +704,7 @@ export class ImapFlow extends EventEmitter {
     /** @internal */
     idRequested: IdInfoObject | false;
 
-    /** @internal */
+    /** How often IDLE is restarted, in milliseconds (the `maxIdleTime` option), `false` for never */
     maxIdleTime: number | false;
     /** @internal */
     autoIdleDelay: number;
@@ -963,6 +973,8 @@ export class ImapFlow extends EventEmitter {
         this.lastClientWrite = null;
         this._idleWaiters = [];
         this.idlingAtClose = false;
+        this.closedByClient = false;
+        this._closePending = false;
 
         this.emitLogs = !!this.options.emitLogs;
         this.lo = 0;
@@ -981,6 +993,11 @@ export class ImapFlow extends EventEmitter {
 
         this.maxIdleTime = this.options.maxIdleTime || false;
         this.autoIdleDelay = normalizeAutoIdleDelay(this.options.autoIdleDelay, this.socketTimeout, this.log, this.id);
+        // A server that needs IDLE restarted this often can cut the silence before the first IDLE just
+        // as well: the connection is never left quiet for longer than maxIdleTime
+        if (this.maxIdleTime && this.autoIdleDelay > this.maxIdleTime) {
+            this.autoIdleDelay = this.maxIdleTime;
+        }
 
         this._lastPollAt = 0;
 
@@ -1005,7 +1022,7 @@ export class ImapFlow extends EventEmitter {
         // than emitting an error event to the caller.
         this._streamerErrorHandler = (err: ImapFlowError) => {
             if (['Z_BUF_ERROR', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'EHOSTUNREACH'].includes(err.code as string)) {
-                this.closeAfter();
+                this.closeConnectionAfter();
                 return;
             }
 
@@ -1030,7 +1047,7 @@ export class ImapFlow extends EventEmitter {
         // only awaited connect(), as an unhandled 'error' that throws.
         if (this._errorReported) {
             this.log.debug({ msg: 'Suppressed error after the connection already reported one', err, cid: this.id });
-            this.closeAfter();
+            this.closeConnectionAfter();
             return;
         }
 
@@ -1049,7 +1066,7 @@ export class ImapFlow extends EventEmitter {
                 return;
             }
             this.upgrading = false;
-            this.closeAfter();
+            this.closeConnectionAfter();
             return;
         }
 
@@ -1061,13 +1078,13 @@ export class ImapFlow extends EventEmitter {
             this.initialResolve = false;
             this.initialReject = false;
             this._errorReported = true;
-            this.closeAfter();
+            this.closeConnectionAfter();
             reject(err);
             return;
         }
 
         this._errorReported = true;
-        this.closeAfter();
+        this.closeConnectionAfter();
         this.emit('error', err);
     }
 
@@ -1097,7 +1114,7 @@ export class ImapFlow extends EventEmitter {
 
         if ((this.writeSocket as WriteSocket).destroyed) {
             this.log.error({ msg: 'Write socket destroyed', cid: this.id });
-            this.close();
+            this.closeConnection();
             return;
         }
 
@@ -2021,8 +2038,8 @@ export class ImapFlow extends EventEmitter {
                 this.log.error({ err, cid: this.id });
                 this.emitError(err);
             });
-        this._socketClose = this._socketClose || (() => this.close());
-        this._socketEnd = this._socketEnd || (() => this.close());
+        this._socketClose = this._socketClose || (() => this.closeConnection());
+        this._socketEnd = this._socketEnd || (() => this.closeConnection());
 
         /**
          * Socket timeout event handler.
@@ -2081,7 +2098,7 @@ export class ImapFlow extends EventEmitter {
                         .catch(err => {
                             this.log.warn({ msg: 'Connection recovery failed after timeout', err, cid: this.id });
                             if (!this.isClosed) {
-                                this.close();
+                                this.closeConnection();
                             }
                         })
                         .finally(() => {
@@ -2439,7 +2456,7 @@ export class ImapFlow extends EventEmitter {
                 'STARTTLS_INJECTION',
                 { tlsFailed: true }
             );
-            this.closeAfter();
+            this.closeConnectionAfter();
             return err;
         };
 
@@ -2520,7 +2537,7 @@ export class ImapFlow extends EventEmitter {
                     // Preserve the original error, marked as a TLS failure so callers can tell
                     // an upgrade failure from an ordinary command failure.
                     err.tlsFailed = true;
-                    this.closeAfter();
+                    this.closeConnectionAfter();
                     return reject(err);
                 }
 
@@ -2731,7 +2748,7 @@ export class ImapFlow extends EventEmitter {
             .catch(err => {
                 // The transport goes with the failed attempt: the instance can not be reused, and
                 // an open socket would only trip the inactivity watchdog later
-                this.closeAfter();
+                this.closeConnectionAfter();
 
                 if (typeof this.initialReject === 'function') {
                     this.log.error({ err, cid: this.id });
@@ -2790,7 +2807,7 @@ export class ImapFlow extends EventEmitter {
         // that answers a LOGOUT is the exception: its tagged completion closes the connection.
         const answersLogout = !!this.currentRequest && this.currentRequest.command.toUpperCase() === 'LOGOUT';
         if (!this.greetingReceived || !answersLogout) {
-            this.closeAfter();
+            this.closeConnectionAfter();
         }
     }
 
@@ -3235,7 +3252,7 @@ export class ImapFlow extends EventEmitter {
             this.connectTimeout = setTimeout(() => {
                 let err = deadline.error();
                 this.log.error({ err, cid: this.id });
-                this.closeAfter();
+                this.closeConnectionAfter();
                 reject(err);
             }, deadline.remaining());
 
@@ -3269,7 +3286,7 @@ export class ImapFlow extends EventEmitter {
                             }
                         );
                         this.log.error({ err, cid: this.id });
-                        this.closeAfter();
+                        this.closeConnectionAfter();
                         reject(err);
                     }, this.options.greetingTimeout || GREETING_TIMEOUT);
 
@@ -3326,7 +3343,7 @@ export class ImapFlow extends EventEmitter {
                 } catch (err) {
                     // refused up front: the connection deadline must not stay armed
                     clearTimer(this.connectTimeout);
-                    this.closeAfter();
+                    this.closeConnectionAfter();
                     this.log.error({ err, cid: this.id });
                     reject(err);
                     return;
@@ -3341,7 +3358,7 @@ export class ImapFlow extends EventEmitter {
             this._connectErrorHandler = (err: Error) => {
                 clearTimer(this.connectTimeout);
                 clearTimer(this.greetingTimeout);
-                this.closeAfter();
+                this.closeConnectionAfter();
                 this.log.error({ err, cid: this.id });
                 reject(err);
             };
@@ -3370,7 +3387,23 @@ export class ImapFlow extends EventEmitter {
      * caller function to proceed, and run `close()` function afterwards.
      */
     closeAfter(): void {
-        setImmediate(() => this.close());
+        this.markClosedByClient();
+        this.closeConnectionAfter();
+    }
+
+    // The deferred close ImapFlow itself starts (a server BYE, an error), which closedByClient leaves alone
+    /** @internal */
+    closeConnectionAfter(): void {
+        this._closePending = true;
+        setImmediate(() => this.closeConnection());
+    }
+
+    // The application asked for the close, unless the connection is already closed or closing
+    /** @internal */
+    markClosedByClient(): void {
+        if (!this.isClosed && !this._closePending) {
+            this.closedByClient = true;
+        }
     }
 
     // Connection-scoped wrapper around the shared stamping helper; see buildConnectionError().
@@ -3410,6 +3443,14 @@ export class ImapFlow extends EventEmitter {
      * client.close();
      */
     close(): void {
+        this.markClosedByClient();
+        this.closeConnection();
+    }
+
+    // The close itself, for the application's close() and for the closes ImapFlow starts on its own
+    // (the socket ending, a write to a destroyed socket, a failed timeout recovery)
+    /** @internal */
+    closeConnection(): void {
         try {
             this.closeTimers();
 

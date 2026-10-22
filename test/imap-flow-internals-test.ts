@@ -118,7 +118,7 @@ describe('imap-flow-internals', () => {
     it('Internals: streamer error handler silently closes on transient codes', () => {
         let client = makeClient();
         let closeAfterCalled = false;
-        client.closeAfter = () => {
+        client.closeConnectionAfter = () => {
             closeAfterCalled = true;
         };
         let emitted = false;
@@ -160,7 +160,7 @@ describe('imap-flow-internals', () => {
         client.writeSocket = { destroyed: true };
         client.state = client.states.AUTHENTICATED;
         let closed = false;
-        client.close = () => {
+        client.closeConnection = () => {
             closed = true;
         };
         let res = client.write('A NOOP');

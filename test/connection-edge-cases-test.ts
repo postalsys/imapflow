@@ -556,7 +556,7 @@ describe('connection-edge-cases', () => {
 
         // Mock close method
         let closeCalled = false;
-        client.close = () => {
+        client.closeConnection = () => {
             closeCalled = true;
         };
 

@@ -45,7 +45,7 @@ export default async function compress(connection: ImapFlow): Promise<boolean> {
         // STARTTLS guard does (starttls.ts records a flag, upgradeToSTARTTLS decides):
         // only the command module holds the response before its backpressure release,
         // so only it can order teardown ahead of that release.
-        connection.closeAfter();
+        connection.closeConnectionAfter();
         response.next();
         throw error;
     }

@@ -420,7 +420,7 @@ describe('imap-flow-coverage', () => {
             throw new Error('session boom');
         };
         let closedAfter = false;
-        client.closeAfter = () => {
+        client.closeConnectionAfter = () => {
             closedAfter = true;
         };
         await client.initialPREAUTH();
@@ -506,7 +506,7 @@ describe('imap-flow-coverage', () => {
             throw new Error('NOOP failed');
         };
         let closed = false;
-        client.close = () => {
+        client.closeConnection = () => {
             closed = true;
         };
         client._socketTimeout();

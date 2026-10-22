@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { startImapKit } from '../fixtures/imapkit.js';
+import { ImapFlow } from '../../src/imap-flow.js';
 
 // Public connection state an application reads instead of reaching into internals: the listing
 // of a verifyOnly connection, an application context, when the connection was made and when the
@@ -177,5 +178,36 @@ describe('imapkit: public connection state', () => {
         const idling = client.idle({ whenFree: true });
         client.close();
         await assert.rejects(idling, (err: any) => err.code === 'NoConnection');
+    });
+
+    it('closedByClient tells a close the application asked for from one the server made', async t => {
+        const kit = await startImapKit(t, { server: { plugins: PLUGINS } });
+
+        const dropped = await kit.connect();
+        assert.equal(dropped.closedByClient, false);
+        await dropped.mailboxOpen('INBOX');
+        const droppedClosed = new Promise<boolean>(resolve => dropped.once('close', () => resolve(dropped.closedByClient)));
+        kit.control.disconnect({ user: 'testuser' });
+        assert.equal(await droppedClosed, false, 'the server ended it');
+
+        const closed = await kit.connect();
+        const closedEvent = new Promise<boolean>(resolve => closed.once('close', () => resolve(closed.closedByClient)));
+        closed.close();
+        assert.equal(await closedEvent, true, 'close() is the application closing');
+
+        const loggedOut = await kit.connect();
+        const loggedOutEvent = new Promise<boolean>(resolve => loggedOut.once('close', () => resolve(loggedOut.closedByClient)));
+        await loggedOut.logout();
+        assert.equal(await loggedOutEvent, true, 'so is logout()');
+
+        // and a close() after the server already ended it does not rewrite what happened
+        dropped.close();
+        assert.equal(dropped.closedByClient, false);
+    });
+
+    it('the wait before auto-IDLE is never longer than the IDLE restart interval', () => {
+        assert.equal(new ImapFlow({ host: '127.0.0.1', port: 1, auth: { user: 'u', pass: 'p' }, maxIdleTime: 8000, logger: false }).autoIdleDelay, 8000);
+        assert.equal(new ImapFlow({ host: '127.0.0.1', port: 1, auth: { user: 'u', pass: 'p' }, maxIdleTime: 60000, logger: false }).autoIdleDelay, 15000);
+        assert.equal(new ImapFlow({ host: '127.0.0.1', port: 1, auth: { user: 'u', pass: 'p' }, logger: false }).autoIdleDelay, 15000);
     });
 });

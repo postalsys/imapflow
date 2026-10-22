@@ -132,7 +132,7 @@ describe('commands/misc', () => {
         let nextCalled = false;
         const connection = createMockConnection({
             capabilities: new Map([['COMPRESS=DEFLATE', true]]),
-            closeAfter: () => {
+            closeConnectionAfter: () => {
                 closeAfterCalled = true;
             },
             exec: async () => ({
