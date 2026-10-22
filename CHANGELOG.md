@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.9.0](https://github.com/postalsys/imapflow/compare/v2.8.0...v2.9.0) (2026-10-22)
+
+
+### Features
+
+* closedByClient tells a close the application asked for from one the server made, and auto-IDLE never waits longer than maxIdleTime ([5339c12](https://github.com/postalsys/imapflow/commit/5339c12895a759621b2e30bbb07521dba7b39929))
+
+
+### Bug Fixes
+
+* logout() marks the close as the application's before the LOGOUT exchange, and closeAfter() is tested ([03602d2](https://github.com/postalsys/imapflow/commit/03602d2afa2dc8e243735ad6ede8403b733ed4b0))
+
 ## [2.8.0](https://github.com/postalsys/imapflow/compare/v2.7.0...v2.8.0) (2026-10-21)
 
 
