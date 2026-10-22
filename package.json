@@ -84,7 +84,7 @@
         "eslint-config-prettier": "10.1.8",
         "events": "3.3.0",
         "globals": "17.13.0",
-        "imapkit": "5.1.0",
+        "imapkit": "5.2.0",
         "playwright-core": "1.64.1",
         "prettier": "3.9.10",
         "process": "0.11.10",
@@ -94,14 +94,14 @@
         "types-node-legacy": "npm:@types/node@20.0.0",
         "typescript": "6.0.3",
         "typescript-eslint": "8.72.0",
-        "wrangler": "4.151.3"
+        "wrangler": "4.152.0"
     },
     "dependencies": {
-        "@zone-eu/mailsplit": "5.4.27",
+        "@zone-eu/mailsplit": "5.4.29",
         "encoding-japanese": "2.4.0",
         "iconv-lite": "0.7.3",
         "libbase64": "1.4.1",
-        "libmime": "5.5.2",
+        "libmime": "5.6.3",
         "libqp": "3.0.1",
         "pino": "10.3.1",
         "socks": "2.8.10"
