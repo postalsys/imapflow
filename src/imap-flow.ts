@@ -4542,8 +4542,8 @@ export class ImapFlow extends EventEmitter {
 
     /**
      * Download either full rfc822 formatted message or a specific bodystructure part as a Stream.
-     * Bodystructure parts are decoded so the resulting stream is a binary file. Text content
-     * is automatically converted to UTF-8 charset.
+     * Bodystructure parts are decoded so the resulting stream is a binary file. Inline text content
+     * is automatically converted to UTF-8 charset, unless `options.decodeText` is false.
      *
      * @param range UID or sequence number for the message to fetch
      * @param part If not set then downloads entire rfc822 formatted message, otherwise downloads specific bodystructure part

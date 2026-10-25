@@ -1347,6 +1347,74 @@ describe('imap-flow-fetch-download', () => {
         assert.equal(res['3'].meta.filename, 'a.bin');
         assert.equal(res['3'].meta.disposition, 'attachment');
     });
+    describe('Download: decodeText false', () => {
+        // ISO-2022-JP bytes with soft line breaks: both the flowed and the Japanese decoder
+        // would change them and buffer the whole part before emitting anything
+        const raw = Buffer.concat([Buffer.from('\x1b$B$3$s$K$A$O\x1b(B \r\n'.repeat(400), 'latin1'), Buffer.from('end\r\n')]);
+        const mime = Buffer.from(
+            'Content-Type: text/plain; charset=iso-2022-jp; format=flowed; delsp=yes\r\n' +
+                'Content-Transfer-Encoding: base64\r\n' +
+                'Content-Disposition: inline; filename="notes.txt"\r\n\r\n'
+        );
+        const encoded = Buffer.from(libbase64.encode(raw));
+
+        // Answers a chunked download of part 2: MIME headers with the first window, then `body` in
+        // `start`/`maxLength` windows, recording the start of every window asked
+        const partFetchOne =
+            (body: Buffer, extra: any = {}, windows: number[] = []) =>
+            async (range: any, query: any) => {
+                let bodyParts = new Map();
+                let request = query.bodyParts.find((entry: any) => typeof entry !== 'string');
+                windows.push(request.start);
+                if (query.bodyParts.includes('2.mime')) {
+                    bodyParts.set('2.mime', mime);
+                }
+                bodyParts.set('2', body.subarray(request.start, request.start + request.maxLength));
+                return { uid: 1, size: body.length, bodyParts, ...extra };
+            };
+
+        it('streams the transfer-decoded bytes of a named inline text part', async () => {
+            let client = makeClient();
+            client.fetchOne = partFetchOne(encoded);
+            let { meta, content }: any = await client.download('1', '2', { chunkSize: 1024, decodeText: false });
+            assert.equal(meta.charset, 'iso-2022-jp');
+            assert.equal(meta.filename, 'notes.txt');
+            assert.equal(meta.flowed, true);
+            assert.deepEqual(await collect(content), raw);
+        });
+
+        it('emits output before the last chunk is fetched and stops fetching when destroyed', async () => {
+            let client = makeClient();
+            let windows: number[] = [];
+            client.fetchOne = partFetchOne(encoded, {}, windows);
+            let { content }: any = await client.download('1', '2', { chunkSize: 1024, decodeText: false });
+            let [first] = await once(content, 'data');
+            assert.deepEqual(first, raw.subarray(0, first.length), 'first chunk is a prefix of the file');
+            content.destroy();
+            await once(content, 'close');
+            await new Promise(resolve => setImmediate(resolve));
+            assert.ok(windows.length < Math.ceil(encoded.length / 1024), `fetched ${windows.length} windows, the fetch loop must stop on destroy`);
+        });
+
+        it('does not decode a FETCH BINARY answer twice', async () => {
+            let client = makeClient();
+            client.capabilities.set('BINARY', true);
+            client.fetchOne = partFetchOne(raw, { binaryParts: new Set(['2']) });
+            let { meta, content }: any = await client.download('1', '2', { chunkSize: 1024, binary: true, decodeText: false });
+            assert.equal(meta.charset, 'iso-2022-jp');
+            assert.deepEqual(await collect(content), raw);
+        });
+
+        it('keeps decoding text when the option is not set', async () => {
+            let client = makeClient();
+            client.fetchOne = partFetchOne(encoded);
+            let { meta, content }: any = await client.download('1', '2', { chunkSize: 1024 });
+            assert.equal(meta.charset, 'utf-8');
+            let data: any = await collect(content);
+            assert.equal(data.toString(), 'こんにちは'.repeat(400) + 'end', 'unwrapped and converted to UTF-8');
+        });
+    });
+
     it('Download: a buffering transform cannot defeat maxBytes', async () => {
         // format=flowed unwrapping and the Japanese charset decoder both hold their whole input
         // before emitting anything, so the limiter at the tail of the pipeline reports

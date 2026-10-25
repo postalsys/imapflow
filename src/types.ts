@@ -718,9 +718,19 @@ export interface DownloadOptions {
     chunkSize?: number | undefined;
     /** If true then requests the content with FETCH BINARY when the server supports it (BINARY or IMAP4rev2), so the server removes the transfer encoding */
     binary?: boolean | undefined;
+    /**
+     * If false then text parts are not decoded: inline `text/plain`, `text/html` and `text/x-amp-html`
+     * parts are streamed with only the transfer encoding removed, as for any other part, without
+     * unwrapping `format=flowed` lines or converting the charset to UTF-8, and `meta.charset` keeps the
+     * charset of the part. Use it to save a text part as a file. Defaults to true
+     */
+    decodeText?: boolean | undefined;
 }
 
-/** Options for downloadMany(): the download() options without `chunkSize`, as the parts come in one FETCH */
+/**
+ * Options for downloadMany(): the download() options without `chunkSize`, as the parts come in one FETCH, and without
+ * `decodeText`, as downloadMany() only removes the transfer encoding and never converts text
+ */
 export type DownloadManyOptions = Pick<DownloadOptions, 'uid' | 'maxBytes' | 'binary'>;
 
 export interface DownloadManyPart {

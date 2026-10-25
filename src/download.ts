@@ -451,8 +451,8 @@ export async function downloadMessage(
 
     // Build a decoder pipeline that progressively transforms the raw FETCH data:
     //   1. Transfer-encoding decoder (base64 or quoted-printable -> binary)
-    //   2. Format decoder (format=flowed -> plain text, if applicable)
-    //   3. Charset decoder (non-UTF-8 -> UTF-8, for text parts only)
+    //   2. Format decoder (format=flowed -> plain text, if applicable, unless decodeText is false)
+    //   3. Charset decoder (non-UTF-8 -> UTF-8, for text parts only, unless decodeText is false)
     //   4. Byte limiter (enforces maxBytes cap)
     // `stream` is the head of the pipeline (where raw chunks are written),
     // `output` is the tail (what the caller reads from).
@@ -498,7 +498,7 @@ export async function downloadMessage(
     };
 
     let isTextNode = ['text/html', 'text/plain', 'text/x-amp-html'].includes(meta.contentType as string) || (part === '1' && !meta.contentType);
-    if ((!meta.disposition || meta.disposition === 'inline') && isTextNode) {
+    if (downloadOptions.decodeText !== false && (!meta.disposition || meta.disposition === 'inline') && isTextNode) {
         // RFC 3676 format=flowed text: unwrap soft line breaks
         if (meta.flowed) {
             // FlowedDecoder buffers its whole input before emitting, and being third party it

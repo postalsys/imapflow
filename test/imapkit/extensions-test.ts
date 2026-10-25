@@ -245,6 +245,38 @@ describe('imapkit: BINARY', () => {
     }
 });
 
+describe('imapkit: download() with decodeText false', () => {
+    // a named inline latin1 text part with soft line breaks, sent quoted-printable
+    const FILE = Buffer.from('P\xe4ev \r\non \r\nilus', 'latin1');
+    const MESSAGE =
+        'From: a@example.com\r\nSubject: file\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n' +
+        '--b1\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nbody\r\n' +
+        '--b1\r\nContent-Type: text/plain; charset=iso-8859-1; format=flowed\r\nContent-Transfer-Encoding: quoted-printable\r\n' +
+        'Content-Disposition: inline; filename="notes.txt"\r\n\r\nP=E4ev=20\r\non=20\r\nilus\r\n' +
+        '--b1--\r\n';
+
+    for (const plugins of [['BINARY'], []]) {
+        it(`streams the original file bytes (${plugins.join(',') || 'no BINARY'})`, async t => {
+            const kit = await startImapKit(t, { server: { plugins, storage: { INBOX: { messages: [{ raw: MESSAGE }] } } } });
+            const client = await kit.connect();
+            await client.mailboxOpen('INBOX');
+
+            const read = async (options: { decodeText?: boolean } = {}) => {
+                const { content, meta } = await client.download('1', '2', { binary: true, ...options });
+                return { data: Buffer.concat(await content.toArray()), meta };
+            };
+            const file = await read({ decodeText: false });
+            assert.deepEqual(file.data, FILE);
+            assert.equal(file.meta.charset, 'iso-8859-1');
+            assert.equal(file.meta.filename, 'notes.txt');
+            const text = await read();
+            assert.equal(text.meta.charset, 'utf-8');
+            assert.equal(text.data.toString(), 'P\u00e4ev on ilus');
+            await client.logout();
+        });
+    }
+});
+
 describe('imapkit: UTF-8 mailbox names', () => {
     for (const plugins of [[], ['ENABLE', 'UTF8=ACCEPT'], ['IMAP4rev2']]) {
         it(`create, list, select and rename (${plugins.join(',') || 'modified UTF-7'})`, async t => {
