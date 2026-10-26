@@ -94,7 +94,7 @@
         "types-node-legacy": "npm:@types/node@20.0.0",
         "typescript": "6.0.3",
         "typescript-eslint": "8.72.0",
-        "wrangler": "4.152.0"
+        "wrangler": "4.153.0"
     },
     "dependencies": {
         "@zone-eu/mailsplit": "5.4.29",
@@ -108,9 +108,5 @@
     },
     "engines": {
         "node": ">=20.0.0"
-    },
-    "overrides": {
-        "sharp": "0.35.5",
-        "undici": "7.30.1"
     }
 }
