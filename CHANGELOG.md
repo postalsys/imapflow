@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.0](https://github.com/postalsys/imapflow/compare/v2.9.1...v2.10.0) (2026-10-29)
+
+
+### Features
+
+* add decodeText option to download() for transfer-decoded file bytes ([9c9bec2](https://github.com/postalsys/imapflow/commit/9c9bec225efe0dfb7b1b31271f4fa76783f15adb)), closes [#455](https://github.com/postalsys/imapflow/issues/455)
+
 ## [2.9.1](https://github.com/postalsys/imapflow/compare/v2.9.0...v2.9.1) (2026-10-22)
 
 
