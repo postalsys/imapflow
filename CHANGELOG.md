@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.2](https://github.com/postalsys/imapflow/compare/v2.10.1...v2.10.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* update dependencies ([eb1e6d9](https://github.com/postalsys/imapflow/commit/eb1e6d9083d776258bca880bb6e42b25f24579a4))
+
 ## [2.10.1](https://github.com/postalsys/imapflow/compare/v2.10.0...v2.10.1) (2026-11-04)
 
 
