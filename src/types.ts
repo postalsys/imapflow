@@ -119,6 +119,21 @@ export interface ImapFlowOptions {
     qresync?: boolean | undefined;
     /** If set, then breaks and restarts IDLE every maxIdleTime ms */
     maxIdleTime?: number | undefined;
+    /**
+     * When the server ends this session whatever the client does, as a Date or milliseconds since
+     * the epoch. Typically the expiry of the OAuth2 access token the session authenticated with:
+     * Exchange Online answers the first command after that with `BYE Session invalidated -
+     * AccessTokenExpired`, failing whatever the command was. From `sessionExpiryLead` before that
+     * time the client closes the connection the first time it is free (no command running or
+     * queued, no mailbox lock held or waited for, no open download; IDLE counts as free), and
+     * shortly before the time itself (30 seconds, or half the lead if that is shorter) it closes
+     * the connection regardless. The close is reported like `close()`: a `close` event with
+     * `closedByClient` set. Open a new connection with a fresh token to continue. Ignored for a
+     * `verifyOnly` connection
+     */
+    sessionExpires?: Date | number | undefined;
+    /** How long before `sessionExpires` the client starts looking for a free moment to close the connection, in milliseconds. Defaults to 5 minutes */
+    sessionExpiryLead?: number | undefined;
     /** What command to run if IDLE is not supported. Defaults to 'NOOP' */
     missingIdleCommand?: 'NOOP' | 'SELECT' | 'STATUS' | undefined;
     /** If true, ignores BINARY extension when making FETCH and APPEND calls */

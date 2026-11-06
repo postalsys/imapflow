@@ -14,6 +14,7 @@ import { ImapStream } from './handler/imap-stream.js';
 import { parser, compiler } from './handler/imap-handler.js';
 import { proxyConnection, detachEarlyErrorHandler } from './proxy-connection.js';
 import { ConnectionDeadline } from './connection-deadline.js';
+import { planSessionExpiry } from './session-expiry.js';
 import { downloadMessage, downloadMessageParts } from './download.js';
 import { AuthenticationFailure, createImapError, type ConnectionErrorSite, type ImapFlowError, type ImapFlowErrorCode } from './errors.js';
 import imapCommands, { type CommandHandler } from './imap-commands.js';
@@ -824,6 +825,18 @@ export class ImapFlow extends EventEmitter {
     declare upgradeTimeout: NodeJS.Timeout | null | undefined;
     /** @internal */
     declare idleStartTimer: NodeJS.Timeout | null | undefined;
+    // the `sessionExpires` timers, see armSessionExpiry()
+    /** @internal */
+    declare _sessionDueTimer: NodeJS.Timeout | null | undefined;
+    /** @internal */
+    declare _sessionCloseTimer: NodeJS.Timeout | null | undefined;
+    /** @internal */
+    declare _sessionCloseCheck: NodeJS.Immediate | null | undefined;
+    /** @internal */
+    declare _sessionExpiring: boolean | undefined;
+    // run() calls other than IDLE that have not finished, see freeToClose()
+    /** @internal */
+    declare _runsInFlight: number;
     /** @internal */
     declare socketReadable: (() => void) | undefined;
     /** @internal */
@@ -1002,6 +1015,7 @@ export class ImapFlow extends EventEmitter {
         this._lastPollAt = 0;
 
         this._openDownloads = 0;
+        this._runsInFlight = 0;
         this._recoveryPending = false;
         this._processingResponse = false;
         this.missingIdleCommand = (this.options.missingIdleCommand || '').toString().toUpperCase().trim() || 'NOOP';
@@ -2662,6 +2676,7 @@ export class ImapFlow extends EventEmitter {
     async setAuthenticationState(): Promise<void> {
         this.state = this.states.AUTHENTICATED;
         this.authenticated = true;
+        this.armSessionExpiry();
         if (this.expectCapabilityUpdate) {
             // update capabilities
             await this.run('CAPABILITY');
@@ -3113,6 +3128,73 @@ export class ImapFlow extends EventEmitter {
         }
     }
 
+    // Arms the `sessionExpires` timers once the session is authenticated: from `sessionExpiryLead`
+    // before the expiry the connection is closed at its first free moment, and shortly before the
+    // expiry itself it is closed regardless. Background timers, so unref'd
+    /** @internal */
+    armSessionExpiry(): void {
+        if (this.options.verifyOnly || this._sessionDueTimer) {
+            return;
+        }
+        const plan = planSessionExpiry(this.options.sessionExpires, this.options.sessionExpiryLead, Date.now());
+        if (!plan) {
+            return;
+        }
+        this._sessionDueTimer = unrefTimer(
+            setTimeout(() => {
+                this._sessionExpiring = true;
+                this.closeIfSessionExpiring();
+            }, plan.dueIn)
+        );
+        this._sessionCloseTimer = unrefTimer(setTimeout(() => this.closeExpiringSession(true), plan.closeIn));
+    }
+
+    // Whether the connection can be closed without failing anything: no command running, queued or
+    // waiting for IDLE to end, no mailbox lock held or waited for, no open download. IDLE is the
+    // current request for as long as it runs, so an idling connection is free unless something
+    // waits behind it
+    /** @internal */
+    freeToClose(): boolean {
+        return !(
+            this._runsInFlight ||
+            this.currentLock ||
+            this.locks.length ||
+            this.requestQueue.length ||
+            this._openDownloads ||
+            (this.currentRequest && !this.idling)
+        );
+    }
+
+    // Called from autoidle(), which every path that may have freed the connection calls. The check
+    // runs on the next turn of the event loop: a caller that sends its next command as soon as the
+    // previous one resolved has it queued by then, so the connection is not closed under it
+    /** @internal */
+    closeIfSessionExpiring(): void {
+        if (!this._sessionExpiring || !this.usable || this._sessionCloseCheck) {
+            return;
+        }
+        this._sessionCloseCheck = setImmediate(() => {
+            this._sessionCloseCheck = null;
+            if (this.usable && this.freeToClose()) {
+                this.closeExpiringSession(false);
+            }
+        });
+    }
+
+    /** @internal */
+    closeExpiringSession(forced: boolean): void {
+        if (!this.usable) {
+            return;
+        }
+        this.log.info({
+            src: 'connection',
+            msg: forced ? 'Closing busy connection, the session is about to expire' : 'Closing connection before the session expires',
+            cid: this.id,
+            sessionExpires: this.options.sessionExpires
+        });
+        this.close();
+    }
+
     // Timer process-liveness policy: connection establishment and greeting deadlines keep the
     // process alive, because a caller is waiting on connect() to settle. Background timers
     // (auto-IDLE, IDLE restart, fallback polling, throttle back-off, the held-lock diagnostic) are
@@ -3123,6 +3205,7 @@ export class ImapFlow extends EventEmitter {
         // every place the connection may have become free calls this, so it is where waiting
         // idle({ whenFree: true }) calls re-check it, also with auto-IDLE turned off
         this.settleIdleWaiters();
+        this.closeIfSessionExpiring();
         clearTimer(this.idleStartTimer);
         if (this.options.disableAutoIdle || !this.usable || this.state !== this.states.SELECTED) {
             return;
@@ -3555,6 +3638,12 @@ export class ImapFlow extends EventEmitter {
         clearTimer(this.upgradeTimeout);
         clearTimer(this.connectTimeout);
         clearTimer(this.greetingTimeout);
+        clearTimer(this._sessionDueTimer);
+        clearTimer(this._sessionCloseTimer);
+        if (this._sessionCloseCheck) {
+            clearImmediate(this._sessionCloseCheck);
+            this._sessionCloseCheck = null;
+        }
 
         // Abort every in-flight throttle back-off so each waiter unblocks and its request is
         // settled promptly rather than after the full delay.
@@ -4595,6 +4684,14 @@ export class ImapFlow extends EventEmitter {
 
         clearTimer(this.idleStartTimer);
 
+        // Counted from before the IDLE break below, during which the command is neither queued nor
+        // in flight yet, so freeToClose() does not take the connection for free. IDLE itself is
+        // not counted, an idling connection is free
+        const counted = command !== 'IDLE';
+        if (counted) {
+            this._runsInFlight++;
+        }
+
         try {
             // The preCheck (breaking an active IDLE) sits inside the try on purpose: the
             // clearTimeout above is unconditional, so every exit - a failed command or a
@@ -4615,6 +4712,9 @@ export class ImapFlow extends EventEmitter {
             // the only thing that re-arms it; without it such a connection would go dark until the
             // socket watchdog tore it down. When a command really did break IDLE, that command is
             // still in flight at this point, so autoidle() declines here and re-arms once it ends.
+            if (counted) {
+                this._runsInFlight--;
+            }
             this.autoidle();
         }
     }
