@@ -67,15 +67,31 @@ const startIdle = async (kit: any, client: any) => {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Arms the session expiry timers again, counted from now. The client arms them when it
+// authenticates, and how long the session setup takes after that depends on the machine, so a
+// test that needs the connection in a given state (idling, holding a lock) when they fire connects
+// with a far expiry and moves it once that state is reached
+const rearm = (client: any, expiresIn: number, lead: number) => {
+    clearTimeout(client._sessionDueTimer);
+    clearTimeout(client._sessionCloseTimer);
+    client._sessionDueTimer = null;
+    client.options.sessionExpires = Date.now() + expiresIn;
+    client.options.sessionExpiryLead = lead;
+    client.armSessionExpiry();
+};
+
+const farExpiry = () => Date.now() + 60 * 60 * 1000;
+
 describe('sessionExpires', () => {
     it('closes an idling connection once the lead starts', async t => {
         const kit = await startImapKit(t);
-        // due after 200ms, forced only after 2.6 seconds
-        const client = await kit.connect({ sessionExpires: Date.now() + 5000, sessionExpiryLead: 4800 });
+        const client = await kit.connect({ sessionExpires: farExpiry() });
         const logs = closeLogs(client);
         const closing = closed(client);
         await client.mailboxOpen('INBOX');
         const { idling } = await startIdle(kit, client);
+        // due after 100ms, forced only after 5 seconds
+        rearm(client, 10 * 1000, 9900);
         await closing;
         await idling;
 
@@ -87,9 +103,11 @@ describe('sessionExpires', () => {
 
     it('waits while a mailbox lock is held, and closes once it is released', async t => {
         const kit = await startImapKit(t);
-        const client = await kit.connect({ sessionExpires: Date.now() + 5000, sessionExpiryLead: 4800 });
+        const client = await kit.connect({ sessionExpires: farExpiry() });
         const logs = closeLogs(client);
         const lock = await client.getMailboxLock('INBOX');
+        // due after 100ms, forced only after 5 seconds
+        rearm(client, 10 * 1000, 9900);
 
         await sleep(400);
         assert.equal(client.usable, true, 'not closed under the lock holder');
@@ -104,11 +122,12 @@ describe('sessionExpires', () => {
 
     it('closes a connection busy to the end just before the expiry', async t => {
         const kit = await startImapKit(t);
-        // due after 200ms, forced after 400ms (half the lead before the expiry)
-        const client = await kit.connect({ sessionExpires: Date.now() + 600, sessionExpiryLead: 400 });
+        const client = await kit.connect({ sessionExpires: farExpiry() });
         const logs = closeLogs(client);
         const closing = closed(client);
         const lock = await client.getMailboxLock('INBOX');
+        // due after 200ms, forced after 400ms (half the lead before the expiry)
+        rearm(client, 600, 400);
         await closing;
         assert.deepEqual(logs, ['Closing busy connection, the session is about to expire']);
         lock.release();
@@ -117,7 +136,7 @@ describe('sessionExpires', () => {
     it('does not close under a command that is waiting for IDLE to end', async t => {
         const kit = await startImapKit(t);
         // the expiry is far away, the due state is set by hand at the moment that matters
-        const client = await kit.connect({ sessionExpires: Date.now() + 60 * 60 * 1000 });
+        const client = await kit.connect({ sessionExpires: farExpiry() });
         await client.mailboxOpen('INBOX');
         const { idling } = await startIdle(kit, client);
 
@@ -135,7 +154,7 @@ describe('sessionExpires', () => {
 
     it('does not close under a command sent as soon as the previous one resolved', async t => {
         const kit = await startImapKit(t);
-        const client = await kit.connect({ sessionExpires: Date.now() + 60 * 60 * 1000 });
+        const client = await kit.connect({ sessionExpires: farExpiry() });
         client._sessionExpiring = true;
         const closing = closed(client);
 
@@ -151,10 +170,10 @@ describe('sessionExpires', () => {
         const plain = await kit.connect();
         assert.equal(plain._sessionDueTimer, undefined);
 
-        const verify = await kit.connect({ verifyOnly: true, sessionExpires: Date.now() + 60 * 60 * 1000 });
+        const verify = await kit.connect({ verifyOnly: true, sessionExpires: farExpiry() });
         assert.equal(verify._sessionDueTimer, undefined);
 
-        const later = await kit.connect({ sessionExpires: Date.now() + 60 * 60 * 1000 });
+        const later = await kit.connect({ sessionExpires: farExpiry() });
         assert.ok(later._sessionDueTimer);
         assert.equal(later._sessionDueTimer.hasRef(), false, 'a background timer does not keep the process alive');
         assert.equal(later._sessionCloseTimer.hasRef(), false);
@@ -164,8 +183,9 @@ describe('sessionExpires', () => {
 
     it('a connection closed earlier is left alone when the timers would have fired', async t => {
         const kit = await startImapKit(t);
-        const client = await kit.connect({ sessionExpires: Date.now() + 600, sessionExpiryLead: 400 });
+        const client = await kit.connect({ sessionExpires: farExpiry() });
         const logs = closeLogs(client);
+        rearm(client, 600, 400);
         await client.logout();
         await sleep(700);
         assert.deepEqual(logs, []);
