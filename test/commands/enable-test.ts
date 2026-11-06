@@ -426,4 +426,41 @@ describe('commands/enable', () => {
         assert.ok(connection.enabled.has('UTF8=ACCEPT'));
         assert.ok(connection.enabled.has('EXISTING'));
     });
+    it('Commands: enable treats CONDSTORE and QRESYNC as enabled when OK has no ENABLED line', async () => {
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map([
+                ['ENABLE', true],
+                ['CONDSTORE', true],
+                ['QRESYNC', true],
+                ['UTF8=ACCEPT', true]
+            ]),
+            enabled: new Set(),
+            exec: async () => ({ next: () => {} })
+        });
+
+        const result: any = await enableCommand(connection, ['CONDSTORE', 'QRESYNC', 'UTF8=ACCEPT']);
+        assert.ok(result.has('CONDSTORE'));
+        assert.ok(result.has('QRESYNC'));
+        // Only extensions RFC 7162 allows to be enabled implicitly are assumed
+        assert.ok(!result.has('UTF8=ACCEPT'));
+    });
+    it('Commands: enable trusts an empty ENABLED line over the tagged OK', async () => {
+        const connection = createMockConnection({
+            state: 2,
+            capabilities: new Map([
+                ['ENABLE', true],
+                ['CONDSTORE', true],
+                ['QRESYNC', true]
+            ]),
+            enabled: new Set(),
+            exec: async (cmd: any, args: any, opts: any) => {
+                await opts.untagged.ENABLED({ attributes: [] });
+                return { next: () => {} };
+            }
+        });
+
+        const result: any = await enableCommand(connection, ['CONDSTORE', 'QRESYNC']);
+        assert.equal(result.size, 0);
+    });
 });
