@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.11.0](https://github.com/postalsys/imapflow/compare/v2.10.2...v2.11.0) (2026-11-06)
+
+
+### Features
+
+* sessionExpires option closes a session before the server ends it ([51a64ac](https://github.com/postalsys/imapflow/commit/51a64acdb87577f2edb0a3656f6d2aaa18e920c8))
+
 ## [2.10.2](https://github.com/postalsys/imapflow/compare/v2.10.1...v2.10.2) (2026-11-04)
 
 
