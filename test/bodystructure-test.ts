@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseBodystructure } from '../src/tools.js';
+import { parseBodystructure, formatMessageResponse } from '../src/tools.js';
 import parser from '../src/handler/imap-parser.js';
 
 describe('bodystructure', () => {
@@ -945,6 +945,41 @@ describe('bodystructure: trailing extension fields', () => {
         assert.equal(node.disposition, 'inline');
         assert.deepEqual(node.language, ['en']);
         assert.equal(node.location, 'mloc');
+    });
+
+    // Every part number repeats its ancestors, so a tree of many parts nested deep costs node
+    // count times depth, which the token limit does not bound
+    const deepTree = (depth: number, width: number) => {
+        let structure = '(' + '()'.repeat(width) + ' "mixed")';
+        for (let d = 0; d < depth; d++) {
+            structure = '(' + structure + ' "mixed")';
+        }
+        return structure;
+    };
+
+    it('numbers the parts of a deep tree', async () => {
+        const root = await parse(deepTree(2, 3));
+        assert.equal(root.part, undefined);
+        assert.equal(root.childNodes[0].part, '1');
+        assert.equal(root.childNodes[0].childNodes[0].part, '1.1');
+        assert.deepEqual(
+            root.childNodes[0].childNodes[0].childNodes.map((node: any) => node.part),
+            ['1.1.1', '1.1.2', '1.1.3']
+        );
+    });
+
+    it('refuses a tree whose part numbers exceed the limit', async () => {
+        await assert.rejects(parse(deepTree(95, 45000)), (err: any) => err.code === 'BodyStructureTooLarge');
+    });
+
+    it('drops such a tree from the FETCH row and keeps the row', async () => {
+        const response: any = await parser(`* 1 FETCH (UID 7 BODYSTRUCTURE ${deepTree(95, 45000)})`);
+        const warnings: any[] = [];
+        const connection: any = { id: 'c1', log: { warn: (entry: any) => warnings.push(entry) } };
+        const message: any = await formatMessageResponse(response, { path: 'INBOX' } as any, 'md5', connection);
+        assert.equal(message.uid, 7);
+        assert.equal(message.bodyStructure, undefined);
+        assert.deepEqual(warnings, [{ msg: 'BODYSTRUCTURE exceeded the part number limit and was dropped', seq: 1, cid: 'c1' }]);
     });
 
     it('leaves extension fields unset for the BODY form', async () => {

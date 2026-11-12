@@ -1,7 +1,7 @@
 import imapFormalSyntax from './imap-formal-syntax.js';
 import { ParserInstance } from './parser-instance.js';
 import { createImapError, type ImapFlowError } from '../errors.js';
-import { boundedInput } from './limits.js';
+import { boundedInput, EXPANDED_RANGE_LIMIT } from './limits.js';
 import type { ImapAttributeList, ImapResponse, ParserOptions } from './types.js';
 
 // The codes the parser raises on purpose: the numbered ParserErrorN codes, ParserErrorExchange,
@@ -35,12 +35,16 @@ function asParserError(err: unknown, input: Buffer | string): ImapFlowError {
  * large mailbox one line carries millions of them, and run through the tokenizer each would
  * become a parse tree node and an attribute object, some 30 times the size of the line in heap.
  *
+ * The array costs 8 bytes per number, four times the line for "1 1 1 ...", so reading stops
+ * after EXPANDED_RANGE_LIMIT numbers, the most the SEARCH handler keeps. The rest of the line is
+ * not looked at, and the answer is marked as cut short.
+ *
  * @param str - The rest of the line after the command
- * @returns The numbers, or null when the line holds anything but a space before every number
- *   and trailing spaces (a CONDSTORE MODSEQ list, extra spaces, a number past 2^53), which is
- *   left to the tokenizer
+ * @returns The numbers and whether reading stopped at the limit, or null when the line holds
+ *   anything but a space before every number and trailing spaces (a CONDSTORE MODSEQ list, extra
+ *   spaces, a number past 2^53), which is left to the tokenizer
  */
-function readSearchNumbers(str: string): number[] | null {
+function readSearchNumbers(str: string): { numbers: number[]; numbersTruncated?: true | undefined } | null {
     // trailing spaces are tolerated, as the tokenizer does, some servers end the line with one
     let end = str.length;
     while (end > 1 && str.charCodeAt(end - 1) === 0x20) {
@@ -59,6 +63,10 @@ function readSearchNumbers(str: string): number[] | null {
                 return null;
             }
             numbers.push(value);
+            // trailing spaces are cut off above, so another number follows this space
+            if (numbers.length >= EXPANDED_RANGE_LIMIT) {
+                return { numbers, numbersTruncated: true };
+            }
             value = -1;
         } else if (c >= 0x30 && c <= 0x39) {
             value = (value < 0 ? 0 : value * 10) + (c - 0x30);
@@ -75,7 +83,7 @@ function readSearchNumbers(str: string): number[] | null {
         return null;
     }
     numbers.push(value);
-    return numbers;
+    return { numbers };
 }
 
 // The CONDSTORE list that ends a SEARCH answer to a MODSEQ query (RFC 7162 section 3.1.5)
@@ -90,21 +98,20 @@ const RE_SEARCH_MODSEQ = /^ \(MODSEQ (\d{1,19})\) *$/i;
  * @returns The numbers, with the MODSEQ list as the attributes the tokenizer would have made of
  *   it, or null when the line is left to the tokenizer
  */
-function readSearchResponse(str: string): { numbers: number[]; attributes?: ImapAttributeList | undefined } | null {
+function readSearchResponse(str: string): { numbers: number[]; numbersTruncated?: true | undefined; attributes?: ImapAttributeList | undefined } | null {
     // the last character tells whether there is a list to look for, without scanning the line
     if (!str.trimEnd().endsWith(')')) {
-        const numbers = readSearchNumbers(str);
-        return numbers && { numbers };
+        return readSearchNumbers(str);
     }
     const open = str.lastIndexOf(' (');
     const match = open < 0 ? null : RE_SEARCH_MODSEQ.exec(str.slice(open));
     if (!match) {
         return null;
     }
-    const numbers = readSearchNumbers(str.slice(0, open));
+    const search = readSearchNumbers(str.slice(0, open));
     return (
-        numbers && {
-            numbers,
+        search && {
+            ...search,
             attributes: [
                 [
                     { type: 'ATOM', value: 'MODSEQ' },

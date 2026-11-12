@@ -341,6 +341,21 @@ describe('commands/search', () => {
         // 0 and 2^32 are not nz-numbers and are discarded
         assert.deepEqual(await searchCommand(connection, true, {}), [1, 2, 5, 9]);
     });
+    it('Commands: search warns when the parser cut a SEARCH line short', async () => {
+        const warnings: any[] = [];
+        const connection = createMockConnection({
+            state: 3,
+            log: { warn: (entry: any) => warnings.push(entry), debug: () => {}, info: () => {}, error: () => {}, trace: () => {} },
+            exec: async (cmd: any, attrs: any, opts: any) => {
+                await opts.untagged.SEARCH({ numbers: [3, 1], numbersTruncated: true });
+                return { next: () => {} };
+            }
+        });
+
+        assert.deepEqual(await searchCommand(connection, true, {}), [1, 3]);
+        assert.equal(warnings.length, 1);
+        assert.equal(warnings[0].truncated, true);
+    });
     it('Commands: search keeps an ESEARCH ALL range that overlaps a SEARCH answer whole', async () => {
         // The ESEARCH budget counts what the expansions added, so numbers already in the result
         // from a SEARCH response do not cut the range short

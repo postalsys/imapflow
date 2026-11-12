@@ -31,6 +31,11 @@ export const MAX_RESPONSE_SIZE = 2 * MAX_LITERAL_SIZE;
 // the tokenizer, see parser()), so the bound only stops a server that floods one response.
 export const MAX_RESPONSE_TOKENS = 1000000;
 
+// Upper bound for expanding server-supplied sequence sets and for the numbers of a SEARCH
+// answer. 2^24 entries in total is far beyond any legitimate mailbox while keeping the worst-case
+// result of a hostile answer bounded. Re-exported from tools.ts, where the commands use it.
+export const EXPANDED_RANGE_LIMIT = 0x1000000;
+
 // How much of the offending input a parse error carries along. The error travels whole into log
 // entries (pino copies every property of a logged error) and into the rejection of the command
 // the line belonged to, and the line can be as long as the configured line cap.

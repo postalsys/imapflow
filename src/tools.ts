@@ -3,6 +3,7 @@
 import libmime from 'libmime';
 import { resolveCharset } from './charsets.js';
 import { compiler } from './handler/imap-handler.js';
+import { EXPANDED_RANGE_LIMIT } from './handler/limits.js';
 import imapFormalSyntax from './handler/imap-formal-syntax.js';
 import { createHash } from 'node:crypto';
 import { JPDecoder } from './jp-decoder.js';
@@ -30,14 +31,15 @@ const FLAG_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'grey
 // Error codes that only mean the connection is no longer usable. See logConnectionError().
 const CONNECTION_GONE_CODES = new Set<string>([ImapFlowErrorCode.NoConnection, ImapFlowErrorCode.EConnectionClosed, ImapFlowErrorCode.StateLogout]);
 
-// Upper bound for expanding server-supplied sequence ranges (see expandRange). 2^24
-// entries in total is far beyond any legitimate mailbox while keeping the worst-case
-// expansion of a hostile range set bounded.
-//
-// Shared bound for expanding server-supplied sequence sets. Exported so other places that
-// expand server sequences (e.g. ESEARCH ALL in commands/search.ts) can apply the same absolute
-// ceiling instead of inventing their own.
-export const EXPANDED_RANGE_LIMIT = 0x1000000;
+// See handler/limits.ts. Re-exported for expandRange() and the commands (ESEARCH ALL in
+// commands/search.ts), so they apply the same ceiling as the parser.
+export { EXPANDED_RANGE_LIMIT };
+
+// Upper bound for the numbers in the part numbers of one BODYSTRUCTURE, where a part at depth d
+// holds d of them ("1.2.3" is three). A real message stays far below this, even one of a
+// thousand parts nested a hundred levels deep, while the strings of a tree at the bound take a
+// few tens of MB.
+const MAX_PART_NUMBER_COST = 4000000;
 
 // Upper bound for the untagged responses one command may accumulate in memory: the FETCH rows
 // fetchAll() collects and the mailboxes list() collects. The response size limits bound one
@@ -825,6 +827,29 @@ export function mergeFetchRows(rows: FetchMessageObject[]): FetchMessageObject {
 }
 
 /**
+ * Parses the BODYSTRUCTURE item of a FETCH row. A structure whose part numbers would cost too
+ * much (see parseBodystructure()) is left out of the row instead of failing it, as the parser
+ * does with an item nested too deep: the structure is the message sender's doing, and the
+ * message must still reach the caller.
+ *
+ * @param attribute - The BODYSTRUCTURE value
+ * @param seq - The sequence number of the row, for the log entry
+ * @param connection - The connection, for the log entry
+ * @returns The parsed structure, or undefined when it was dropped
+ */
+function parseBodyStructureItem(attribute: ImapAttributeList, seq: number | undefined, connection?: ImapFlow): MessageStructureObject | undefined {
+    try {
+        return parseBodystructure(attribute);
+    } catch (err) {
+        if ((err as ImapFlowError).code !== ImapFlowErrorCode.BodyStructureTooLarge) {
+            throw err;
+        }
+        connection?.log.warn({ msg: 'BODYSTRUCTURE exceeded the part number limit and was dropped', seq, cid: connection.id });
+        return undefined;
+    }
+}
+
+/**
  * Formats a raw untagged FETCH response into a structured message object.
  *
  * @param untagged - Parsed untagged IMAP response
@@ -998,7 +1023,7 @@ export async function formatMessageResponse(
 
             case 'bodystructure':
                 if (Array.isArray(attribute)) {
-                    map.bodyStructure = parseBodystructure(attribute);
+                    map.bodyStructure = parseBodyStructureItem(attribute, map.seq, connection);
                 }
                 break;
 
@@ -1354,21 +1379,32 @@ export function getStructuredParams(arr: ImapAttributeList | null | undefined): 
  *
  * @param entry - Raw BODYSTRUCTURE data array from IMAP response
  * @returns Parsed body structure tree with part numbers, types, parameters, and child nodes
+ * @throws {ImapFlowError} With code `BodyStructureTooLarge` when the part numbers of the tree would hold
+ *   more than MAX_PART_NUMBER_COST numbers in total
  */
 export function parseBodystructure(entry: ImapAttributeList): MessageStructureObject {
+    // The part number of every node repeats the numbers of all its ancestors, so the tree costs
+    // its node count times its depth, which the token limit does not bound: a BODYSTRUCTURE of a
+    // few MB (many empty parts nested a hundred levels deep) took gigabytes
+    let partNumberCost = 0;
+
     // Recursively walks the BODYSTRUCTURE tree, building MIME part numbers.
     // Part numbers follow the IMAP dot-notation: "1", "1.1", "2.3", etc.
-    // The root multipart has no part number; its children start at 1.
-    let walk = (node: ImapAttributeList, path?: number[]): MessageStructureObject => {
-        path = path || [];
+    // The root multipart has no part number (depth 0); its children start at 1.
+    let walk = (node: ImapAttributeList, partNumber: string, depth: number): MessageStructureObject => {
+        partNumberCost += depth;
+        if (partNumberCost > MAX_PART_NUMBER_COST) {
+            throw createImapError(`BODYSTRUCTURE part numbers exceed ${MAX_PART_NUMBER_COST} components`, 'BodyStructureTooLarge', {
+                maxSize: MAX_PART_NUMBER_COST
+            });
+        }
 
         let curNode = {} as MessageStructureObject,
             i = 0,
             part = 0;
 
-        // Build the dot-separated part number from the path array (e.g., [1,2] -> "1.2")
-        if (path.length) {
-            curNode.part = path.join('.');
+        if (partNumber) {
+            curNode.part = partNumber;
         }
 
         // multipart: first elements are arrays (child body parts), followed by the subtype string
@@ -1376,7 +1412,7 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
             curNode.childNodes = [];
             // Each child array is a nested body part; increment part counter for each
             while (Array.isArray(node[i])) {
-                curNode.childNodes.push(walk(node[i] as ImapAttributeList, path.concat(++part)));
+                curNode.childNodes.push(walk(node[i] as ImapAttributeList, (partNumber ? partNumber + '.' : '') + ++part, depth + 1));
                 i++;
             }
 
@@ -1443,11 +1479,11 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
 
                 if (node[i]) {
                     curNode.childNodes = [
-                        // The nested bodystructure reuses the same path (not path+1) because
-                        // the encapsulated message shares the part number with its wrapper.
-                        // Distinction is via suffixes: path.MIME = wrapper headers,
-                        // path.HEADER = encapsulated message headers.
-                        walk(node[i] as ImapAttributeList, path)
+                        // The nested bodystructure reuses the same part number (not a new
+                        // level) because the encapsulated message shares it with its wrapper.
+                        // Distinction is via suffixes: part.MIME = wrapper headers,
+                        // part.HEADER = encapsulated message headers.
+                        walk(node[i] as ImapAttributeList, partNumber, depth)
                     ];
                 }
                 i++;
@@ -1523,7 +1559,7 @@ export function parseBodystructure(entry: ImapAttributeList): MessageStructureOb
         return curNode;
     };
 
-    return walk(entry);
+    return walk(entry, '', 0);
 }
 
 /**

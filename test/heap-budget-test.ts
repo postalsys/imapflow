@@ -152,6 +152,55 @@ describe('heap budgets', { skip: process.versions.bun ? '--max-old-space-size is
         );
         assert.deepEqual(result, { length: 1000000, last: 1000000 });
     });
+    // The numbers array costs 8 bytes per number, four times a line of "1 1 1 ...", and it is
+    // built before the search command applies its limit, so an 80 MB line of 40M numbers
+    // aborted a 256 MB heap. Reading now stops one number past EXPANDED_RANGE_LIMIT (2^24)
+    it('a SEARCH answer of 40M numbers fits in a 256 MB heap', () => {
+        const result = runCapped(
+            256,
+            `
+            globalThis.handlers = {
+                SEARCH({ socket, ok }) {
+                    const chunk = ' 1'.repeat(1000000);
+                    socket.write('* SEARCH');
+                    for (let i = 0; i < 40; i++) {
+                        socket.write(chunk);
+                    }
+                    socket.write('\\r\\n');
+                    ok();
+                }
+            };
+            globalThis.scenario = async client => {
+                await client.mailboxOpen('INBOX');
+                const uids = await client.search({ all: true }, { uid: true });
+                // the duplicates collapse once the answer is read
+                return uids;
+            };
+            `
+        );
+        assert.deepEqual(result, [1]);
+    });
+    // Every part number repeats the numbers of its ancestors, so a 1.8 MB BODYSTRUCTURE of 900k
+    // empty parts nested 95 deep took gigabytes. The structure is dropped from the row instead
+    it('a BODYSTRUCTURE of 900k parts nested 95 deep fits in a 256 MB heap', () => {
+        const result = runCapped(
+            256,
+            `
+            globalThis.handlers = {
+                FETCH({ socket, ok }) {
+                    socket.write('* 1 FETCH (UID 1 BODYSTRUCTURE ' + '('.repeat(96) + '()'.repeat(900000) + ' "mixed")'.repeat(96) + ')\\r\\n');
+                    ok();
+                }
+            };
+            globalThis.scenario = async client => {
+                await client.mailboxOpen('INBOX');
+                const message = await client.fetchOne('1', { uid: true, bodyStructure: true });
+                return { uid: message.uid, bodyStructure: message.bodyStructure || null };
+            };
+            `
+        );
+        assert.deepEqual(result, { uid: 1, bodyStructure: null });
+    });
     // A long token used to be grown one character at a time, each step a cons string of some
     // twenty bytes, so an 8 MB quoted string or atom took over 100 MB while it was parsed
     it('8 MB quoted strings and atoms fit in a 96 MB heap', () => {

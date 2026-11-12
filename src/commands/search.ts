@@ -174,6 +174,7 @@ export default async function search(
                         }
                         target.length = size;
                         results = target;
+                        truncated = truncated || !!untagged.numbersTruncated;
                         if (truncated || discarded) {
                             connection.log.warn({
                                 msg: 'Invalid entries in the SEARCH result',

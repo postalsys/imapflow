@@ -45,6 +45,8 @@ export const ImapFlowErrorCode = {
     LiteralTooLarge: 'LiteralTooLarge',
     ResponseTooLarge: 'ResponseTooLarge',
     TooManyTokens: 'TooManyTokens',
+    // the part numbers of a BODYSTRUCTURE would cost too much, see parseBodystructure()
+    BodyStructureTooLarge: 'BodyStructureTooLarge',
     // one command received more untagged responses than are kept, see MAX_COLLECTED_RESPONSES
     TooManyResponses: 'TooManyResponses',
 

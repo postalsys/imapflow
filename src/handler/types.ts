@@ -49,6 +49,8 @@ export interface ImapResponse {
      * `attributes`, see parser()
      */
     numbers?: number[] | undefined;
+    /** Set when the SEARCH numbers stopped at EXPANDED_RANGE_LIMIT and the rest of the line was not read */
+    numbersTruncated?: true | undefined;
     /** Number of leading NUL bytes stripped from the line, if any */
     nullBytesRemoved?: number | undefined;
     /**
