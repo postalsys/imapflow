@@ -553,5 +553,47 @@ export const transcripts: QuirkTranscript[] = [
             }
             assert.equal(Buffer.concat(chunks).toString(), 'ABCDEFGHIJ');
         }
+    },
+    {
+        name: 'iCloud answers ENABLE CONDSTORE QRESYNC with a tagged OK and no ENABLED line',
+        origin: 'issue #457, src/commands/enable.ts',
+        options: { qresync: true },
+        transcript: `
+            S: * OK [CAPABILITY XAPPLEPUSHSERVICE IMAP4 IMAP4rev1 CONDSTORE ENABLE QRESYNC UIDPLUS ESEARCH IDLE AUTH=PLAIN] iCloud IMAP4 service ready
+            C: AUTHENTICATE PLAIN
+            S: TAG OK [CAPABILITY XAPPLEPUSHSERVICE IMAP4 IMAP4rev1 CONDSTORE ENABLE QRESYNC UIDPLUS ESEARCH IDLE] Logged in
+            C: LIST "" ""
+            S: * LIST (\\Noselect) "/" ""
+            S: TAG OK LIST completed
+            # no untagged ENABLED line, although both extensions are enabled
+            C: ENABLE CONDSTORE QRESYNC
+            S: TAG OK ENABLE completed
+            C: LIST "" "INBOX"
+            S: * LIST (\\HasNoChildren) "/" "INBOX"
+            S: TAG OK LIST completed
+            C: LSUB "" "INBOX"
+            S: * LSUB () "/" "INBOX"
+            S: TAG OK LSUB completed
+            C: SELECT INBOX
+            S: * FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)
+            S: * 2 EXISTS
+            S: * OK [UIDVALIDITY 1] UIDs valid
+            S: * OK [UIDNEXT 3] Predicted next UID
+            S: * OK [HIGHESTMODSEQ 100] Highest
+            S: TAG OK [READ-WRITE] SELECT completed
+            C: UID FETCH 1:* (UID MODSEQ) (CHANGEDSINCE 90 VANISHED)
+            S: * 2 FETCH (UID 2 MODSEQ (95))
+            S: TAG OK FETCH completed
+        `,
+        async run(client) {
+            assert.ok(client.enabled.has('CONDSTORE'));
+            assert.ok(client.enabled.has('QRESYNC'));
+            await client.mailboxOpen('INBOX');
+            const uids: number[] = [];
+            for await (const message of client.fetch('1:*', { uid: true }, { uid: true, changedSince: 90n })) {
+                uids.push(message.uid);
+            }
+            assert.deepEqual(uids, [2]);
+        }
     }
 ];
