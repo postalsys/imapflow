@@ -188,6 +188,100 @@ describe('imap-flow-server', () => {
             assert.ok(lines.includes('* SEARCH 4 2'), lines.join('\n'));
         });
     });
+    // The default mailbox has EXISTS 3. $TAG is the command tag, $LEN its length
+    describe('search() with strict', () => {
+        const strictSearch = async (lines: string[], options: Record<string, unknown> = {}, capabilities?: string) => {
+            let server = createServer({
+                capabilities,
+                handlers: {
+                    UID: (ctx: any) => {
+                        for (let line of lines) {
+                            ctx.write(line.replace('$LEN', String(ctx.tag.length)).replace('$TAG', ctx.tag) + '\r\n');
+                        }
+                        ctx.ok('SEARCH completed');
+                    }
+                }
+            });
+            let client = makeClient(await listen(server));
+            client.on('error', () => {});
+            try {
+                await client.connect();
+                await client.mailboxOpen('INBOX');
+                return await client.search({ all: true }, { uid: true, strict: true, ...options });
+            } finally {
+                client.close();
+                server.close();
+            }
+        };
+        const rejectsWith = (problem: string) => (err: any) =>
+            err.code === 'InvalidSearchResponse' && err.command === 'UID SEARCH' && err.details.problems.includes(problem);
+
+        for (const [lines, problem] of [
+            [[], 'no answer'],
+            [['* SEARCH 1 bogus 3'], 'entries discarded'],
+            [['* SEARCH 1', '* SEARCH 2 "unterminated'], 'unparseable response'],
+            [['* ESEARCH (TAG "$TAG") UID ALL (1 2 3)'], 'ALL is not a sequence-set'],
+            [['* ESEARCH (TAG "$TAG") UID ALL 1:2 ALL 3'], 'repeated item'],
+            [['* ESEARCH (TAG "$TAG") UID COUNT 3'], 'result without ALL'],
+            [['* ESEARCH (TAG "$TAG") UID MIN 1'], 'result without ALL'],
+            [['* ESEARCH (TAG "$TAG") UID ALL 1:3 PARTIAL (1:2 1:2)'], 'partial result'],
+            [['* ESEARCH (TAG "$TAG") ALL 1:3'], 'UID indicator mismatch'],
+            [['* ESEARCH (TAG "ZZ9") UID ALL 1'], 'correlator names another command'],
+            [['* ESEARCH (TAG) UID ALL 1'], 'invalid correlator'],
+            [['* ESEARCH (TAG "$TAG") UID ALL'], 'item without a value'],
+            [['* ESEARCH (TAG "$TAG") UID (ALL) 1'], 'item name is not an atom'],
+            [['* ESEARCH (TAG "$TAG") UID ALL 1:4'], 'result truncated']
+        ] as const) {
+            it(`rejects ${JSON.stringify(lines)} with ${problem}`, async () => {
+                await assert.rejects(strictSearch([...lines]), rejectsWith(problem));
+            });
+        }
+
+        for (const [lines, result] of [
+            [['* SEARCH 3 1 2'], [1, 2, 3]],
+            [['* SEARCH'], []],
+            [['* SEARCH 1 2 3 (MODSEQ 44)'], [1, 2, 3]],
+            [
+                ['* ESEARCH (TAG {$LEN}', '$TAG) UID ALL 1:3'],
+                [1, 2, 3]
+            ],
+            [['* ESEARCH (TAG "$TAG") UID'], []],
+            [['* ESEARCH (TAG "$TAG") UID COUNT 0'], []],
+            [['* ESEARCH (TAG "$TAG") UID ALL 1:3 COUNT 3 X-UNKNOWN (a b)'], [1, 2, 3]],
+            [['* ESEARCH UID ALL 2'], [2]]
+        ] as const) {
+            it(`accepts ${JSON.stringify(lines)}`, async () => {
+                assert.deepEqual(await strictSearch([...lines]), result);
+            });
+        }
+
+        it('applies to the fallback of returnOptions on a server without ESEARCH', async () => {
+            await assert.rejects(strictSearch(['* SEARCH 1 bogus'], { returnOptions: ['ALL'] }), rejectsWith('entries discarded'));
+        });
+
+        it('leaves the ESearchResult of returnOptions unchecked', async () => {
+            assert.deepEqual(await strictSearch(['* ESEARCH (TAG "$TAG") UID COUNT 3'], { returnOptions: ['COUNT'] }, 'IMAP4rev1 ESEARCH'), { count: 3 });
+        });
+
+        it('still resolves false on NO', async () => {
+            let server = createServer({ handlers: { UID: (ctx: any) => ctx.no('SEARCH failed') } });
+            let client = makeClient(await listen(server));
+            client.on('error', () => {});
+            try {
+                await client.connect();
+                await client.mailboxOpen('INBOX');
+                assert.equal(await client.search({ all: true }, { uid: true, strict: true }), false);
+            } finally {
+                client.close();
+                server.close();
+            }
+        });
+
+        it('changes nothing without the option', async () => {
+            assert.deepEqual(await strictSearch(['* SEARCH 1 bogus 3'], { strict: false }), [1, 3]);
+            assert.deepEqual(await strictSearch(['* ESEARCH (TAG "ZZ9") UID ALL 1'], { strict: false }), [1]);
+        });
+    });
     it('Server: BYE greeting rejects connect even if the server keeps the socket open', async () => {
         let server = createServer({ greeting: '* BYE Server too busy\r\n' });
         let port = await listen(server);

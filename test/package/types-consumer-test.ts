@@ -126,6 +126,9 @@ export async function run(): Promise<void> {
         if (Array.isArray(uids)) {
             uids.forEach(uid => uid.toFixed());
         }
+        // strict keeps the plain list overload
+        const strictUids: number[] | false | undefined = await client.search(query, { uid: true, strict: true });
+        strictUids;
         const esearch = await client.search(query, { uid: true, returnOptions: ['COUNT', 'ALL'] });
         if (esearch && !Array.isArray(esearch)) {
             const result: ESearchResult = esearch;

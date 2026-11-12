@@ -280,6 +280,8 @@ export interface ExecOptions {
     onPlusTag?: ((response: ImapResponse) => Promise<void> | void) | undefined;
     /** Called once the command line has been written to the socket */
     onSend?: (() => void) | undefined;
+    /** Called when an untagged line that can not be parsed is skipped while this command is in flight */
+    onUnparsedResponse?: (() => void) | undefined;
 }
 
 /**
@@ -1672,6 +1674,10 @@ export class ImapFlow extends EventEmitter {
             // cap (1GB by default), so log only a bounded prefix: a server looping
             // unparseable garbage would otherwise turn this error log into a disk filler.
             this.log.error({ src: 's', msg: data.payload.toString('latin1', 0, 1024), payloadBytes: data.payload.length, err, cid: this.id });
+            // the skipped line may have been part of the answer the in-flight command collects
+            if (this.currentRequest && this.currentRequest.sent) {
+                this.currentRequest.options.onUnparsedResponse?.();
+            }
             // An unparseable untagged line is junk that can be skipped, but the line may
             // have been the in-flight command's tagged completion. Dropping that one
             // silently strands the command: currentRequest is never cleared, so trySend()
@@ -4343,7 +4349,8 @@ export class ImapFlow extends EventEmitter {
      *   `false` when the server rejected the search (a NO or BAD answer, for example an unsupported
      *   charset or search key), `undefined` when no mailbox is open. Rejects when the command could
      *   not complete, for example because the connection closed or failed, so a failed search is
-     *   never mistaken for an empty result
+     *   never mistaken for an empty result. With `strict` set, also rejects with code
+     *   `InvalidSearchResponse` when a list of numbers could not be read in full
      *
      * @example
      * let mailbox = await client.mailboxOpen('INBOX');
@@ -4358,7 +4365,7 @@ export class ImapFlow extends EventEmitter {
      *     {subject: 'test'}
      *   ]});
      */
-    search(query: SearchObject, options?: MessageRangeOptions | undefined): Promise<number[] | false | undefined>;
+    search(query: SearchObject, options?: Omit<SearchOptions, 'returnOptions'> | undefined): Promise<number[] | false | undefined>;
     /**
      * Search with `returnOptions` set: an ESEARCH result object from a server that supports
      * ESEARCH, the plain list of numbers otherwise

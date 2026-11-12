@@ -1,6 +1,7 @@
 import { hasCapability, isValidSequenceValue, isServerRefusal, EXPANDED_RANGE_LIMIT, reportCommandError, getSelectedMailbox } from '../tools.js';
 import { searchCompiler } from '../search-compiler.js';
-import { parseEsearchResponse } from './esearch-parser.js';
+import { parseEsearchResponse, checkEsearchAnswer } from './esearch-parser.js';
+import { createImapError } from '../errors.js';
 import type { ImapFlow } from '../imap-flow.js';
 import type { ImapFlowError } from '../errors.js';
 import type { ImapAttributeList, ImapAttributeNode, ImapCompileNode, ImapResponse } from '../handler/types.js';
@@ -130,11 +131,18 @@ export default async function search(
     let results: number[] = [];
     // How many numbers ESEARCH ALL expansions have added, see the budget below
     let esearchAdded = 0;
+    // Why the answer could not be read in full, for the `strict` option: short fixed reasons, the
+    // log entries keep the server text
+    let problems = new Set<string>();
+    let answered = false;
+    let correlators: string[] = [];
     let response;
     try {
         response = await connection.exec(options.uid ? 'UID SEARCH' : 'SEARCH', attributes, {
+            onUnparsedResponse: options.strict ? () => problems.add('unparseable response') : undefined,
             untagged: {
                 SEARCH: async (untagged: ImapResponse) => {
+                    answered = true;
                     if (!untagged) {
                         return;
                     }
@@ -176,6 +184,7 @@ export default async function search(
                         results = target;
                         truncated = truncated || !!untagged.numbersTruncated;
                         if (truncated || discarded) {
+                            noteDropped(problems, truncated, discarded);
                             connection.log.warn({
                                 msg: 'Invalid entries in the SEARCH result',
                                 truncated,
@@ -190,8 +199,15 @@ export default async function search(
                 // ESEARCH response (RFC 9051 deprecated the SEARCH response), so
                 // both forms are collected into the same result set
                 ESEARCH: async (untagged: ImapResponse) => {
+                    answered = true;
                     if (!untagged || !untagged.attributes) {
                         return;
+                    }
+                    if (options.strict) {
+                        let correlator = checkEsearchAnswer(untagged.attributes, !!options.uid, problems);
+                        if (correlator !== undefined) {
+                            correlators.push(correlator);
+                        }
                     }
                     let parsed = parseEsearchResponse(stripEsearchPrefix(untagged.attributes));
                     if (parsed.all) {
@@ -253,6 +269,7 @@ export default async function search(
                             }
                         }
                         if (truncated || discarded) {
+                            noteDropped(problems, truncated, discarded);
                             connection.log.warn({
                                 msg: 'Invalid entries in the ESEARCH ALL result',
                                 truncated,
@@ -275,8 +292,39 @@ export default async function search(
             }
         }
         results.length = unique;
-        return results;
     } catch (err) {
         return await searchFailed(connection, err as ImapFlowError);
+    }
+    if (options.strict) {
+        let tag = response.response.tag;
+        if (!answered) {
+            problems.add('no answer');
+        }
+        if (correlators.some(correlator => correlator !== tag)) {
+            problems.add('correlator names another command');
+        }
+        if (problems.size) {
+            throw createImapError('The SEARCH answer could not be read in full', 'InvalidSearchResponse', {
+                command: options.uid ? 'UID SEARCH' : 'SEARCH',
+                details: { problems: [...problems] }
+            });
+        }
+    }
+    return results;
+}
+
+/**
+ * Records entries a SEARCH or ESEARCH ALL answer lost, for the `strict` option.
+ *
+ * @param problems - The problems of the search
+ * @param truncated - Whether the result was cut short
+ * @param discarded - Whether invalid entries were left out
+ */
+function noteDropped(problems: Set<string>, truncated: boolean, discarded: boolean): void {
+    if (truncated) {
+        problems.add('result truncated');
+    }
+    if (discarded) {
+        problems.add('entries discarded');
     }
 }

@@ -851,6 +851,19 @@ export interface SearchOptions {
     uid?: boolean | undefined;
     /** ESEARCH RETURN options. When set, the result is an ESearchResult object */
     returnOptions?: SearchReturnOption[] | undefined;
+    /**
+     * Reject instead of returning a shortened list when the answer to a search that returns a
+     * list of numbers could not be read in full. The rejection has code `InvalidSearchResponse`
+     * and lists short reasons in `details.problems`: no SEARCH or ESEARCH answer arrived, entries
+     * were discarded or the result was truncated, an untagged line that could not be parsed
+     * arrived while the search was in flight, an ESEARCH answer names another command's tag or
+     * its UID indicator does not match `uid`, an ESEARCH item is malformed or repeated, ALL is
+     * not a sequence-set, or the answer holds PARTIAL, or COUNT, MIN or MAX without ALL. A well
+     * formed but wrong answer can not be detected. Not applied to the ESearchResult a server
+     * with ESEARCH returns for `returnOptions`. A NO or BAD answer still resolves `false`.
+     * Defaults to false
+     */
+    strict?: boolean | undefined;
 }
 
 export interface ExpungeEvent {

@@ -64,6 +64,7 @@ function readSearchNumbers(str: string): { numbers: number[]; numbersTruncated?:
             }
             numbers.push(value);
             // trailing spaces are cut off above, so another number follows this space
+            /* c8 ignore next 3 */ // 2^24 numbers, covered by test/heap-budget-test.ts in a child process
             if (numbers.length >= EXPANDED_RANGE_LIMIT) {
                 return { numbers, numbersTruncated: true };
             }

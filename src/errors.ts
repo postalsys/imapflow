@@ -28,6 +28,8 @@ export const ImapFlowErrorCode = {
     UnexpectedTag: 'UnexpectedTag',
     MissingTag: 'MissingTag',
     InvalidResponse: 'InvalidResponse',
+    // search() with `strict` got an answer it could not read in full
+    InvalidSearchResponse: 'InvalidSearchResponse',
     ResponseProcessingFailed: 'ResponseProcessingFailed',
     STARTTLS_INJECTION: 'STARTTLS_INJECTION',
     COMPRESS_TRAILING_DATA: 'COMPRESS_TRAILING_DATA',

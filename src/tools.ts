@@ -841,6 +841,7 @@ function parseBodyStructureItem(attribute: ImapAttributeList, seq: number | unde
     try {
         return parseBodystructure(attribute);
     } catch (err) {
+        /* c8 ignore next 3 */ // parseBodystructure() throws nothing else today, a future error must not be taken for the budget
         if ((err as ImapFlowError).code !== ImapFlowErrorCode.BodyStructureTooLarge) {
             throw err;
         }

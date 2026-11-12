@@ -1,4 +1,4 @@
-import { parseBigIntValue, parseUintValue, MAX_UINT32_DIGITS } from '../tools.js';
+import { parseBigIntValue, parseUintValue, getStringValue, MAX_UINT32_DIGITS } from '../tools.js';
 import type { ImapAttributeList, ImapAttributeNode } from '../handler/types.js';
 import type { ESearchResult } from '../types.js';
 
@@ -88,4 +88,76 @@ export function parseEsearchResponse(attrs: ImapAttributeList): ESearchResult {
         i++;
     }
     return result;
+}
+
+// An RFC 9051 sequence-set, the form an ESEARCH ALL value must take
+const RE_SEQUENCE_SET = /^(?:\d+|\*)(?::(?:\d+|\*))?(?:,(?:\d+|\*)(?::(?:\d+|\*))?)*$/;
+
+/**
+ * Checks that an ESEARCH response to a search that returns a plain list of numbers can be read
+ * as the whole result: the correlator and the UID indicator are well-formed and match the
+ * command, every item is an atom followed by a value and appears once, ALL is a sequence-set,
+ * and no item stands for something other than the full membership (PARTIAL, or COUNT, MIN or
+ * MAX of a nonempty result without ALL). Unknown items and a MODSEQ value are accepted.
+ *
+ * @param attrs - The attributes of the untagged ESEARCH response
+ * @param uid - Whether the command was UID SEARCH
+ * @param problems - Collects short fixed reasons the response can not be read as the whole
+ *   result, without server text
+ * @returns The value of the (TAG "x") correlator, compared with the command tag once it
+ *   completed, or undefined when the response has none
+ */
+export function checkEsearchAnswer(attrs: ImapAttributeList, uid: boolean, problems: Set<string>): string | undefined {
+    let correlator: string | undefined;
+    let i = 0;
+    const first = attrs[0];
+    if (Array.isArray(first)) {
+        i++;
+        const name = first[0] as ImapAttributeNode | null | undefined;
+        correlator = getStringValue(first[1]);
+        if (first.length !== 2 || name?.type !== 'ATOM' || String(name.value).toUpperCase() !== 'TAG' || correlator === undefined) {
+            problems.add('invalid correlator');
+            correlator = undefined;
+        }
+    }
+    const indicator = attrs[i] as ImapAttributeNode | null | undefined;
+    const hasUid = !!indicator && indicator.type === 'ATOM' && String(indicator.value).toUpperCase() === 'UID';
+    if (hasUid) {
+        i++;
+    }
+    if (hasUid !== uid) {
+        problems.add('UID indicator mismatch');
+    }
+    const items = new Map<string, ImapAttributeNode | ImapAttributeList>();
+    for (; i < attrs.length; i += 2) {
+        const key = attrs[i];
+        if (Array.isArray(key) || !key || key.type !== 'ATOM' || typeof key.value !== 'string') {
+            problems.add('item name is not an atom');
+            return correlator;
+        }
+        const value = attrs[i + 1];
+        if (!value) {
+            problems.add('item without a value');
+            return correlator;
+        }
+        const name = key.value.toUpperCase();
+        if (items.has(name)) {
+            problems.add('repeated item');
+        }
+        items.set(name, value);
+    }
+    const all = items.get('ALL');
+    if (all && (Array.isArray(all) || typeof all.value !== 'string' || !RE_SEQUENCE_SET.test(all.value))) {
+        problems.add('ALL is not a sequence-set');
+    }
+    if (items.has('PARTIAL')) {
+        problems.add('partial result');
+    }
+    if (!all) {
+        const count = items.get('COUNT');
+        if ((count && (Array.isArray(count) || count.value !== '0')) || items.has('MIN') || items.has('MAX')) {
+            problems.add('result without ALL');
+        }
+    }
+    return correlator;
 }
