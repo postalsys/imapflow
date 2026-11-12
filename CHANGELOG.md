@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.12.0](https://github.com/postalsys/imapflow/compare/v2.11.0...v2.12.0) (2026-11-12)
+
+
+### Features
+
+* strict option for search() rejects an answer it cannot read in full ([2fb9e51](https://github.com/postalsys/imapflow/commit/2fb9e5107e23382bf2a7dfbf2232719389a7e5e4)), closes [#462](https://github.com/postalsys/imapflow/issues/462)
+
+
+### Bug Fixes
+
+* bound the memory a SEARCH answer or a BODYSTRUCTURE can take ([783a721](https://github.com/postalsys/imapflow/commit/783a72120540b5d4721b8fabf6e383c947e3a281))
+* treat CONDSTORE and QRESYNC as enabled when ENABLE gets OK without an ENABLED line ([#458](https://github.com/postalsys/imapflow/issues/458)) ([6c2f209](https://github.com/postalsys/imapflow/commit/6c2f209b1aa35e2c2bb4ef122f28e8d88c537bee))
+
 ## [2.11.0](https://github.com/postalsys/imapflow/compare/v2.10.2...v2.11.0) (2026-11-06)
 
 
