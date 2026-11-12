@@ -29,6 +29,7 @@ export default async function enable(connection: ImapFlow, extensionList: string
     let response: ExecResponse;
     try {
         let enabled = new Set<string>();
+        let sawEnabled = false;
         response = await connection.exec(
             'ENABLE',
             extensionList.map((extension): ImapAttributeNode => ({ type: 'ATOM', value: extension.toUpperCase() })),
@@ -38,6 +39,7 @@ export default async function enable(connection: ImapFlow, extensionList: string
                     // (e.g., "* ENABLED CONDSTORE UTF8=ACCEPT"), NOT key-value pairs.
                     // Each attribute is a single extension identifier.
                     ENABLED: async (untagged: ImapResponse) => {
+                        sawEnabled = true;
                         if (!untagged.attributes || !untagged.attributes.length) {
                             return;
                         }
@@ -51,6 +53,17 @@ export default async function enable(connection: ImapFlow, extensionList: string
                 }
             }
         );
+        if (!sawEnabled) {
+            // iCloud answers ENABLE CONDSTORE QRESYNC with a tagged OK and no untagged ENABLED line.
+            // CONDSTORE and QRESYNC are advertised (checked above), and CHANGEDSINCE alone is a
+            // CONDSTORE enabling command (RFC 7162 3.1), so treat these two as enabled.
+            for (let extension of extensionList) {
+                let name = extension.toUpperCase();
+                if (name === 'CONDSTORE' || name === 'QRESYNC') {
+                    enabled.add(name);
+                }
+            }
+        }
         // Merge instead of replace - the untagged ENABLED response only lists
         // extensions enabled by this command (RFC 5161), so a replace would drop
         // grants from an earlier ENABLE call
