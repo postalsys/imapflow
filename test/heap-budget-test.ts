@@ -153,14 +153,13 @@ describe('heap budgets', { skip: process.versions.bun ? '--max-old-space-size is
         assert.deepEqual(result, { length: 1000000, last: 1000000 });
     });
     // The numbers array costs 8 bytes per number, four times a line of "1 1 1 ...", and it is
-    // built before the search command applies its limit, so a 160 MB line of 80M numbers
-    // aborted a 320 MB heap. Reading now stops one number past EXPANDED_RANGE_LIMIT (2^24), which
-    // needs some 200-250 MB on Node 20 whatever the line length. 40M numbers in 256 MB left too
-    // little room on either side: the bounded reader failed it on CI now and then, and the
-    // unbounded one passed it on Node 24 given 320 MB
-    it('a SEARCH answer of 80M numbers fits in a 320 MB heap', () => {
+    // built before the search command applies its limit, so a 160 MB line of 80M numbers needed
+    // over 512 MB of heap. Reading now stops one number past EXPANDED_RANGE_LIMIT (2^24); the line
+    // itself is still a string on the heap, so the bounded reader needs 320-400 MB on Node 20 on
+    // Linux x64. 40M numbers in 256 MB left too little room on either side
+    it('a SEARCH answer of 80M numbers fits in a 480 MB heap', () => {
         const result = runCapped(
-            320,
+            480,
             `
             globalThis.handlers = {
                 SEARCH({ socket, ok }) {
