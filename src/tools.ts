@@ -498,7 +498,19 @@ export function updateCapabilities(list: ImapAttributeList | null | undefined): 
 
             if (capability.startsWith('APPENDLIMIT=')) {
                 let splitPos = capability.indexOf('=');
-                map.set('APPENDLIMIT', parseUintValue(capability.slice(splitPos + 1)) || 0);
+                let rawLimit = capability.slice(splitPos + 1);
+                let parsedLimit = parseUintValue(rawLimit);
+                // A decimal limit above the safe-integer range (eg. 2^63-1, advertised
+                // by servers to mean "no limit") must not fall back to 0: that would
+                // refuse every append. Clamp it to the largest usable value instead.
+                // parseUintValue itself is left untouched: it must keep rejecting
+                // unrepresentable counts/UIDs rather than rounding them.
+                let overflowsSafeInteger = /^[0-9]+$/.test(rawLimit) && Number(rawLimit) > Number.MAX_SAFE_INTEGER;
+                if (parsedLimit === false && overflowsSafeInteger) {
+                    map.set('APPENDLIMIT', Number.MAX_SAFE_INTEGER);
+                } else {
+                    map.set('APPENDLIMIT', parsedLimit || 0);
+                }
                 return;
             }
 

@@ -3,6 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import appendCommand from '../../src/commands/append.js';
+import { updateCapabilities } from '../../src/tools.js';
 import { createMockConnection } from '../fixtures/mock-connection.js';
 
 // BigInt() is a standard JS function but triggers new-cap rule
@@ -180,6 +181,29 @@ describe('commands/append', () => {
         });
 
         const content = Buffer.alloc(500, 'x'); // Within limit
+        await appendCommand(connection, 'INBOX', content);
+        assert.equal(execCalled, true);
+    });
+    it('Commands: append allows content when APPENDLIMIT exceeds MAX_SAFE_INTEGER', async () => {
+        let execCalled = false;
+        // 2^63-1, advertised by servers to mean "no limit": parsing it must not
+        // turn the limit into 0 and refuse every append
+        const capabilities = updateCapabilities([{ value: 'APPENDLIMIT=9223372036854775807' }] as any);
+        assert.equal(capabilities.get('APPENDLIMIT'), Number.MAX_SAFE_INTEGER);
+        const connection = createMockConnection({
+            state: 2,
+            capabilities,
+            mailbox: { path: 'INBOX' },
+            exec: async () => {
+                execCalled = true;
+                return {
+                    next: () => {},
+                    response: { attributes: [] }
+                };
+            }
+        });
+
+        const content = Buffer.alloc(500, 'x');
         await appendCommand(connection, 'INBOX', content);
         assert.equal(execCalled, true);
     });
