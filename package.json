@@ -84,7 +84,7 @@
         "eslint-config-prettier": "10.1.8",
         "events": "3.3.0",
         "globals": "17.14.0",
-        "imapkit": "5.3.1",
+        "imapkit": "5.3.2",
         "playwright-core": "1.65.1",
         "prettier": "3.10.1",
         "process": "0.11.10",
