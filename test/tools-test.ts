@@ -236,6 +236,15 @@ describe('tools', () => {
         let result = tools.updateCapabilities(list);
         assert.equal(result.get('APPENDLIMIT'), 52428800);
     });
+    it('Tools: updateCapabilities caps an APPENDLIMIT past the safe integer range', () => {
+        // Mox advertises 2^63-1 for "no limit", which used to parse as 0 and block every append
+        let result = tools.updateCapabilities([{ value: 'APPENDLIMIT=9223372036854775807' }] as any);
+        assert.equal(result.get('APPENDLIMIT'), Number.MAX_SAFE_INTEGER);
+        result = tools.updateCapabilities([{ value: 'APPENDLIMIT=9007199254740991' }] as any);
+        assert.equal(result.get('APPENDLIMIT'), Number.MAX_SAFE_INTEGER);
+        result = tools.updateCapabilities([{ value: 'APPENDLIMIT=99999999999999999999999999' }] as any);
+        assert.equal(result.get('APPENDLIMIT'), Number.MAX_SAFE_INTEGER);
+    });
     it('Tools: updateCapabilities with empty/null list', () => {
         assert.ok(tools.updateCapabilities(null) instanceof Map);
         assert.ok(tools.updateCapabilities([]) instanceof Map);

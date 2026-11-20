@@ -498,7 +498,12 @@ export function updateCapabilities(list: ImapAttributeList | null | undefined): 
 
             if (capability.startsWith('APPENDLIMIT=')) {
                 let splitPos = capability.indexOf('=');
-                map.set('APPENDLIMIT', parseUintValue(capability.slice(splitPos + 1)) || 0);
+                let limit = capability.slice(splitPos + 1);
+                // RFC 7889 allows any 63-bit limit and some servers (Mox) advertise 2^63-1 to mean
+                // "no limit". A limit past the safe integer range can not block a real message, so
+                // it is capped instead of read as 0, which would refuse every APPEND
+                let unrepresentable = /^[0-9]+$/.test(limit) && !Number.isSafeInteger(Number(limit));
+                map.set('APPENDLIMIT', unrepresentable ? Number.MAX_SAFE_INTEGER : parseUintValue(limit) || 0);
                 return;
             }
 
