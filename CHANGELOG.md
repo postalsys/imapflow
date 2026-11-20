@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.2](https://github.com/postalsys/imapflow/compare/v2.12.1...v2.12.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* cap an APPENDLIMIT past the safe integer range instead of reading it as 0 ([bc68849](https://github.com/postalsys/imapflow/commit/bc6884984ba0230438dcfebfd759bd198b1c90ae)), closes [#465](https://github.com/postalsys/imapflow/issues/465)
+* update dependencies ([28afd4b](https://github.com/postalsys/imapflow/commit/28afd4b620d34b5d2b56ea98526cd08b68aa73af))
+
 ## [2.12.1](https://github.com/postalsys/imapflow/compare/v2.12.0...v2.12.1) (2026-11-15)
 
 
